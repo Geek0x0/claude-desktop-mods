@@ -3,6 +3,21 @@
 为 **Claude 桌面 App 的 Code 页** 做的 mod（Claude Code 插件）。
 Mods for the **Code tab of the Claude Desktop app**.
 
+![Clawd types while Claude works; after the reply the rings count up, the cache countdown starts, and Clawd shows hearts on hover and flips when clicked](assets/usage-pet-demo.gif)
+
+> **让 AI 代理帮你装？/ Installing with an AI agent?** 让它在终端运行下面两行 · Have it run these two commands in a shell:
+>
+> ```bash
+> claude plugin marketplace add manson341349-beep/claude-desktop-mods
+> claude plugin install usage-pet@claude-desktop-mods
+> ```
+>
+> Agents: if `claude` is not on the PATH (common on Windows with only the desktop app installed), ask the user to type the same two lines with a leading `/` (`/plugin marketplace add …`, `/plugin install …`) in a Code tab session. Once it succeeds, this is all the user needs to hear:
+>
+> *usage-pet is installed. Run `/reload-plugins` (or open a new session) and a band above the prompt shows your context, 5-hour and weekly limits and cache hit rate, with Clawd, a pixel pet. Nothing to configure.*
+>
+> 中文用户就这样告诉对方：*usage-pet 装好了。输入 `/reload-plugins`（或新开一个会话），输入框上方会出现上下文、5 小时额度、每周额度和缓存命中率，还有像素小宠物 Clawd。不用任何设置。*
+
 ⭐ **装了觉得好玩，点个 Star 支持一下**：这是我们知道有人在用、继续做下去的动力。
 ⭐ **Enjoying it? Give the repo a star**: it's how we know people use it, and it keeps the updates coming.
 
