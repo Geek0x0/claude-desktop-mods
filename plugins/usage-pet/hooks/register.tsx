@@ -1,12 +1,13 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, ModelUsage, Register, SessionContextUsage, SessionRateLimit } from 'claude-code'
 
-import type { Bars, CacheStat, CacheTotals, Pet, Report, Snap } from '../types'
+import type { Bars, CacheStat, CacheTotals, Pet, Report, Snap, Week } from '../types'
 import { bandAlt, bandSvg, type CacheTimer, H, H_MINI, type PetView, tokensText } from './band'
 import { CARD_H, CARD_W, type CardData, cardAlt, cardSvg } from './card'
 import { CHANGELOG, unseenReleases } from './changelog'
 import { type Lang, type LangChoice, langFromTags, parseAppleLanguages, T, weekday } from './i18n'
 import { type Achievement, isHalloween, levelOf, NEW_PET, normalize, onTurn, threshold } from './pet'
+import { addTurn, isStale, LEDGER_PREFIX, mergeLedgers, partialSince, SINCE_KEY, sumWeek, toLedger } from './weekly'
 
 const barsAtom = atom({ plugin: 'usage-pet', key: 'bars' } as const, { from: null, to: null } as Bars)
 
@@ -28,6 +29,11 @@ const askAtom = atom({ plugin: 'usage-pet', key: 'ask' } as const, 0)
 // 有效期：订阅（有 5 小时 / 每周额度读数）约 1 小时，API 密钥 5 分钟；每次请求重新计时。
 // 从「答完」算会比真正的过期时间晚一点（有效期从最后一次请求开始算），所以界面上只到分钟
 const warmAtom = atom({ plugin: 'usage-pet', key: 'warm' } as const, 0)
+// 近 7 天用量：所有会话的账按小时合并的一份，答完一轮、会话开始时从 $.store 重新合并。
+// 留的是按小时的明细不是合计：很久不发消息时，画的时候按当前时间截，数字照样往前滚
+const weekAtom = atom({ plugin: 'usage-pet', key: 'week' } as const, { hours: {}, since: 0 } as Week)
+// 同一个会话里主对话和子代理可能同时答完：记账排队一个一个来，免得两次读写交错丢数
+let ledgerQueue: Promise<unknown> = Promise.resolve()
 const TTL_SUBSCRIPTION_MS = 60 * 60000
 const TTL_API_MS = 5 * 60000
 const ASK_DELAY_MS = EXPAND_MS + 1000
@@ -186,6 +192,63 @@ function cacheTimer(warmAt: number, bars: Bars, now: number): CacheTimer | undef
   return { remainMs: Math.min(ttlMs, warmAt + ttlMs - now), ttlMs }
 }
 
+// 这个会话自己那份账的键；拿不到会话 id（不该发生）就记在一个公共键上
+async function ledgerKey($: EngineInterface): Promise<string> {
+  try {
+    return LEDGER_PREFIX + (await $.session.id())
+  } catch {
+    return `${LEDGER_PREFIX}unknown`
+  }
+}
+
+function serially<R>(fn: () => Promise<R>): Promise<R> {
+  const run = ledgerQueue.then(fn, fn)
+  ledgerQueue = run.catch(() => undefined)
+
+  return run
+}
+
+// 一轮的用量记进这个会话的账（主对话、子代理都算）
+async function logTurn($: EngineInterface, u: ModelUsage, now: number) {
+  await serially(async () => {
+    const key = await ledgerKey($)
+    await $.store.set(key, addTurn(toLedger(await $.store.get(key)), now, u))
+    if (!(Number(await $.store.get(SINCE_KEY)) > 0)) {
+      await $.store.set(SINCE_KEY, now)
+    }
+  })
+}
+
+// 把所有会话的账加起来；8 天没记过账的别的会话顺手删掉
+async function refreshWeek($: EngineInterface, now: number) {
+  const own = await ledgerKey($)
+  const ledgers = []
+  for (const key of await $.store.keys()) {
+    if (!key.startsWith(LEDGER_PREFIX)) {
+      continue
+    }
+    const ledger = toLedger(await $.store.get(key))
+    if (key !== own && isStale(ledger, now)) {
+      await $.store.delete(key)
+    } else {
+      ledgers.push(ledger)
+    }
+  }
+  const week: Week = { hours: mergeLedgers(ledgers), since: Number(await $.store.get(SINCE_KEY)) || 0 }
+  await update($, weekAtom, () => week)
+}
+
+// 「近 7 天 8.4M tokens（…）」；还没记到账就不写
+function weekLine(week: Week, lang: Lang, now: number): string | undefined {
+  const { total } = sumWeek([week.hours], now, week.since)
+  if (total <= 0) {
+    return undefined
+  }
+  const since = partialSince(week.since, now)
+
+  return T[lang].weekTokens(tokensText(total), since ? T[lang].monthDay(since) : undefined)
+}
+
 // 终端读数：进度条颜色、重置时间（24 小时内写剩余多久，否则写周几几点）
 function termBarColor(percent: number): string {
   return percent >= 95 ? '#E5484D' : percent >= 80 ? '#E8913A' : '#3B7BF0'
@@ -244,7 +307,7 @@ async function growPet($: EngineInterface, rate: number | undefined, lang: Lang)
   }
 }
 
-async function cardData($: EngineInterface, seasonal: boolean): Promise<CardData> {
+async function cardData($: EngineInterface, seasonal: boolean, lang: Lang): Promise<CardData> {
   const r = await read($, reportAtom)
   const c = await read($, cacheAtom)
 
@@ -259,7 +322,20 @@ async function cardData($: EngineInterface, seasonal: boolean): Promise<CardData
     pet: await read($, petAtom),
     earned: r.earned as Achievement[],
     halloween: seasonal && isHalloween(new Date(await clockNow($))),
+    week: await cardWeek($, lang),
   }
+}
+
+async function cardWeek($: EngineInterface, lang: Lang): Promise<CardData['week']> {
+  const now = await clockNow($)
+  const week = await read($, weekAtom)
+  const { total } = sumWeek([week.hours], now, week.since)
+  if (total <= 0) {
+    return undefined
+  }
+  const since = partialSince(week.since, now)
+
+  return { total, since: since ? T[lang].monthDay(since) : undefined }
 }
 
 // 导出 PNG（macOS）：qlmanage 把正方形 SVG 渲染成 1200×1200，sips 从正中裁出 1200×675，
@@ -359,6 +435,11 @@ export const register: Register = (on, options) => {
       }))
     }
     await record($, toSnap(u.context, u.rateLimits))
+    try {
+      await refreshWeek($, await clockNow($))
+    } catch (err) {
+      $.ui.log(`usage-pet: 读近 7 天用量失败：${String(err)}`, { to: 'debug' })
+    }
 
     return next(e)
   })
@@ -378,6 +459,16 @@ export const register: Register = (on, options) => {
   // 每轮结束累计缓存 token（只算主循环，子代理有自己的缓存）
   on('turn.complete', async ($, e, next) => {
     const u = e.usage
+    // 近 7 天用量：主对话和子代理的每一轮都记（这里不分缓存归属，只算花了多少）
+    try {
+      const now = await clockNow($)
+      if (u) {
+        await logTurn($, u, now)
+      }
+      await refreshWeek($, now)
+    } catch (err) {
+      $.ui.log(`usage-pet: 记近 7 天用量失败：${String(err)}`, { to: 'debug' })
+    }
     if (e.agentId === undefined && u) {
       await update($, cacheAtom, c => ({
         read: c.read + u.cache_read_input_tokens,
@@ -427,14 +518,14 @@ export const register: Register = (on, options) => {
   on('command.run', { command: 'clawd-card' }, async $ => {
     const lang = await langOf($, choice)
     await $.ui.open({ id: CARD_PANE, title: T[lang].card.title })
-    const out = await exportCard($, await cardData($, seasonal), lang)
+    const out = await exportCard($, await cardData($, seasonal, lang), lang)
 
     return { text: 'path' in out ? T[lang].cardSaved(out.path) : T[lang].cardOnlyShown(out.error) }
   })
 
   on('ui.render', { component: 'Pane', requestId: CARD_PANE }, async ($, e) => {
     const lang = await langOf($, choice)
-    const data = await cardData($, seasonal)
+    const data = await cardData($, seasonal, lang)
     if (e.surface === 'terminal') {
       const { Text } = $.ui.resolve(e)
 
@@ -480,6 +571,9 @@ export const register: Register = (on, options) => {
       const width = Math.max(MIN_BAND_W, e.props.bodyColumns * PX_PER_COLUMN - 8 - BUTTON_W)
       const pinned = await read($, pinnedAtom)
       const isMini = !pinned && !(await read($, expandedAtom))
+      // 近 7 天用量只在展开时写进 Clawd 的悬停提示：收起时是一条细条，不放
+      const week = isMini ? undefined : weekLine(await read($, weekAtom), lang, now)
+      const shown = week ? { ...pet, title: `${pet.title} · ${week}` } : pet
       // 收起时按「展开」= 一直展开；展开时按「收起」= 立刻收起并回到自动模式
       // 按的那一刻再读状态，不用画的时候记下的 isMini（中间可能已经重画过）
       const toggle = async () => {
@@ -492,7 +586,7 @@ export const register: Register = (on, options) => {
       return (
         <Box flexDirection="row" alignItems="center" flexWrap="nowrap">
           <Svg
-            source={bandSvg(bars, e.props.isWorking, width, isMini, lang, pet, cacheTimer(await read($, warmAtom), bars, now))}
+            source={bandSvg(bars, e.props.isWorking, width, isMini, lang, shown, cacheTimer(await read($, warmAtom), bars, now))}
             alt={bandAlt(bars.to, e.props.isWorking, lang)}
             width={width}
             height={isMini ? H_MINI : H}

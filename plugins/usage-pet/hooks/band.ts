@@ -39,6 +39,10 @@ export type PetView = { level: number; title: string; halloween?: boolean; askAg
 const tier = (p: number): Tier => (p >= 95 ? 'danger' : p >= 80 ? 'warn' : 'ok')
 
 export function tokensText(n: number): string {
+  // 近 7 天的合计能上十亿（缓存读取占大头）
+  if (n >= 1e9) {
+    return `${+(n / 1e9).toFixed(2)}B`
+  }
   if (n >= 1e6) {
     return `${+(n / 1e6).toFixed(2)}M`
   }

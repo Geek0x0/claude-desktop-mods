@@ -11,6 +11,7 @@ A usage band above the prompt in the **Code tab of Claude Desktop**: context, 5-
 - **Four meters, one glance**: context window, 5-hour limit, weekly limit (with reset times) and cache hit rate. Hover a ring for exact numbers.
 - **Cache countdown**: next to Cache hit, how long the prompt cache stays warm after the last reply (about 1 hour on a subscription, 5 minutes on an API key). It turns amber in the last 5 minutes and says "cold" once expired.
 - **Clawd reacts**: he types on a tiny laptop while Claude works, sweats when a limit is above 90%, and puts on sunglasses when the cache hit rate is 90% or more. Hover him for hearts, click him for a flip.
+- **Last 7 days**: with the band expanded, hover Clawd for the tokens used in the last 7 days, all sessions together, subagents included; the report card shows it too. Counted by the plugin itself from 1.9.0 on.
 - **Growth**: Clawd earns XP for every reply, levels up (sprout, bow tie, cap, crown) and unlocks 8 achievements. Progress is kept across sessions.
 - **Report card**: `/clawd-card` draws a card of the session (duration, turns, tool calls, files edited, tokens, cache hit, level) and saves it as a PNG you can paste anywhere.
 - **Halloween** (Oct 25 to Nov 1): witch hat, pumpkin pail, ghost mode while Claude works, and trick-or-treat after each reply. Turn seasonal costumes off by setting `seasonal` to `off` in `/config`.
@@ -34,7 +35,7 @@ Then run `/reload-plugins` or start a new session.
 
 **Reads**: Claude Code's own usage numbers for the current session (context size, rate limits, token counts) through the plugin API; the `LANG`, `LANGUAGE`, `LC_ALL`, `LC_MESSAGES`, `OS`, `TEMP` and `TMP` environment variables (language, platform and temp folder only; no credentials). While a session runs it counts tool calls and keeps the paths of files Claude edits, only in memory, to fill in the report card's "files edited" count. Paths are never written to disk or shown on the card.
 
-**Stores** (in the plugin's local store on your machine): Clawd's XP, level, streak and achievements, and the last release-notes version you have seen.
+**Stores** (in the plugin's local store on your machine): Clawd's XP, level, streak and achievements, the last release-notes version you have seen, and token counts per session and hour for the "last 7 days" figure (four numbers per hour: uncached input, cache writes, cache reads, output; keyed by the session's id; a session's counts are deleted 8 days after its last turn). No prompts, replies or file contents.
 
 **Runs**:
 
@@ -47,7 +48,7 @@ Then run `/reload-plugins` or start a new session.
 The mod is one hooks module, `hooks/register.tsx`. Its hooks on Claude Code's own events only watch them and pass them on unchanged; it answers only its own two commands and draws only its own band and pane:
 
 - `session.start` and `session.attach`: register `/clawd` and `/clawd-card`, detect the language, read Clawd's progress from the local store, and show the release notes toast once after an update.
-- `session.measure` and `turn.complete`: read the usage numbers to redraw the band, add XP after each reply of the main conversation (not subagents), note when that reply finished for the cache countdown (kept for the session only), and start the Halloween candy animation in season.
+- `session.measure` and `turn.complete`: read the usage numbers to redraw the band, add XP after each reply of the main conversation (not subagents), add each turn's token counts (main conversation and subagents) to the hourly tally for the "last 7 days" figure, note when that reply finished for the cache countdown (kept for the session only), and start the Halloween candy animation in season.
 - `tool.call`: counts tool calls and remembers which files Edit, Write, MultiEdit and NotebookEdit touched, for the report card. It always calls `next` with the call unchanged and never denies or answers a tool call.
 - `command.run` for `/clawd` (toggle the band) and `/clawd-card` (open the card pane and export the PNG).
 - `ui.render` for the band above the prompt and the card pane.

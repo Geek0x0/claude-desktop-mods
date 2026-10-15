@@ -70,6 +70,9 @@ export const T = {
     unlocked: (name: string, how: string) => `🏅 成就解锁：${name}（${how}）`,
     askCandy: 'Clawd 想要糖果 🍬 点他一下给糖',
     petTitle: (level: number, xp: number, next: number, streak: number) => `Clawd Lv.${level} · 经验 ${xp} / ${next} · 连续 ${streak} 天`,
+    // 近 7 天用量（所有会话，含子代理）；记账不满 7 天时注明从哪天开始记
+    weekTokens: (total: string, since?: string) => `近 7 天 ${total} tokens（所有会话，含子代理${since ? `，${since}起记录` : ''}）`,
+    monthDay: (d: Date) => `${d.getMonth() + 1} 月 ${d.getDate()} 日`,
     // 战报卡
     card: {
       title: 'Clawd 战报',
@@ -79,6 +82,7 @@ export const T = {
       files: '改动文件',
       tokens: 'Tokens',
       cache: '缓存命中',
+      week: (since?: string) => `近 7 天 · 所有会话${since ? `（${since}起）` : ''}`,
       streak: (n: number) => `连续 ${n} 天`,
       xp: (xp: number, next: number) => `经验 ${xp} / ${next}`,
       earned: '本次解锁',
@@ -132,6 +136,8 @@ export const T = {
     unlocked: (name: string, how: string) => `🏅 Achievement unlocked: ${name} (${how})`,
     askCandy: 'Clawd wants candy 🍬 Click him to give some',
     petTitle: (level: number, xp: number, next: number, streak: number) => `Clawd Lv.${level} · XP ${xp} / ${next} · ${streak}-day streak`,
+    weekTokens: (total: string, since?: string) => `Last 7 days: ${total} tokens (all sessions, incl. subagents${since ? `; counting since ${since}` : ''})`,
+    monthDay: (d: Date) => `${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][d.getMonth()]} ${d.getDate()}`,
     card: {
       title: 'Clawd session report',
       duration: 'Duration',
@@ -140,6 +146,7 @@ export const T = {
       files: 'Files edited',
       tokens: 'Tokens',
       cache: 'Cache hit',
+      week: (since?: string) => `Last 7 days · all sessions${since ? ` (since ${since})` : ''}`,
       streak: (n: number) => `${n}-day streak`,
       xp: (xp: number, next: number) => `XP ${xp} / ${next}`,
       earned: 'Unlocked',

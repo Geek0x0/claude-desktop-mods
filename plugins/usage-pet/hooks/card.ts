@@ -21,6 +21,8 @@ export type CardData = {
   earned: Achievement[]
   // 万圣节装扮（巫师帽 + 南瓜桶）
   halloween?: boolean
+  // 近 7 天所有会话的合计；since = 记账不满 7 天时的开始日（已按语言写好）
+  week?: { total: number; since?: string }
 }
 
 const esc = (s: string) => s.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
@@ -42,6 +44,7 @@ const STYLE =
   `.s{font-size:11.5px;fill:#B5B2AA;font-variant-numeric:tabular-nums}` +
   `.chip{font-size:11.5px;font-weight:600;fill:#F3B18F}` +
   `.f{font-size:10.5px;fill:#6E6C66}` +
+  `.wk{font-size:12px;font-weight:700;fill:#F4F2EC;font-variant-numeric:tabular-nums}` +
   // 卡上的 Clawd 是静止的：笑脸、腮红不画；命中高就戴墨镜
   `.happy,.cheek,.shades{opacity:0}.chill .shades{opacity:1}.chill .eyes{opacity:0}`
 
@@ -96,6 +99,8 @@ export function cardSvg(data: CardData, lang: Lang, canvas: CardCanvas = 'pane')
     `<text x="268" y="56" class="h">${esc(t.title)}</text>` +
     `<text x="268" y="76" class="d">${stamp(data.now)}</text>` +
     grid +
+    // 两排数字和「本次解锁」之间：近 7 天所有会话的合计（这个会话之外的也算）
+    (data.week ? `<text x="268" y="260" class="l">${esc(t.week(data.week.since))}  <tspan class="wk">${tokensText(data.week.total)} tokens</tspan></text>` : '') +
     `<text x="268" y="292" class="l">${esc(t.earned)}</text>` +
     `<text x="268" y="312" class="chip">${earned}</text>` +
     `<text x="616" y="336" text-anchor="end" class="f">usage-pet · ${REPO}</text>`
@@ -126,5 +131,6 @@ export function cardAlt(data: CardData, lang: Lang): string {
     `${t.files} ${data.files}`,
     `${t.tokens} ${tokensText(data.tokens)}`,
     `${t.cache} ${data.cacheRate === undefined ? '—' : `${Math.round(data.cacheRate)}%`}`,
+    ...(data.week ? [`${t.week(data.week.since)} ${tokensText(data.week.total)} tokens`] : []),
   ].join(' · ')
 }

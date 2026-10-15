@@ -6,6 +6,13 @@ export type Release = { version: string; notes: Record<Lang, string[]> }
 
 export const CHANGELOG: Release[] = [
   {
+    version: '1.9.0',
+    notes: {
+      zh: ['近 7 天用了多少 tokens：信息栏展开时，鼠标放到 Clawd 身上就能看到（所有会话合计，含子代理）；/clawd-card 战报卡也多了这一行。从这个版本装上起开始记，不满 7 天时会写明从哪天开始'],
+      en: ['Tokens used in the last 7 days: hover Clawd while the band is expanded (all sessions together, subagents included); the /clawd-card report shows it too. Counting starts with this version, and until a full week has passed it says since when'],
+    },
+  },
+  {
     version: '1.8.0',
     notes: {
       zh: ['缓存倒计时：缓存命中旁边显示缓存还热多久（订阅约 1 小时、API 密钥 5 分钟，每次回复重新计时），剩 5 分钟变色，过期显示「已过期」——赶在过期前回复更省额度'],
