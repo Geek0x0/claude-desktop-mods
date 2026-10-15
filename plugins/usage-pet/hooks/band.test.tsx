@@ -43,8 +43,11 @@ test('干活时：展开和细条都有紫色像素背景，且背景在读数�
     expect(source).toContain('h2v2h-2z')
     expect(source).toContain('stop-color="#4a3f8a"')
     expect(source).toContain('stop-color="#d0b4ff"')
-    expect(source).toContain('.ultra-dither{opacity:.7}')
-    expect(source).toContain('@media (prefers-color-scheme:light){.ultra-dither{opacity:.42}}')
+    expect(source).toContain('@media (prefers-color-scheme:dark){.ultra-dither{opacity:.4}')
+    expect(source).toContain('.gauges text{paint-order:stroke;stroke:#1C1B1A;stroke-width:3px;stroke-linejoin:round}')
+    expect(source).toContain('.mlab,.sub,.pct,.dim{fill:#E5E5E5}')
+    expect(source).toContain('rx="7"')
+    expect(source).toContain('<stop offset="0" stop-color="#fff" stop-opacity="1"/>')
     expect(source).toContain('id="ultra-dither-density-mask"')
     expect(source).toContain('<g mask="url(#ultra-dither-density-mask)">')
     expect(source).toContain('id="ultra-dither-pattern-add-0"')
@@ -53,6 +56,13 @@ test('干活时：展开和细条都有紫色像素背景，且背景在读数�
     expect(source).toContain('@keyframes ultra-dither-twinkle')
     expect(source).toContain('@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}')
   }
+})
+
+test('浅色外观：工作底纹隐藏，不叠加深色描边或标签颜色', ZH, async () => {
+  const source = bandSvg(EMPTY_BARS, true, 1100)
+  expect(source).toContain('@media (prefers-color-scheme:light){.ultra-dither{display:none}}')
+  expect(source).not.toContain('@media (prefers-color-scheme:light){.gauges text{')
+  expect(source).not.toContain('@media (prefers-color-scheme:light){.mlab,.sub,.pct,.dim{')
 })
 
 test('休息时：不画紫色像素背景，SVG 保持原样', ZH, async () => {

@@ -673,14 +673,17 @@ const ditherPath = (cells: number[]) =>
   cells.map(i => `M${(i % 10) * 3} ${Math.floor(i / 10) * 3}h2v2h-2z`).join('')
 
 const DITHER_STYLE =
-  `.ultra-dither{opacity:.7}` +
-  `@media (prefers-color-scheme:light){.ultra-dither{opacity:.42}}` +
+  `@media (prefers-color-scheme:dark){` +
+  `.ultra-dither{opacity:.4}` +
+  `.gauges text{paint-order:stroke;stroke:#1C1B1A;stroke-width:3px;stroke-linejoin:round}` +
+  `.mlab,.sub,.pct,.dim{fill:#E5E5E5}` +
   `.ultra-dither .layer-0{opacity:.8;animation:ultra-dither-twinkle-0 1.2s ease-in-out -.4s infinite alternate}` +
   `.ultra-dither .layer-1{opacity:.8;animation:ultra-dither-twinkle-1 2s ease-in-out -1.1s infinite alternate}` +
   `.ultra-dither .layer-2{opacity:.8;animation:ultra-dither-twinkle-2 2.8s ease-in-out -2.2s infinite alternate}` +
   `@keyframes ultra-dither-twinkle-0{from{opacity:.6}to{opacity:1}}` +
   `@keyframes ultra-dither-twinkle-1{from{opacity:1}to{opacity:.6}}` +
-  `@keyframes ultra-dither-twinkle-2{from{opacity:.6}to{opacity:1}}`
+  `@keyframes ultra-dither-twinkle-2{from{opacity:.6}to{opacity:1}}` +
+  `}@media (prefers-color-scheme:light){.ultra-dither{display:none}}`
 
 function ditherSvg(width: number, height: number): string {
   const patterns = Array.from({ length: 3 }, (_, layer) => {
@@ -714,12 +717,13 @@ function ditherSvg(width: number, height: number): string {
     `<stop offset="50%" stop-color="#8a76e8" stop-opacity=".8"/><stop offset="75%" stop-color="#b9a3ff" stop-opacity=".9"/>` +
     `<stop offset="100%" stop-color="#d0b4ff"/></linearGradient>` +
     `<linearGradient id="ultra-dither-density" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="${width}" y2="0">` +
-    `<stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset="25%" stop-color="#fff" stop-opacity=".33"/>` +
+    `<stop offset="0" stop-color="#fff" stop-opacity="1"/><stop offset="25%" stop-color="#fff" stop-opacity=".33"/>` +
     `<stop offset="50%" stop-color="#fff" stop-opacity=".57"/><stop offset="75%" stop-color="#fff" stop-opacity=".79"/>` +
     `<stop offset="100%" stop-color="#fff"/></linearGradient>` +
     patterns + masks +
     `<mask id="ultra-dither-density-mask" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x="0" y="0" width="${width}" height="${height}"><rect width="${width}" height="${height}" fill="url(#ultra-dither-density)"/></mask>` +
-    `</defs><g class="ultra-dither">${layers}</g>`
+    `<clipPath id="ultra-dither-clip"><rect width="${width}" height="${height}" rx="7"/></clipPath>` +
+    `</defs><g class="ultra-dither" clip-path="url(#ultra-dither-clip)">${layers}</g>`
   )
 }
 
