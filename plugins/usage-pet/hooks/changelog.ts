@@ -8,8 +8,8 @@ export const CHANGELOG: Release[] = [
   {
     version: '1.10.0',
     notes: {
-      zh: ['Fable 模型每周额度：有 Fable 用量读数时，信息栏多显示一个每周额度圆环和重置时间'],
-      en: ['Fable weekly limit: when usage is available, the band adds a ring with its reset time'],
+      zh: ['Fable 模型每周额度：有 Fable 用量读数时，信息栏多显示一个每周额度圆环和重置时间', 'Claude 干活时，信息栏背后铺一层闪烁的紫色像素点阵（仅深色模式）'],
+      en: ['Fable weekly limit: when usage is available, the band adds a ring with its reset time', 'While Claude works, a twinkling purple pixel dither fills the band (dark mode only)'],
     },
   },
   {
