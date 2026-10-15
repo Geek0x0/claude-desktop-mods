@@ -6,23 +6,43 @@ import { gearOf } from './pet'
 // 桌面端任何状态变化都会重画整条、动画从头播（anthropics/claude-code#99211），
 // 所以「一次性」动画（圆环扫过、数字滚动、+N% 提示、Clawd 跳一下）只在 from ≠ to 时才写进去。
 
-export const H = 64
-// 收起后的细条高度
+export const H = 80
+// 收起后的细条高度：Clawd 10 格 × 3px，刚好容下本体；帽子等装扮可以稍微探出
 export const H_MINI = 30
 
-const U = 4 // Clawd 的一个像素 = 4px
+const U = 4.5 // Clawd 的一个像素 = 4.5px
 const CLAWD_X = 22 // 左右留白都是这么宽
-const CLAWD_W = 16 * 4 // Clawd 16 格宽，一格 4px
-const MINI_U = 2
+const CLAWD_W = 16 * U // Clawd 本体 16 格宽
+const MINI_U = 3
 const MINI_X = 14
-const MINI_Y = 5
+const MINI_Y = (H_MINI - 10 * MINI_U) / 2
 const MINI_W = 16 * MINI_U
+const MINI_LAYOUT_W = MINI_W + 10 * MINI_U // 细条里 Clawd 最多向右跑 10 格
 const MINI_BAR = 40
-const CLAWD_Y = 16
-const R = 15
+const CLAWD_Y = (H - 10 * U) / 2 + 4 // 身子仍比圆环中心低 4px
+const R = 26
+const RING_STROKE = 5
+const RING_W = 2 * R + RING_STROKE + 1
+const RING_LABEL_GAP = 7
+const RING_CX_OFFSET = RING_W / 2
+const RING_CY = H / 2
+const STACKED_RING_CY = R + 5
+const MINI_BAR_H = 6
+const MINI_BAR_Y = (H_MINI - MINI_BAR_H) / 2
+const MINI_TEXT_BASELINE = H_MINI / 2 + 4
 const C = 2 * Math.PI * R
-const DIG = 6.2
+const NUM_SIZE = 12
+const NUM_SMALL_SIZE = 10.4
+const PCT_SIZE = 8.2
+const DIG = 6.2 * (NUM_SIZE / 11)
+const PCT_SLOT = 7 * (NUM_SIZE / 11)
+const NUM_BASELINE = 3.8 * (NUM_SIZE / 11)
+const NUM_CLIP_H = NUM_SIZE
 const LINE = 14
+const LAB_SIZE = 14
+const SUB_SIZE = 12
+const MINI_LABEL_SIZE = 13
+const MINI_VALUE_SIZE = 13
 const OUT = 'cubic-bezier(.23,1,.32,1)'
 const SPRING = 'cubic-bezier(.34,1.56,.64,1)'
 // 背景透明。小窗口的配色方案和 App 不一致时，浏览器会给它垫一块不透明的底，
@@ -100,14 +120,14 @@ function textWidth(text: string, size: number): number {
 
 // 一块内容的实际宽度：圆环（含线宽）+ 间隔 + 标题、副标题、悬停时换上的详情三行里最长的那行
 // （只算副标题的话，悬停详情比副标题长就会压到分隔线、或被信息栏右边裁掉）
-// 缓存倒计时的字号：比标题（12）和副标题（10.5）都小，只当旁注
+// 缓存倒计时的字号：比标题（14）和副标题（12）都小，只当旁注
 const TIMER_SIZE = 9
 // 标题右边的缓存倒计时留宽：最长的那一档（60m / 60分 / cold / 已过期）
 let timerLang: Lang = 'zh'
 const timerWidth = (g: Gauge, size: number) =>
   g.timerMs === undefined ? 0 : 6 + Math.max(textWidth(T[timerLang].cacheLeft(60), size), textWidth(T[timerLang].cacheCold, size))
 const contentWidth = (g: Gauge) =>
-  2 * R + 4 + 10 + Math.max(textWidth(g.label, 12) + timerWidth(g, TIMER_SIZE), textWidth(g.sub, 10.5), textWidth(g.detail, 10.5))
+  RING_W + RING_LABEL_GAP + Math.max(textWidth(g.label, LAB_SIZE) + timerWidth(g, TIMER_SIZE), textWidth(g.sub, SUB_SIZE), textWidth(g.detail, SUB_SIZE))
 
 // 缓存倒计时：插件不能每分钟重画（重画会让所有动画从头播），所以把每一分钟的数字都画好，
 // 用 SMIL 按时间轮流显示：剩 m 分钟那一个在 [剩余-m 分, 剩余-(m-1) 分) 这段时间可见，最后换成「已过期」
@@ -147,12 +167,16 @@ const blockWidth = (g: Gauge, layout: Layout) =>
   layout === 'full'
     ? contentWidth(g)
     : layout === 'compact'
-      ? 2 * R + 4 + 10 + textWidth(g.label, 12) + timerWidth(g, TIMER_SIZE)
+      ? RING_W + RING_LABEL_GAP + textWidth(g.label, LAB_SIZE) + timerWidth(g, TIMER_SIZE)
       : layout === 'stacked'
-        ? Math.max(2 * R + 4, textWidth(g.label, STACKED_LABEL))
-        : 2 * R + 4
+        ? Math.max(RING_W, textWidth(g.label, STACKED_LABEL))
+        : RING_W
 // 每种排法要求的最小间距：标题在圆环下面、或只剩圆环时可以挨得更近
 const MIN_GAP: Record<Layout, number> = { full: 14, compact: 14, stacked: 10, rings: 6 }
+
+// 最窄排法只留圆环；Clawd 按本体的 16 格计宽，笔记本和动效伸进间距
+export const MIN_BAND_W = Math.ceil(2 * CLAWD_X + CLAWD_W + 4 * RING_W + 4 * MIN_GAP.rings)
+export const MIN_BAND_W_WITH_FABLE = Math.ceil(2 * CLAWD_X + CLAWD_W + 5 * RING_W + 5 * MIN_GAP.rings)
 
 export function pickLayout(gauges: { label: string; sub: string; detail: string }[], width: number): Layout {
   const need = (layout: Layout) =>
@@ -181,15 +205,15 @@ const off = (p: number | undefined) => (C * (1 - Math.min(100, Math.max(0, p ?? 
 // 数字滚轮：每位一条 0-9 的竖条，裁成一格高，从旧数字滚到新数字（前导空位记作 10）
 function odometer(g: Gauge, i: number, cx: number, cy: number, isChanged: boolean, css: string[]): string {
   if (g.to === undefined) {
-    return `<text x="${cx}" y="${cy + 3.8}" text-anchor="middle" class="num dim">—</text>`
+    return `<text x="${cx}" y="${cy + NUM_BASELINE}" text-anchor="middle" class="num dim">—</text>`
   }
   const s = String(Math.round(Math.min(999, Math.max(0, g.to))))
   const f = g.from === undefined ? '' : String(Math.round(Math.min(999, Math.max(0, g.from))))
   const fromDigits = f.padStart(s.length, ' ').slice(-s.length)
   // 三位数（100%）放不进圆环：去掉 %，数字间距收紧
   const isWide = s.length >= 3
-  const dig = isWide ? 5.6 : DIG
-  const width = s.length * dig + (isWide ? 0 : 7)
+  const dig = isWide ? 5.6 * (NUM_SIZE / 11) : DIG
+  const width = s.length * dig + (isWide ? 0 : PCT_SLOT)
   const left = cx - width / 2
 
   const digits = [...s]
@@ -206,23 +230,23 @@ function odometer(g: Gauge, i: number, cx: number, cy: number, isChanged: boolea
       }
       const strip = Array.from(
         { length: 10 },
-        (_, n) => `<text x="${(x + dig / 2).toFixed(1)}" y="${cy + 3.8 + n * LINE}" text-anchor="middle" class="num${isWide ? ' sm' : ''}">${n}</text>`,
+        (_, n) => `<text x="${(x + dig / 2).toFixed(1)}" y="${cy + NUM_BASELINE + n * LINE}" text-anchor="middle" class="num${isWide ? ' sm' : ''}">${n}</text>`,
       ).join('')
 
       return (
-        `<clipPath id="c${name}"><rect x="${(x - 1).toFixed(1)}" y="${cy - 5.4}" width="${dig + 2}" height="11"/></clipPath>` +
+        `<clipPath id="c${name}"><rect x="${(x - 1).toFixed(1)}" y="${cy - NUM_CLIP_H / 2}" width="${dig + 2}" height="${NUM_CLIP_H}"/></clipPath>` +
         `<g clip-path="url(#c${name})"><g class="${name}" style="transform:translateY(${-d * LINE}px)">${strip}</g></g>`
       )
     })
     .join('')
 
-  return digits + (isWide ? '' : `<text x="${(left + s.length * dig + 0.5).toFixed(1)}" y="${cy + 3.8}" class="pct">%</text>`)
+  return digits + (isWide ? '' : `<text x="${(left + s.length * dig + 0.5).toFixed(1)}" y="${cy + NUM_BASELINE}" class="pct">%</text>`)
 }
 
 function gauge(g: Gauge, i: number, x: number, w: number, isChanged: boolean, isFirst: boolean, css: string[], layout: Layout = 'full', lang: Lang = 'zh'): string {
   // stacked：圆环在这一块里居中、往上挪，给下面的小字标题让位
-  const cx = layout === 'stacked' ? x + w / 2 : x + R + 2
-  const cy = layout === 'stacked' ? 25 : 32
+  const cx = layout === 'stacked' ? x + w / 2 : x + RING_CX_OFFSET
+  const cy = layout === 'stacked' ? STACKED_RING_CY : RING_CY
   const t = g.tier ?? tier(g.to ?? 0)
   const visible = (g.to ?? 0) > 0.4
   const arcClass = `arc${g.id}`
@@ -241,7 +265,8 @@ function gauge(g: Gauge, i: number, x: number, w: number, isChanged: boolean, is
     if (delta !== 0) {
       // 窄排法里旁边没有标题的位置，+N% 贴着圆环右上角
       const chipX = layout === 'full' || layout === 'compact' ? cx + R + 10 : cx + R - 2
-      chip = `<text x="${chipX}" y="${layout === 'full' || layout === 'compact' ? 15 : 10}" class="chip ${t}">${delta > 0 ? '+' : ''}${delta}%</text>`
+      const chipY = layout === 'full' || layout === 'compact' ? cy - R + 2 : layout === 'stacked' ? 14 : 10
+      chip = `<text x="${chipX}" y="${chipY}" class="chip ${t}">${delta > 0 ? '+' : ''}${delta}%</text>`
     }
   }
 
@@ -252,22 +277,22 @@ function gauge(g: Gauge, i: number, x: number, w: number, isChanged: boolean, is
   return (
     `<g class="g${isFirst ? ' enter' : ''}" style="animation-delay:${(i * 0.06).toFixed(2)}s">` +
     `<title>${g.title}</title>` +
-    `<rect x="${x}" y="6" width="${w.toFixed(1)}" height="52" fill="transparent"/>` +
+    `<rect x="${x}" y="0" width="${w.toFixed(1)}" height="${H}" fill="transparent"/>` +
     `<g class="ring">` +
     `<circle cx="${cx}" cy="${cy}" r="${R}" class="track"/>` +
     `<g transform="rotate(-90 ${cx} ${cy})">${arc(`glow ${t}`)}${arc('arc')}</g>` +
     odometer(g, i, cx, cy, isChanged, css) +
     `</g>` +
     (layout === 'full'
-      ? `<text x="${cx + R + 10}" y="29" class="lab">${g.label}</text>` +
-        (g.timerMs === undefined ? '' : cacheTimerSvg(cx + R + 10 + textWidth(g.label, 12) + 6, 29, g.timerMs, lang, TIMER_SIZE, 12)) +
-        `<text x="${cx + R + 10}" y="43" class="sub">${g.sub}</text>` +
-        `<text x="${cx + R + 10}" y="43" class="sub2">${g.detail}</text>`
+      ? `<text x="${cx + R + 10}" y="${cy - 3}" class="lab">${g.label}</text>` +
+        (g.timerMs === undefined ? '' : cacheTimerSvg(cx + R + 10 + textWidth(g.label, LAB_SIZE) + 6, cy - 3, g.timerMs, lang, TIMER_SIZE, LAB_SIZE)) +
+        `<text x="${cx + R + 10}" y="${cy + 11}" class="sub">${g.sub}</text>` +
+        `<text x="${cx + R + 10}" y="${cy + 11}" class="sub2">${g.detail}</text>`
       : layout === 'compact'
-        ? `<text x="${cx + R + 10}" y="36" class="lab">${g.label}</text>` +
-          (g.timerMs === undefined ? '' : cacheTimerSvg(cx + R + 10 + textWidth(g.label, 12) + 6, 36, g.timerMs, lang, TIMER_SIZE, 12))
+        ? `<text x="${cx + R + 10}" y="${cy + 4}" class="lab">${g.label}</text>` +
+          (g.timerMs === undefined ? '' : cacheTimerSvg(cx + R + 10 + textWidth(g.label, LAB_SIZE) + 6, cy + 4, g.timerMs, lang, TIMER_SIZE, LAB_SIZE))
         : layout === 'stacked'
-          ? `<text x="${cx}" y="56" text-anchor="middle" class="lab stk">${g.label}</text>`
+          ? `<text x="${cx}" y="${H - 7}" text-anchor="middle" class="lab stk">${g.label}</text>`
           : '') +
     chip +
     `</g>`
@@ -381,7 +406,7 @@ export function clawdBody(isStressed: boolean, level = 1, halloween = false, pai
   return body
 }
 
-// mini：收起状态下的半尺寸 Clawd，不搬笔记本，干活时在细条上来回小跑
+// mini：收起状态下的 Clawd 不搬笔记本，干活时在细条上来回小跑
 // ───────── 万圣节 ─────────
 
 // 干活时飘的糖果（代替 { } </> ✓）：以糖果中心为原点，约 2 格宽
@@ -555,14 +580,14 @@ function clawd(isWorking: boolean, isStressed: boolean, didChange: boolean, mini
 
 const STYLE =
   `:root{color-scheme:light dark;background:transparent}text{font-family:-apple-system,"SF Pro Text","PingFang SC","Segoe UI","Microsoft YaHei UI","Microsoft YaHei",sans-serif}` +
-  `.num{font-size:11px;font-weight:700;fill:#F4F2EC;font-variant-numeric:tabular-nums}.num.dim{fill:#6E6C66}.num.sm{font-size:9.5px}` +
-  `.pct{font-size:7.5px;font-weight:600;fill:#9C9A93}` +
-  `.lab{font-size:12px;font-weight:500;fill:#ECEAE4;letter-spacing:.2px}.lab.stk{font-size:${STACKED_LABEL}px;letter-spacing:0}` +
-  `.sub,.sub2{font-size:10.5px;fill:#8C8A84;font-variant-numeric:tabular-nums;transition:opacity .22s ease,filter .22s ease}` +
+  `.num{font-size:${NUM_SIZE}px;font-weight:700;fill:#F4F2EC;font-variant-numeric:tabular-nums}.num.dim{fill:#6E6C66}.num.sm{font-size:${NUM_SMALL_SIZE}px}` +
+  `.pct{font-size:${PCT_SIZE}px;font-weight:600;fill:#9C9A93}` +
+  `.lab{font-size:${LAB_SIZE}px;font-weight:500;fill:#ECEAE4;letter-spacing:.2px}.lab.stk{font-size:${STACKED_LABEL}px;letter-spacing:0}` +
+  `.sub,.sub2{font-size:${SUB_SIZE}px;fill:#8C8A84;font-variant-numeric:tabular-nums;transition:opacity .22s ease,filter .22s ease}` +
   `.sub2{opacity:0;filter:blur(2px);fill:#C9C6BE}` +
-  `.track{fill:none;stroke:#2C2B29;stroke-width:3}` +
-  `.arc,.glow{fill:none;stroke-width:3;stroke-linecap:round}` +
-  `.glow{stroke-width:4;filter:url(#blur);opacity:.5}.glow.danger{animation:dpulse 1.6s ease-in-out infinite}` +
+  `.track{fill:none;stroke:#2C2B29;stroke-width:${RING_STROKE}}` +
+  `.arc,.glow{fill:none;stroke-width:${RING_STROKE};stroke-linecap:round}` +
+  `.glow{stroke-width:${RING_STROKE + 1};filter:url(#blur);opacity:.5}.glow.danger{animation:dpulse 1.6s ease-in-out infinite}` +
   `.ring{transform-box:fill-box;transform-origin:center;transition:transform .4s ${SPRING}}` +
   `.g{transform-box:fill-box}.g.enter{animation:rise .55s ${OUT} both}` +
   `.chip{font-size:9.5px;font-weight:700;opacity:0;animation:chip 1.8s ${OUT} .25s both}` +
@@ -587,7 +612,7 @@ const STYLE =
   `.working .legA,.working .legB{opacity:0}` +
   `.pace{transform-origin:center}.mini.working .pace{animation:pace 3.2s ease-in-out infinite}` +
   `.mini.working .legA,.mini.working .legB{opacity:1}.mini.working .legA{animation:step .3s ease-in-out infinite alternate}.mini.working .legB{animation:step .3s ease-in-out .15s infinite alternate}` +
-  `.mlab{font-size:11px;fill:#8C8A84}.mval{font-size:11.5px;font-weight:700;fill:#ECEAE4;font-variant-numeric:tabular-nums}.mtrack{fill:#2C2B29}.mfill.danger{animation:mpulse 1.6s ease-in-out infinite}` +
+  `.mlab{font-size:${MINI_LABEL_SIZE}px;fill:#8C8A84}.mval{font-size:${MINI_VALUE_SIZE}px;font-weight:700;fill:#ECEAE4;font-variant-numeric:tabular-nums}.mtrack{fill:#2C2B29}.mfill.danger{animation:mpulse 1.6s ease-in-out infinite}` +
   `@keyframes pace{0%{transform:none}46%{transform:translateX(10px)}50%{transform:translateX(10px) scaleX(-1)}96%{transform:scaleX(-1)}100%{transform:none}}` +
   `@keyframes mpulse{0%,100%{opacity:.6}50%{opacity:1}}` +
   `@keyframes step{from{transform:none}to{transform:translateY(-.9px)}}` +
@@ -736,16 +761,16 @@ function miniSvg(gauges: Gauge[], isWorking: boolean, isStressed: boolean, width
     gauges.map(g => {
       const value = g.to === undefined ? '—' : `${Math.round(g.to)}%`
       const label = isShort ? (g.short ?? g.label) : g.label
-      const labelW = showLabel ? textWidth(label, 11) : 0
-      const valueW = textWidth(value, 11.5) * 1.05
+      const labelW = showLabel ? textWidth(label, MINI_LABEL_SIZE) : 0
+      const valueW = textWidth(value, MINI_VALUE_SIZE) * 1.05
 
       return { g, value, label, labelW, valueW, showBar, showLabel, w: (showLabel ? labelW + 8 : 0) + (showBar ? MINI_BAR + 8 : 0) + valueW + timerWidth(g, TIMER_SIZE) }
     })
   // 间距至少 24px：Clawd 干活时会往右跑 20px，不能撞上第一项
-  const fits = (list: { w: number }[]) => 2 * MINI_X + MINI_W + list.reduce((a, b) => a + b.w, 0) + list.length * 24 <= width
+  const fits = (list: { w: number }[]) => 2 * MINI_X + MINI_LAYOUT_W + list.reduce((a, b) => a + b.w, 0) + list.length * 24 <= width
   const items = [measure(true, true), measure(false, true), measure(false, true, true)].find(fits) ?? measure(false, false)
-  const gap = Math.max(24, (width - 2 * MINI_X - MINI_W - items.reduce((a, b) => a + b.w, 0)) / items.length)
-  let x = MINI_X + MINI_W + gap
+  const gap = Math.max(24, (width - 2 * MINI_X - MINI_LAYOUT_W - items.reduce((a, b) => a + b.w, 0)) / items.length)
+  let x = MINI_X + MINI_LAYOUT_W + gap
   const parts: string[] = []
   items.forEach(({ g, value, label, labelW, valueW, showBar, showLabel, w }) => {
     const t = g.tier ?? tier(g.to ?? 0)
@@ -753,14 +778,14 @@ function miniSvg(gauges: Gauge[], isWorking: boolean, isStressed: boolean, width
     const fill = ((Math.min(100, Math.max(0, g.to ?? 0)) / 100) * MINI_BAR).toFixed(1)
     parts.push(
       `<g><title>${g.title}</title>` +
-        `<rect x="${x.toFixed(1)}" y="2" width="${w.toFixed(1)}" height="26" fill="transparent"/>` +
-        (showLabel ? `<text x="${x.toFixed(1)}" y="19" class="mlab">${label}</text>` : '') +
-        (showBar ? `<rect x="${barX.toFixed(1)}" y="13.5" width="${MINI_BAR}" height="3" rx="1.5" class="mtrack"/>` : '') +
+        `<rect x="${x.toFixed(1)}" y="0" width="${w.toFixed(1)}" height="${H_MINI}" fill="transparent"/>` +
+        (showLabel ? `<text x="${x.toFixed(1)}" y="${MINI_TEXT_BASELINE}" class="mlab">${label}</text>` : '') +
+        (showBar ? `<rect x="${barX.toFixed(1)}" y="${MINI_BAR_Y}" width="${MINI_BAR}" height="${MINI_BAR_H}" rx="${MINI_BAR_H / 2}" class="mtrack"/>` : '') +
         (showBar && (g.to ?? 0) > 0.4
-          ? `<rect x="${barX.toFixed(1)}" y="13.5" width="${fill}" height="3" rx="1.5" fill="url(#grad-${t})" class="mfill ${t}"/>`
+          ? `<rect x="${barX.toFixed(1)}" y="${MINI_BAR_Y}" width="${fill}" height="${MINI_BAR_H}" rx="${MINI_BAR_H / 2}" fill="url(#grad-${t})" class="mfill ${t}"/>`
           : '') +
-        `<text x="${(barX + (showBar ? MINI_BAR + 8 : 0)).toFixed(1)}" y="19" class="mval">${value}</text>` +
-        (g.timerMs === undefined ? '' : cacheTimerSvg(barX + (showBar ? MINI_BAR + 8 : 0) + valueW + 6, 19, g.timerMs, lang, TIMER_SIZE, 11.5)) +
+        `<text x="${(barX + (showBar ? MINI_BAR + 8 : 0)).toFixed(1)}" y="${MINI_TEXT_BASELINE}" class="mval">${value}</text>` +
+        (g.timerMs === undefined ? '' : cacheTimerSvg(barX + (showBar ? MINI_BAR + 8 : 0) + valueW + 6, MINI_TEXT_BASELINE, g.timerMs, lang, TIMER_SIZE, MINI_VALUE_SIZE)) +
         `</g>`,
     )
     x += w + gap
@@ -872,7 +897,7 @@ export function bandSvg(bars: Bars, isWorking: boolean, width: number, mini = fa
     .map(i => {
       const mid = (xs[i] - gap / 2).toFixed(1)
 
-      return `<line x1="${mid}" y1="18" x2="${mid}" y2="46" class="sep"/>`
+      return `<line x1="${mid}" y1="${RING_CY - R + 1}" x2="${mid}" y2="${RING_CY + R - 1}" class="sep"/>`
     })
     .join('')
 

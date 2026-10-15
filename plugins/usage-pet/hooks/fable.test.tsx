@@ -1,7 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 
 import type { Bars } from '../types'
-import { bandAlt, bandSvg } from './band'
+import { bandAlt, bandSvg, MIN_BAND_W, MIN_BAND_W_WITH_FABLE } from './band'
 import { CHANGELOG } from './changelog'
 
 const gaugeCount = (svg: string) => svg.match(/<g class="g(?: enter)?"/g)?.length ?? 0
@@ -19,18 +19,18 @@ test('Fable 每周额度排在每周额度后作为第五个圆环，并出现�
       cache: { rate: 92, read: 900, write: 50, fresh: 50 },
     },
   } as unknown as Bars
-  const svg = bandSvg(bars, false, 308, false, 'en')
+  const svg = bandSvg(bars, false, MIN_BAND_W_WITH_FABLE, false, 'en')
 
   expect(gaugeCount(svg)).toBe(5)
-  const trackXs = [...svg.matchAll(/<circle cx="([\d.]+)" cy="32" r="15" class="track"\/>/g)].map(match => Number(match[1]))
+  const trackXs = [...svg.matchAll(/<circle cx="([\d.]+)" cy="40" r="26" class="track"\/>/g)].map(match => Number(match[1]))
   expect(trackXs).toHaveLength(5)
-  expect(trackXs[4] + 15).toBeLessThanOrEqual(308 - 22)
+  expect(trackXs[4] + 28.5).toBeLessThanOrEqual(MIN_BAND_W_WITH_FABLE - 22)
   expect(svg.indexOf('<title>Weekly 40%')).toBeLessThan(svg.indexOf('<title>Fable weekly 28%'))
-  expect(bandSvg(bars, false, 308, true, 'en')).toContain('<title>Fable weekly 28%')
+  expect(bandSvg(bars, false, MIN_BAND_W_WITH_FABLE, true, 'en')).toContain('<title>Fable weekly 28%')
   expect(bandAlt(bars.to, false, 'en')).toBe('Context 20%, 5-hour 30%, Weekly 40%, Fable weekly 28%, Cache hit 92%; Claude is resting')
 
   const stressed = { ...bars, to: { ...bars.to, fable: { percent: 90 } } }
-  expect(bandSvg(stressed, false, 308, false, 'en')).toContain('class="clawd stressed"')
+  expect(bandSvg(stressed, false, MIN_BAND_W_WITH_FABLE, false, 'en')).toContain('class="clawd stressed"')
 })
 
 test('没有 Fable 时保持原有四个圆环和 alt 文本', () => {
@@ -122,7 +122,7 @@ test('session.start 读取大小写不敏感的 Fable 每周额度，后续用�
   expect(await terminal.find({ type: 'Text', text: '31%' })).toBeDefined()
 
   const narrow = await $.ui.mount(NARROW_BAND)
-  expect((await narrow.findAll({ type: 'Svg' }))[0].props?.width).toBe(308)
+  expect((await narrow.findAll({ type: 'Svg' }))[0].props?.width).toBe(MIN_BAND_W_WITH_FABLE)
 })
 
 test('没有第一方授权时跳过 Fable 请求，普通信息栏仍正常显示', { options: { language: 'en' } }, async ($, on) => {
@@ -131,7 +131,7 @@ test('没有第一方授权时跳过 Fable 请求，普通信息栏仍正常显�
   const ui = await $.ui.mount(NARROW_BAND)
   const svg = (await ui.findAll({ type: 'Svg' }))[0]
   expect(network.fetches).toBe(0)
-  expect(svg.props?.width).toBe(270)
+  expect(svg.props?.width).toBe(MIN_BAND_W)
   expect(gaugeCount(String(svg.props?.source))).toBe(4)
   expect(String(svg.props?.alt)).not.toContain('Fable')
 })

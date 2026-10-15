@@ -6,6 +6,13 @@ export type Release = { version: string; notes: Record<Lang, string[]> }
 
 export const CHANGELOG: Release[] = [
   {
+    version: '1.11.0',
+    notes: {
+      zh: ['信息栏放大：圆环更大更粗，标签和百分比字号加大，Clawd 也长大了；收起的细条进度条加粗'],
+      en: ['Bigger band: larger, thicker rings, bigger labels and percentages, a bigger Clawd, and thicker bars on the slim strip'],
+    },
+  },
+  {
     version: '1.10.0',
     notes: {
       zh: ['Fable 模型每周额度：有 Fable 用量读数时，信息栏多显示一个每周额度圆环和重置时间', 'Claude 干活时，信息栏背后铺一层闪烁的紫色像素点阵（仅深色模式）'],

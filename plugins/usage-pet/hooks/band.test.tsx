@@ -1,5 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
-import { bandSvg } from './band'
+
+import type { Bars } from '../types'
+import { bandSvg, H, H_MINI, MIN_BAND_W, MIN_BAND_W_WITH_FABLE } from './band'
 
 // 原有用例都按中文界面断言：显式指定 /config 的 language = zh
 const ZH = { options: { language: 'zh' } }
@@ -34,6 +36,7 @@ function fingerprint(source: string): number {
 test('干活时：展开和细条都有紫色像素背景，且背景在读数和 Clawd 之前', ZH, async () => {
   for (const mini of [false, true]) {
     const source = bandSvg(EMPTY_BARS, true, 1100, mini)
+    const height = mini ? H_MINI : H
     const background = source.indexOf('class="ultra-dither"')
     expect(background).toBeGreaterThan(-1)
     expect(background).toBeLessThan(source.indexOf('<g class="gauges">'))
@@ -51,11 +54,51 @@ test('干活时：展开和细条都有紫色像素背景，且背景在读数�
     expect(source).toContain('id="ultra-dither-density-mask"')
     expect(source).toContain('<g mask="url(#ultra-dither-density-mask)">')
     expect(source).toContain('id="ultra-dither-pattern-add-0"')
+    expect(source).toContain(`viewBox="0 0 1100 ${height}" width="1100" height="${height}"`)
+    expect(source).toContain(`maskContentUnits="userSpaceOnUse" x="0" y="0" width="1100" height="${height}"`)
     const patterns = [...source.matchAll(/<pattern\b[\s\S]*?<\/pattern>/g)].map(match => match[0])
     expect(patterns.join('')).not.toContain('ultra-dither-density')
     expect(source).toContain('@keyframes ultra-dither-twinkle')
     expect(source).toContain('@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}')
   }
+})
+
+test('圆环和细条：展开尺寸、描边、文字与进度条都按新比例绘制', ZH, async () => {
+  const bars = {
+    from: null,
+    to: {
+      contextPercent: 42,
+      contextTokens: 84000,
+      contextWindow: 200000,
+      session: { percent: 8 },
+      weekly: { percent: 63 },
+      cache: { rate: 92, read: 9, write: 1, fresh: 0 },
+    },
+  } as unknown as Bars
+  const expanded = bandSvg(bars, false, 1100)
+  const mini = bandSvg(bars, false, 1100, true)
+
+  expect(H).toBe(80)
+  expect(H_MINI).toBe(30)
+  expect(expanded).toContain('r="26" class="track"')
+  expect(expanded).toContain('.track{fill:none;stroke:#2C2B29;stroke-width:5}')
+  expect(expanded).toContain('.arc,.glow{fill:none;stroke-width:5;stroke-linecap:round}')
+  expect(expanded).toContain('.glow{stroke-width:6;filter:url(#blur);opacity:.5}')
+  expect(expanded).toContain('.num{font-size:12px;font-weight:700')
+  expect(expanded).toContain('.num.sm{font-size:10.4px}')
+  expect(expanded).toContain('.pct{font-size:8.2px;font-weight:600')
+  expect(expanded).toContain('.lab{font-size:14px;font-weight:500')
+  expect(expanded).toContain('.sub,.sub2{font-size:12px;')
+  expect(expanded).toContain('translate(22 21.5) scale(4.5)')
+  expect(mini).toContain('.mlab{font-size:13px;')
+  expect(mini).toContain('.mval{font-size:13px;')
+  expect(mini).toContain('y="12" width="40" height="6" rx="3" class="mtrack"')
+  expect(mini).toMatch(/y="12" width="[\d.]+" height="6" rx="3" fill="url\(#grad-/)
+  expect(mini).toContain('y="19" class="mlab"')
+  expect(mini).toContain('y="19" class="mval"')
+  expect(mini).toContain('translate(14 0) scale(3)')
+  expect(MIN_BAND_W).toBe(372)
+  expect(MIN_BAND_W_WITH_FABLE).toBe(436)
 })
 
 test('浅色外观：工作底纹隐藏，不叠加深色描边或标签颜色', ZH, async () => {
@@ -68,8 +111,8 @@ test('浅色外观：工作底纹隐藏，不叠加深色描边或标签颜色',
 test('休息时：不画紫色像素背景，SVG 保持原样', ZH, async () => {
   const source = bandSvg(EMPTY_BARS, false, 1100)
   expect(source).not.toContain('ultra-dither')
-  expect(source.length).toBe(18549)
-  expect(fingerprint(source)).toBe(3976551832)
+  expect(source.length).toBe(18967)
+  expect(fingerprint(source)).toBe(2498379622)
 })
 
 test('干活时：1100px 信息栏的 SVG 源码远低于宿主限制', ZH, async () => {
@@ -100,10 +143,10 @@ test('桌面：一张显式宽高、自带底色的 SVG；变化时有扫环、�
   expect(await ui.findAll({ type: 'Svg' })).toHaveLength(1)
   const first = await svgOf(ui)
   expect(first.props?.width).toBe(1068)
-  expect(first.props?.height).toBe(64)
+  expect(first.props?.height).toBe(H)
   expect(first.props?.isInteractive).toBe(true)
   // 首次出现：圆环从空扫入、依次入场
-  expect(String(first.props?.source)).toContain('@keyframes arcc{from{stroke-dashoffset:94.25}')
+  expect(String(first.props?.source)).toContain('@keyframes arcc{from{stroke-dashoffset:163.36}')
   expect(String(first.props?.source)).toContain('class="g enter"')
 
   await clock.advance(1400)
@@ -192,10 +235,10 @@ test('排布均匀：左右留白相等，Clawd 与四块之间五段间距相�
   await $.session.measure(measure(42, 8, 63))
   const ui = await $.ui.mount({ ...BAND(false), surface: 'desktop' })
   const src = String((await svgOf(ui)).props?.source)
-  const blocks = [...src.matchAll(/<rect x="([\d.]+)" y="6" width="([\d.]+)" height="52" fill="transparent"\/>/g)].map(m => [Number(m[1]), Number(m[2])])
+  const blocks = [...src.matchAll(new RegExp(`<rect x="([\\d.]+)" y="0" width="([\\d.]+)" height="${H}" fill="transparent"\\/>`, 'g'))].map(m => [Number(m[1]), Number(m[2])])
   expect(blocks).toHaveLength(4)
   const near = (a: number, b: number) => Math.abs(a - b) < 0.6
-  const clawdRight = 22 + 64
+  const clawdRight = 22 + 16 * 4.5
   const gaps = [blocks[0][0] - clawdRight, ...[1, 2, 3].map(i => blocks[i][0] - (blocks[i - 1][0] + blocks[i - 1][1]))]
   for (const g of gaps) expect(near(g, gaps[0])).toBe(true)
   // 右边留白 = 左边留白（22）
@@ -224,17 +267,17 @@ test('折叠：数据刷新展开 5 秒后收成细条；按钮和 /clawd 切换
   const ui = await $.ui.mount({ ...BAND(false), surface: 'desktop' })
 
   // 刚刷新：展开
-  expect((await svgOf(ui)).props?.height).toBe(64)
+  expect((await svgOf(ui)).props?.height).toBe(H)
   expect((await ui.find({ key: 'toggle' }))?.props?.label).toBe('▼')
 
   // 4.9 秒还展开着，5 秒后收成细条
   await clock.advance(4900)
   await ui.redraw()
-  expect((await svgOf(ui)).props?.height).toBe(64)
+  expect((await svgOf(ui)).props?.height).toBe(H)
   await clock.advance(200)
   await ui.redraw()
   const mini = await svgOf(ui)
-  expect(mini.props?.height).toBe(30)
+  expect(mini.props?.height).toBe(H_MINI)
   expect(String(mini.props?.source)).toContain(' mini"')
   expect(String(mini.props?.source)).toContain('class="mlab">缓存命中')
   // 细条也跟着 App 外观走
@@ -246,29 +289,29 @@ test('折叠：数据刷新展开 5 秒后收成细条；按钮和 /clawd 切换
   await ui.press({ key: 'toggle' })
   await clock.advance(20000)
   await ui.redraw()
-  expect((await svgOf(ui)).props?.height).toBe(64)
+  expect((await svgOf(ui)).props?.height).toBe(H)
 
   // 按「收起」→ 立刻收起
   await ui.press({ key: 'toggle' })
   await ui.redraw()
-  expect((await svgOf(ui)).props?.height).toBe(30)
+  expect((await svgOf(ui)).props?.height).toBe(H_MINI)
 
   // 新数据来了：自动展开，5 秒后又收
   await $.session.measure(measure(57, 8, 63))
   await ui.redraw()
-  expect((await svgOf(ui)).props?.height).toBe(64)
+  expect((await svgOf(ui)).props?.height).toBe(H)
   await clock.advance(5100)
   await ui.redraw()
-  expect((await svgOf(ui)).props?.height).toBe(30)
+  expect((await svgOf(ui)).props?.height).toBe(H_MINI)
 
   // /clawd：切到一直展开，再切回来
   await $.command.run({ command: 'clawd', args: '' } as never)
   await clock.advance(20000)
   await ui.redraw()
-  expect((await svgOf(ui)).props?.height).toBe(64)
+  expect((await svgOf(ui)).props?.height).toBe(H)
   await $.command.run({ command: 'clawd', args: '' } as never)
   await ui.redraw()
-  expect((await svgOf(ui)).props?.height).toBe(30)
+  expect((await svgOf(ui)).props?.height).toBe(H_MINI)
 })
 
 test('细条排布均匀：左右留白相等、Clawd 与四项之间间距相等', ZH, async ($, on) => {
@@ -279,10 +322,10 @@ test('细条排布均匀：左右留白相等、Clawd 与四项之间间距相�
   await clock.advance(5100)
   await ui.redraw()
   const src = String((await svgOf(ui)).props?.source)
-  const items = [...src.matchAll(/<rect x="([\d.]+)" y="2" width="([\d.]+)" height="26" fill="transparent"\/>/g)].map(m => [Number(m[1]), Number(m[2])])
+  const items = [...src.matchAll(new RegExp(`<rect x="([\\d.]+)" y="0" width="([\\d.]+)" height="${H_MINI}" fill="transparent"\\/>`, 'g'))].map(m => [Number(m[1]), Number(m[2])])
   expect(items).toHaveLength(4)
   const near = (a: number, b: number) => Math.abs(a - b) < 0.6
-  const gaps = [items[0][0] - (14 + 32), ...[1, 2, 3].map(i => items[i][0] - (items[i - 1][0] + items[i - 1][1]))]
+  const gaps = [items[0][0] - (14 + 26 * 3), ...[1, 2, 3].map(i => items[i][0] - (items[i - 1][0] + items[i - 1][1]))]
   for (const g of gaps) expect(near(g, gaps[0])).toBe(true)
   expect(near(1068 - (items[3][0] + items[3][1]), 14)).toBe(true)
 })
@@ -297,10 +340,10 @@ test('连续刷新：只认最后一次的 5 秒，早先的定时器不会提�
   // 第一次刷新的定时器在第 5 秒到期；第二次在第 8 秒。第 5.5 秒应该还展开着
   await clock.advance(2500)
   await ui.redraw()
-  expect((await svgOf(ui)).props?.height).toBe(64)
+  expect((await svgOf(ui)).props?.height).toBe(H)
   await clock.advance(2600)
   await ui.redraw()
-  expect((await svgOf(ui)).props?.height).toBe(30)
+  expect((await svgOf(ui)).props?.height).toBe(H_MINI)
 })
 
 // ───────── 更新提示 ─────────
@@ -436,9 +479,9 @@ test('英文界面：四块仍然左右留白相等、间距相等', EN, async (
   await $.session.measure(measure(42, 8, 63))
   const ui = await $.ui.mount({ ...BAND(false), surface: 'desktop' })
   const src = String((await svgOf(ui)).props?.source)
-  const blocks = [...src.matchAll(/<rect x="([\d.]+)" y="6" width="([\d.]+)" height="52" fill="transparent"\/>/g)].map(m => [Number(m[1]), Number(m[2])])
+  const blocks = [...src.matchAll(new RegExp(`<rect x="([\\d.]+)" y="0" width="([\\d.]+)" height="${H}" fill="transparent"\\/>`, 'g'))].map(m => [Number(m[1]), Number(m[2])])
   const near = (a: number, b: number) => Math.abs(a - b) < 0.6
-  const gaps = [blocks[0][0] - (22 + 64), ...[1, 2, 3].map(i => blocks[i][0] - (blocks[i - 1][0] + blocks[i - 1][1]))]
+  const gaps = [blocks[0][0] - (22 + 16 * 4.5), ...[1, 2, 3].map(i => blocks[i][0] - (blocks[i - 1][0] + blocks[i - 1][1]))]
   for (const g of gaps) expect(near(g, gaps[0])).toBe(true)
   expect(near(1068 - (blocks[3][0] + blocks[3][1]), 22)).toBe(true)
 })
@@ -573,13 +616,13 @@ test('悬停换上的详情（如「84,000 tokens」）比副标题长时，这�
   await $.session.measure(measure(42, 8, 63))
   await $.turn.complete(turn(990000, 140000, 5000))
   const src = String((await svgOf(await $.ui.mount({ ...BAND(false), surface: 'desktop' }))).props?.source)
-  const blocks = [...src.matchAll(/<rect x="([\d.]+)" y="6" width="([\d.]+)" height="52" fill="transparent"\/>/g)].map(m => [Number(m[1]), Number(m[2])])
+  const blocks = [...src.matchAll(new RegExp(`<rect x="([\\d.]+)" y="0" width="([\\d.]+)" height="${H}" fill="transparent"\\/>`, 'g'))].map(m => [Number(m[1]), Number(m[2])])
   const details = [...src.matchAll(/class="sub2">([^<]*)</g)].map(m => m[1])
   expect(blocks).toHaveLength(4)
   expect(details).toHaveLength(4)
   expect(details[0]).toBe('84,000 tokens')
-  // 文字区 = 块宽 − 圆环和间隔（2R + 4 + 10 = 44）；下限按每字 0.5 个字号估（与插件的测宽函数无关）
-  details.forEach((d, i) => expect(blocks[i][1] - 44).toBeGreaterThanOrEqual(d.length * 10.5 * 0.5))
+  // 文字区 = 块宽 − 圆环和间隔（2R + 6 + 7 = 65）；下限按每字 0.5 个字号估（与插件的测宽函数无关）
+  details.forEach((d, i) => expect(blocks[i][1] - 65).toBeGreaterThanOrEqual(d.length * 12 * 0.5))
   // 最后一块的右边不超过信息栏宽度（右边留白 22）
   expect(blocks[3][0] + blocks[3][1]).toBeLessThanOrEqual(1068 - 22 + 0.6)
 })
@@ -591,14 +634,14 @@ test('窗口变窄：信息栏宽度跟着收，加上右边按钮也不超过�
   await $.session.measure(measure(42, 8, 63))
   await $.turn.complete(turn(990000, 140000, 5000))
   const seen = new Set<string>()
-  for (const cols of [140, 80, 70, 58, 45, 40]) {
+  for (const cols of [140, 115, 105, 70, 58, 45, 40]) {
     const band = { ...BAND(false), props: { ...BAND(false).props, bodyColumns: cols }, viewport: { columns: cols, rows: 40 }, surface: 'desktop' as const }
     const svg = await svgOf(await $.ui.mount(band))
     const width = Number(svg.props?.width)
-    // 可用宽度 ≈ 每列 8px；SVG + 按钮（44）不超过它（最窄 270 的下限只在极窄时才起作用）
-    if (cols * 8 - 8 >= 270 + 44) expect(width + 44).toBeLessThanOrEqual(cols * 8 - 8)
+    // 可用宽度 ≈ 每列 8px；SVG + 按钮（44）不超过它（最窄 372 的下限只在极窄时才起作用）
+    if (cols * 8 - 8 >= MIN_BAND_W + 44) expect(width + 44).toBeLessThanOrEqual(cols * 8 - 8)
     const src = String(svg.props?.source)
-    const blocks = [...src.matchAll(/<rect x="([\d.]+)" y="6" width="([\d.]+)" height="52" fill="transparent"\/>/g)].map(m => Number(m[1]) + Number(m[2]))
+    const blocks = [...src.matchAll(new RegExp(`<rect x="([\\d.]+)" y="0" width="([\\d.]+)" height="${H}" fill="transparent"\\/>`, 'g'))].map(m => Number(m[1]) + Number(m[2]))
     expect(blocks).toHaveLength(4)
     expect(Math.max(...blocks)).toBeLessThanOrEqual(width - 22 + 0.6)
     // 收掉的文字还在悬停提示里
@@ -614,7 +657,7 @@ test('窗口变窄：信息栏宽度跟着收，加上右边按钮也不超过�
     const band = { ...BAND(false), props: { ...BAND(false).props, bodyColumns: cols }, viewport: { columns: cols, rows: 40 }, surface: 'desktop' as const }
     const svg = await svgOf(await $.ui.mount(band))
     const width = Number(svg.props?.width)
-    const items = [...String(svg.props?.source).matchAll(/<rect x="([\d.]+)" y="2" width="([\d.]+)" height="26" fill="transparent"\/>/g)].map(m => Number(m[1]) + Number(m[2]))
+    const items = [...String(svg.props?.source).matchAll(new RegExp(`<rect x="([\\d.]+)" y="0" width="([\\d.]+)" height="${H_MINI}" fill="transparent"\\/>`, 'g'))].map(m => Number(m[1]) + Number(m[2]))
     expect(items).toHaveLength(4)
     expect(Math.max(...items)).toBeLessThanOrEqual(width - 14 + 0.6)
   }

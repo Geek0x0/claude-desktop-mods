@@ -41,9 +41,9 @@ test('缓存倒计时：Claude 干活时、还没答过时不显示', () => {
 test('缓存倒计时：这一块按「标题 + 倒计时」留宽，不压到后面的分隔线', () => {
   const svg = bandSvg(BARS, false, 1100, false, 'en', undefined, { remainMs: HOUR, ttlMs: HOUR })
   // 倒计时文字的 x 在缓存那一块里（块是最后一块，后面没有分隔线，检查不出右边界）
-  // 字比标题小，按中线对齐：底线比标题（y=29）高 (12-9)×0.36 = 1.08px
-  const x = Number(svg.match(/<text x="([\d.]+)" y="27.92" class="tm/)?.[1])
-  const lab = Number(svg.match(/<text x="([\d.]+)" y="29" class="lab">Cache hit</)?.[1])
+  // 字比标题小，按中线对齐：底线比标题（y=37）高 (14-9)×0.36 = 1.8px
+  const x = Number(svg.match(/<text x="([\d.]+)" y="35.20" class="tm/)?.[1])
+  const lab = Number(svg.match(/<text x="([\d.]+)" y="37" class="lab">Cache hit</)?.[1])
   expect(x).toBeGreaterThan(lab + 40)
   // 最宽的一档是「cold」：4 个小写字母 × 0.58 × 9px ≈ 20.9px；右边要留出和左边一样的 22px
   expect(x + 4 * 0.58 * 9).toBeLessThanOrEqual(1100 - 22)

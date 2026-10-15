@@ -2,7 +2,17 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, ModelUsage, Register, SessionContextUsage, SessionRateLimit } from 'claude-code'
 
 import type { Bars, CacheStat, CacheTotals, Pet, Report, Snap, Week, Window } from '../types'
-import { bandAlt, bandSvg, type CacheTimer, H, H_MINI, type PetView, tokensText } from './band'
+import {
+  bandAlt,
+  bandSvg,
+  type CacheTimer,
+  H,
+  H_MINI,
+  MIN_BAND_W,
+  MIN_BAND_W_WITH_FABLE,
+  type PetView,
+  tokensText,
+} from './band'
 import { CARD_H, CARD_W, type CardData, cardAlt, cardSvg } from './card'
 import { CHANGELOG, unseenReleases } from './changelog'
 import { type Lang, type LangChoice, langFromTags, parseAppleLanguages, T, weekday } from './i18n'
@@ -48,10 +58,6 @@ const MAX_FILES = 500
 let expandToken = 0
 // 展开 / 收起按钮占的宽度（像素），SVG 让出这一截
 const BUTTON_W = 44
-// 信息栏最窄：Clawd + 四个圆环挨着放的宽度
-const MIN_BAND_W = 270
-// 五个圆环都只剩圆环时：Clawd、左右留白、5 个圆环和 5 段最小间距
-const MIN_BAND_W_WITH_FABLE = 308
 // 按钮用图标：信息栏往上长，▲ = 往上撑开，▼ = 往下收回。
 // 这一对是同一字体里的成对字形，Chrome 实测都是 19×20px、同样居中（⌃⌄ 不是一对，大小差很多）
 const ICON_EXPAND = '▲'
