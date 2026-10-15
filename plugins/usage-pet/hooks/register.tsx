@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, ModelUsage, Register, SessionContextUsage, SessionRateLimit } from 'claude-code'
 
-import type { Bars, CacheStat, CacheTotals, Pet, Report, Snap, Week } from '../types'
+import type { Bars, CacheStat, CacheTotals, Pet, Report, Snap, Week, Window } from '../types'
 import { bandAlt, bandSvg, type CacheTimer, H, H_MINI, type PetView, tokensText } from './band'
 import { CARD_H, CARD_W, type CardData, cardAlt, cardSvg } from './card'
 import { CHANGELOG, unseenReleases } from './changelog'
@@ -36,6 +36,7 @@ const weekAtom = atom({ plugin: 'usage-pet', key: 'week' } as const, { hours: {}
 let ledgerQueue: Promise<unknown> = Promise.resolve()
 const TTL_SUBSCRIPTION_MS = 60 * 60000
 const TTL_API_MS = 5 * 60000
+const FABLE_REFRESH_MS = 5 * 60000
 const ASK_DELAY_MS = EXPAND_MS + 1000
 const ASK_WINDOW_MS = 10 * 60000
 const PET_KEY = 'pet'
@@ -49,12 +50,15 @@ let expandToken = 0
 const BUTTON_W = 44
 // 信息栏最窄：Clawd + 四个圆环挨着放的宽度
 const MIN_BAND_W = 270
+// 五个圆环都只剩圆环时：Clawd、左右留白、5 个圆环和 5 段最小间距
+const MIN_BAND_W_WITH_FABLE = 308
 // 按钮用图标：信息栏往上长，▲ = 往上撑开，▼ = 往下收回。
 // 这一对是同一字体里的成对字形，Chrome 实测都是 19×20px、同样居中（⌃⌄ 不是一对，大小差很多）
 const ICON_EXPAND = '▲'
 const ICON_COLLAPSE = '▼'
 
 const sameSnap = (a: Snap | null, b: Snap | null) => JSON.stringify(a) === JSON.stringify(b)
+type FableSession = { lastFetchAt?: number; value?: Window; refreshing?: boolean }
 
 function toSnap(context: SessionContextUsage, rateLimits: SessionRateLimit[]): Snap {
   const pick = (kind: string) => {
@@ -69,6 +73,46 @@ function toSnap(context: SessionContextUsage, rateLimits: SessionRateLimit[]): S
     session: pick('five_hour'),
     weekly: pick('seven_day'),
   }
+}
+
+async function fetchFable($: EngineInterface): Promise<Window | undefined> {
+  const auth = await $.session.authorize()
+  if (!auth) {
+    return undefined
+  }
+
+  const response = await $.http.fetch('https://api.anthropic.com/api/oauth/usage', {
+    auth: auth.handle,
+    headers: { 'anthropic-beta': 'oauth-2025-04-20' },
+  })
+  if (typeof response.status !== 'number' || response.status < 200 || response.status >= 300) {
+    return undefined
+  }
+
+  const body = JSON.parse(response.text) as { limits?: unknown } | null
+  if (!body || !Array.isArray(body.limits)) {
+    return undefined
+  }
+
+  const limit = body.limits.find((entry: unknown) => {
+    if (!entry || typeof entry !== 'object') {
+      return false
+    }
+    const row = entry as { kind?: unknown; scope?: { model?: { display_name?: unknown } | null } | null }
+    const name = row.scope?.model?.display_name
+
+    return row.kind === 'weekly_scoped' && typeof name === 'string' && name.toLowerCase().startsWith('fable')
+  }) as { percent?: unknown; resets_at?: unknown } | undefined
+  if (typeof limit?.percent !== 'number' || !Number.isFinite(limit.percent) || typeof limit.resets_at !== 'string') {
+    return undefined
+  }
+
+  const resetAt = Date.parse(limit.resets_at)
+  if (!Number.isFinite(resetAt)) {
+    return undefined
+  }
+
+  return { percent: limit.percent, resetsAt: new Date(resetAt).toISOString() }
 }
 
 const pct1 = (part: number, total: number) => Math.round((part / total) * 1000) / 10
@@ -173,13 +217,45 @@ async function expandForAWhile($: EngineInterface) {
 }
 
 async function record($: EngineInterface, snap: Snap) {
-  const full: Snap = { ...snap, cache: cacheStat(await read($, cacheAtom)) }
-  const isChanged = !sameSnap((await read($, barsAtom)).to, full)
+  const previous = await read($, barsAtom)
+  const full: Snap = { ...snap, fable: snap.fable ?? previous.to?.fable, cache: cacheStat(await read($, cacheAtom)) }
+  const isChanged = !sameSnap(previous.to, full)
   await update($, barsAtom, bars => (sameSnap(bars.to, full) ? bars : { from: bars.to, to: full }))
   if (isChanged) {
     await expandForAWhile($)
   }
   $.clock.after(1300, () => void update($, barsAtom, bars => (sameSnap(bars.from, bars.to) ? bars : { from: bars.to, to: bars.to })))
+}
+
+function refreshFable($: EngineInterface, state: FableSession) {
+  if (state.refreshing) {
+    return
+  }
+  state.refreshing = true
+
+  void (async () => {
+    try {
+      const now = await clockNow($)
+      if (state.lastFetchAt !== undefined && now - state.lastFetchAt < FABLE_REFRESH_MS) {
+        return
+      }
+      state.lastFetchAt = now
+
+      const fable = await fetchFable($)
+      if (!fable) {
+        return
+      }
+      state.value = fable
+      const bars = await read($, barsAtom)
+      if (bars.to) {
+        await record($, { ...bars.to, fable })
+      }
+    } catch {
+      // Fable 是可选额度；授权、网络或响应出错时保留上次读数。
+    } finally {
+      state.refreshing = false
+    }
+  })()
 }
 
 // 缓存还热多久：没答过就不显示
@@ -391,8 +467,10 @@ export const register: Register = (on, options) => {
   const choice = (options?.language ?? 'auto') as LangChoice
   // 节日装扮：/config 里 seasonal 填 off 就不换（不分大小写、去掉首尾空格；以前是下拉，现在是文本框）
   const seasonal = String(options?.seasonal ?? 'auto').trim().toLowerCase() !== 'off'
+  const fableState: FableSession = {}
 
   on('session.start', async ($, e, next) => {
+    refreshFable($, fableState)
     // 先定语言（更新提示要用）；读不出来就英文
     let lang: Lang = 'en'
     try {
@@ -434,7 +512,7 @@ export const register: Register = (on, options) => {
         turnRate: turnRate(last),
       }))
     }
-    await record($, toSnap(u.context, u.rateLimits))
+    await record($, { ...toSnap(u.context, u.rateLimits), fable: fableState.value })
     try {
       await refreshWeek($, await clockNow($))
     } catch (err) {
@@ -458,6 +536,7 @@ export const register: Register = (on, options) => {
 
   // 每轮结束累计缓存 token（只算主循环，子代理有自己的缓存）
   on('turn.complete', async ($, e, next) => {
+    refreshFable($, fableState)
     const u = e.usage
     // 近 7 天用量：主对话和子代理的每一轮都记（这里不分缓存归属，只算花了多少）
     try {
@@ -478,7 +557,7 @@ export const register: Register = (on, options) => {
       }))
       const bars = await read($, barsAtom)
       if (bars.to) {
-        await record($, bars.to)
+        await record($, { ...bars.to, fable: fableState.value ?? bars.to.fable })
       }
     }
     if (e.agentId === undefined) {
@@ -548,7 +627,7 @@ export const register: Register = (on, options) => {
   })
 
   on('session.measure', async ($, e, next) => {
-    await record($, toSnap(e.context, e.rateLimits))
+    await record($, { ...toSnap(e.context, e.rateLimits), fable: fableState.value })
 
     return next(e)
   })
@@ -568,7 +647,8 @@ export const register: Register = (on, options) => {
       const { Box, Button, Svg } = $.ui.resolve(e)
       // 不设大下限：以前最少 560px，窗口窄时信息栏比可用宽度还宽，按钮就被挤到下一行。
       // 窄了由 bandSvg 自己逐级收（去副标题 → 只剩圆环），按钮始终在同一行右侧
-      const width = Math.max(MIN_BAND_W, e.props.bodyColumns * PX_PER_COLUMN - 8 - BUTTON_W)
+      const minimumWidth = bars.to?.fable ? MIN_BAND_W_WITH_FABLE : MIN_BAND_W
+      const width = Math.max(minimumWidth, e.props.bodyColumns * PX_PER_COLUMN - 8 - BUTTON_W)
       const pinned = await read($, pinnedAtom)
       const isMini = !pinned && !(await read($, expandedAtom))
       // 近 7 天用量只在展开时写进 Clawd 的悬停提示：收起时是一条细条，不放
@@ -601,7 +681,7 @@ export const register: Register = (on, options) => {
       const { Box, Text } = $.ui.resolve(e)
       const snap = bars.to
       const t = T[lang]
-      // 终端只画三个读数：标签、右侧注释和百分比，下面一条进度条。
+      // 终端画上下文、额度读数和缓存：标签、右侧注释和百分比，下面一条进度条。
       // 以前用 Client 加载 stats.tsx 做数字滚动，但 Anthropic 插件目录的扫描器认不出它的路径、拦下提交，所以改成直接画
       const meter = (key: string, label: string, percent: number | undefined, note: string) => {
         const p = Math.min(100, Math.max(0, percent ?? 0))
@@ -630,6 +710,7 @@ export const register: Register = (on, options) => {
           {meter('ctx', t.context, snap?.contextPercent, ctxNote)}
           {meter('session', t.session, snap?.session?.percent, termReset(snap?.session?.resetsAt, lang))}
           {meter('weekly', t.weekly, snap?.weekly?.percent, termReset(snap?.weekly?.resetsAt, lang))}
+          {snap?.fable ? meter('fable', t.fable, snap.fable.percent, termReset(snap.fable.resetsAt, lang)) : null}
         </Box>
       )
     }

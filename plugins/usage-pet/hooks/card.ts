@@ -6,7 +6,7 @@ import { type Achievement, levelOf, type Pet, threshold } from './pet'
 
 export const CARD_W = 640
 export const CARD_H = 360
-export const REPO = 'github.com/manson341349-beep/claude-desktop-mods'
+export const REPO = 'github.com/Geek0x0/claude-desktop-mods'
 
 export type CardData = {
   startedAt: number

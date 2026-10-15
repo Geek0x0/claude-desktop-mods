@@ -6,6 +6,13 @@ export type Release = { version: string; notes: Record<Lang, string[]> }
 
 export const CHANGELOG: Release[] = [
   {
+    version: '1.10.0',
+    notes: {
+      zh: ['Fable 模型每周额度：有 Fable 用量读数时，信息栏多显示一个每周额度圆环和重置时间'],
+      en: ['Fable weekly limit: when usage is available, the band adds a ring with its reset time'],
+    },
+  },
+  {
     version: '1.9.0',
     notes: {
       zh: ['近 7 天用了多少 tokens：信息栏展开时，鼠标放到 Clawd 身上就能看到（所有会话合计，含子代理）；/clawd-card 战报卡也多了这一行。从这个版本装上起开始记，不满 7 天时会写明从哪天开始'],

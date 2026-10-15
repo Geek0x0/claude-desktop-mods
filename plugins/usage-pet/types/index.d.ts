@@ -9,6 +9,7 @@ export type Snap = {
   contextWindow: number
   session?: Window
   weekly?: Window
+  fable?: Window
   cache?: CacheStat
 }
 

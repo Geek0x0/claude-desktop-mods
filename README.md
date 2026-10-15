@@ -8,7 +8,7 @@ Mods for the **Code tab of the Claude Desktop app**.
 > **让 AI 代理帮你装？/ Installing with an AI agent?** 让它在终端运行下面两行 · Have it run these two commands in a shell:
 >
 > ```bash
-> claude plugin marketplace add manson341349-beep/claude-desktop-mods
+> claude plugin marketplace add Geek0x0/claude-desktop-mods
 > claude plugin install usage-pet@claude-desktop-mods
 > ```
 >
@@ -17,6 +17,8 @@ Mods for the **Code tab of the Claude Desktop app**.
 > *usage-pet is installed. Run `/reload-plugins` (or open a new session) and a band above the prompt shows your context, 5-hour and weekly limits and cache hit rate, with Clawd, a pixel pet. Nothing to configure.*
 >
 > 中文用户就这样告诉对方：*usage-pet 装好了。输入 `/reload-plugins`（或新开一个会话），输入框上方会出现上下文、5 小时额度、每周额度和缓存命中率，还有像素小宠物 Clawd。不用任何设置。*
+
+Forked from [manson341349-beep/claude-desktop-mods](https://github.com/manson341349-beep/claude-desktop-mods).
 
 ⭐ **装了觉得好玩，点个 Star 支持一下**：这是我们知道有人在用、继续做下去的动力。
 ⭐ **Enjoying it? Give the repo a star**: it's how we know people use it, and it keeps the updates coming.
@@ -39,6 +41,7 @@ Mods for the **Code tab of the Claude Desktop app**.
 ### usage-pet：Clawd 信息栏
 
 - **四项用量**：上下文、5 小时额度、每周额度、缓存命中率（本会话累计）。80% 变琥珀色，95% 变红；缓存命中低于 50% 才提醒
+- **Fable 每周（可选第五环）**：排在每周额度后，显示 Fable 模型独立的每周额度使用百分比和重置时间；沿用额度环的琥珀色 / 红色阈值，达到 90% Clawd 会冒汗。仅当 Claude 订阅的第一方 OAuth 登录有 Fable 每周额度时显示；API 密钥、Bedrock/Vertex、网关、未登录或请求失败时不显示，信息栏保持四环；刷新失败会保留上次成功的读数。Claude Code 插件 API 只提供 5 小时和每周窗口，因此插件在会话开始和每轮回复后自行 GET Anthropic 用量接口（`https://api.anthropic.com/api/oauth/usage`），最多每 5 分钟一次。插件通过 `$.session.authorize()` 和 `$.http.fetch` 发起请求，由宿主添加凭据，插件看不到令牌；只发送这个 GET，不发送提示词、回复或遥测。设置 `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` 或组织的网页请求策略可能会阻止获取。
 - **自动折叠**：平时是一条 30px 的细条；每次 Claude 回答完、数据刷新时自动展开 5 秒，播完动画再收起
 - **展开时**：圆环依次扫入、数字像老虎机一样滚动、旁边飘出「+N%」
 - **缓存倒计时**：缓存命中旁边显示缓存还能热多久（订阅约 1 小时、API 密钥 5 分钟，每次回复重新计时），剩 5 分钟变色，过期显示「已过期」。缓存过期后下一轮要把整段对话重新写入缓存，更耗额度，赶在过期前回复更划算
@@ -58,7 +61,7 @@ Mods for the **Code tab of the Claude Desktop app**.
 在终端运行：
 
 ```bash
-claude plugin marketplace add manson341349-beep/claude-desktop-mods
+claude plugin marketplace add Geek0x0/claude-desktop-mods
 claude plugin install usage-pet@claude-desktop-mods
 ```
 
@@ -67,7 +70,7 @@ claude plugin install usage-pet@claude-desktop-mods
 **Windows**：只装了桌面 App 的话终端里往往没有 `claude` 命令，直接在 Code 页的会话里输入这两行即可（同一个插件，macOS 和 Windows 通用）：
 
 ```text
-/plugin marketplace add manson341349-beep/claude-desktop-mods
+/plugin marketplace add Geek0x0/claude-desktop-mods
 /plugin install usage-pet@claude-desktop-mods
 ```
 
@@ -100,7 +103,8 @@ claude plugin uninstall usage-pet@claude-desktop-mods
 
 ### usage-pet
 
-- **Four meters**: context window, 5-hour limit, weekly limit, and cache hit rate (cumulative for the session). Amber at 80%, red at 95%; cache hit warns below 50%
+- **Four meters, with an optional fifth Fable weekly ring**: context window, 5-hour limit, weekly limit, and cache hit rate (cumulative for the session). Amber at 80%, red at 95%; cache hit warns below 50%
+- **Fable weekly**: shown after Weekly, this separate Fable model allowance displays its percent used and reset time. It uses the same amber/red thresholds as the other limits, and Clawd sweats at 90%+. It appears only for a first-party OAuth Claude subscription login that has a Fable weekly limit. API keys, Bedrock/Vertex, gateways, no login, or a failed request leave the band at four rings; a refresh failure keeps the last good value. Claude Code's plugin API exposes only the 5-hour and weekly windows, so the plugin makes its own GET to Anthropic's usage endpoint (`https://api.anthropic.com/api/oauth/usage`) at session start and after replies, at most once every 5 minutes. It uses `$.session.authorize()` and `$.http.fetch`; Claude Code adds the credential on the host side, and the plugin never sees the token. The only request is that GET: no prompts, replies, or telemetry are sent. `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` or an organization web-fetch policy can block it.
 - **Auto-collapse**: a 30px strip most of the time; expands for 5 seconds whenever usage data refreshes, plays its animations, then collapses
 - **Expanded**: rings sweep in, digits roll like an odometer, `+N%` chips float up
 - **Cache countdown**: next to Cache hit, how long the cache stays warm (about 1 hour on a subscription, 5 minutes on an API key; every reply restarts it). Amber in the last 5 minutes, "cold" once expired. A cold cache means the next turn re-caches the whole conversation, which costs more of your limit
@@ -118,7 +122,7 @@ claude plugin uninstall usage-pet@claude-desktop-mods
 ### Install
 
 ```bash
-claude plugin marketplace add manson341349-beep/claude-desktop-mods
+claude plugin marketplace add Geek0x0/claude-desktop-mods
 claude plugin install usage-pet@claude-desktop-mods
 ```
 
@@ -127,7 +131,7 @@ Then run `/reload-plugins` in a session, or start a new one.
 **Windows**: with only the desktop app installed there is usually no `claude` on your PATH; type these in a Code tab session instead (the same plugin works on macOS and Windows):
 
 ```text
-/plugin marketplace add manson341349-beep/claude-desktop-mods
+/plugin marketplace add Geek0x0/claude-desktop-mods
 /plugin install usage-pet@claude-desktop-mods
 ```
 

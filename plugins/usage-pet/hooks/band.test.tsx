@@ -276,7 +276,7 @@ test('更新提示：从上一版升上来，弹出新版本改了什么，记�
   expect(toasts[0].text).toContain(`Clawd 信息栏 ${CHANGELOG[0].version}`)
   expect(toasts[0].text).toContain(CHANGELOG[0].notes.zh[0])
   // 末尾请大家去 GitHub 点 star
-  expect(toasts[0].text).toContain('去 GitHub 点个 ⭐ 支持一下：github.com/manson341349-beep/claude-desktop-mods')
+  expect(toasts[0].text).toContain('去 GitHub 点个 ⭐ 支持一下：github.com/Geek0x0/claude-desktop-mods')
   // 停到 App 允许的上限 60 秒（超过 60000 整条会被丢掉）
   expect(toasts[0].timeoutMs).toBe(60000)
 
@@ -292,7 +292,7 @@ test('更新提示：一次跨好几版，每版各弹一条，「点个 star」
   expect(nudged).toHaveLength(1)
   // 最新那条最后弹（落在最上面），star 就在它末尾
   expect(toasts[2].text).toContain(`Clawd 信息栏 ${CHANGELOG[0].version}`)
-  expect(toasts[2].text.endsWith('github.com/manson341349-beep/claude-desktop-mods')).toBe(true)
+  expect(toasts[2].text.endsWith('github.com/Geek0x0/claude-desktop-mods')).toBe(true)
 })
 
 test('更新提示：已经看过最新版，不弹', ZH, async ($, on) => {

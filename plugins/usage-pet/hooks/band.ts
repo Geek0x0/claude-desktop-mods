@@ -661,7 +661,7 @@ const DEFS =
 
 // ───────────────────────── 整条 ─────────────────────────
 
-// 收起后的细条：小 Clawd + 四个「标签 细进度条 百分比」，同样左右留白相等、间距相等；不画分隔线，靠间距分组
+// 收起后的细条：小 Clawd + 所有可用读数的「标签 细进度条 百分比」，同样左右留白相等、间距相等；不画分隔线，靠间距分组
 function miniSvg(gauges: Gauge[], isWorking: boolean, isStressed: boolean, width: number, isChill: boolean, pet?: PetView, lang: Lang = 'zh'): string {
   // 窄窗口同样逐级收：标签 + 细条 + 百分比 → 标签 + 百分比 → 短标签 + 百分比 → 只剩百分比（完整标签在悬停提示里）
   const measure = (showBar: boolean, showLabel: boolean, isShort = false) =>
@@ -717,7 +717,7 @@ export function bandSvg(bars: Bars, isWorking: boolean, width: number, mini = fa
   // $.state 存取会序列化，from/to 永远是两个对象，必须比内容
   const isChanged = JSON.stringify(from) !== JSON.stringify(to)
   const isFirst = from === null
-  const isStressed = Math.max(to?.session?.percent ?? 0, to?.weekly?.percent ?? 0) >= 90
+  const isStressed = Math.max(to?.session?.percent ?? 0, to?.weekly?.percent ?? 0, to?.fable?.percent ?? 0) >= 90
   // 放松模式（@Joshua_WD 的点子）：缓存命中 ≥90% 且额度没告急 → 戴墨镜、呼吸变慢
   const isChill = !isStressed && (to?.cache?.rate ?? 0) >= 90
   const css: string[] = []
@@ -756,6 +756,20 @@ export function bandSvg(bars: Bars, isWorking: boolean, width: number, mini = fa
       from: from?.weekly?.percent,
       to: to?.weekly?.percent,
     },
+    ...(to?.fable
+      ? [
+          {
+            id: 'f',
+            label: t.fable,
+            short: t.short.fable,
+            sub: resetText(to.fable.resetsAt, lang) || t.noData,
+            detail: leftText(to.fable.resetsAt, lang) || t.noData,
+            title: `${t.fable} ${to.fable.percent}% · ${resetText(to.fable.resetsAt, lang) || t.noData}`,
+            from: from?.fable?.percent,
+            to: to.fable.percent,
+          },
+        ]
+      : []),
     {
       id: 'k',
       // 命中越高越好：低于 50% 才提醒
@@ -777,7 +791,7 @@ export function bandSvg(bars: Bars, isWorking: boolean, width: number, mini = fa
     return miniSvg(gauges, isWorking, isStressed, width, isChill, pet, lang)
   }
 
-  // 按内容实际宽度排：左右留白相等（都是 CLAWD_X），Clawd 与四块之间的五段间距相等
+  // 按内容实际宽度排：左右留白相等（都是 CLAWD_X），Clawd 与每块之间的间距相等
   const layout = pickLayout(gauges, width)
   const widths = gauges.map(g => blockWidth(g, layout))
   const gap = Math.max(MIN_GAP[layout], (width - 2 * CLAWD_X - CLAWD_W - widths.reduce((a, b) => a + b, 0)) / gauges.length)
@@ -785,7 +799,7 @@ export function bandSvg(bars: Bars, isWorking: boolean, width: number, mini = fa
   widths.reduce((x, w) => (xs.push(x), x + w + gap), CLAWD_X + CLAWD_W + gap)
   const blocks = gauges.map((g, i) => gauge(g, i, xs[i], widths[i], isChanged, isFirst, css, layout, lang)).join('')
   // 分隔线放在两块之间那段间距的正中间
-  const seps = [1, 2, 3]
+  const seps = Array.from({ length: gauges.length - 1 }, (_, i) => i + 1)
     .map(i => {
       const mid = (xs[i] - gap / 2).toFixed(1)
 
@@ -811,7 +825,13 @@ export function bandAlt(to: Snap | null, isWorking: boolean, lang: Lang = 'zh'):
   const sep = lang === 'zh' ? '，' : ', '
 
   return (
-    [`${t.context} ${pct(to?.contextPercent)}`, `${t.session} ${pct(to?.session?.percent)}`, `${t.weekly} ${pct(to?.weekly?.percent)}`, `${t.cache} ${pct(to?.cache?.rate)}`].join(sep) +
+    [
+      `${t.context} ${pct(to?.contextPercent)}`,
+      `${t.session} ${pct(to?.session?.percent)}`,
+      `${t.weekly} ${pct(to?.weekly?.percent)}`,
+      ...(to?.fable ? [`${t.fable} ${pct(to.fable.percent)}`] : []),
+      `${t.cache} ${pct(to?.cache?.rate)}`,
+    ].join(sep) +
     (lang === 'zh' ? '；' : '; ') +
     (isWorking ? t.working : t.resting)
   )
