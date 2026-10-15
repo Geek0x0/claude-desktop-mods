@@ -1,4 +1,5 @@
 import { expect, mock, test } from 'claude-code/testing'
+import { bandSvg } from './band'
 
 // 原有用例都按中文界面断言：显式指定 /config 的 language = zh
 const ZH = { options: { language: 'zh' } }
@@ -21,6 +22,52 @@ const measure = (ctx: number, session: number, weekly: number) => ({
 
 const svgOf = async (ui: { findAll: (q: { type: 'Svg' }) => Promise<{ props?: Record<string, unknown> }[]> }) =>
   (await ui.findAll({ type: 'Svg' }))[0]
+
+const EMPTY_BARS = { from: null, to: null }
+
+function fingerprint(source: string): number {
+  let hash = 2166136261
+  for (let i = 0; i < source.length; i++) hash = Math.imul(hash ^ source.charCodeAt(i), 16777619)
+  return hash >>> 0
+}
+
+test('干活时：展开和细条都有紫色像素背景，且背景在读数和 Clawd 之前', ZH, async () => {
+  for (const mini of [false, true]) {
+    const source = bandSvg(EMPTY_BARS, true, 1100, mini)
+    const background = source.indexOf('class="ultra-dither"')
+    expect(background).toBeGreaterThan(-1)
+    expect(background).toBeLessThan(source.indexOf('<g class="gauges">'))
+    expect(background).toBeLessThan(source.indexOf('class="clawd working'))
+    expect(source).toContain('id="ultra-dither-pattern-0"')
+    expect(source).toContain('width="30" height="30" patternUnits="userSpaceOnUse"')
+    expect(source).toContain('h2v2h-2z')
+    expect(source).toContain('stop-color="#4a3f8a"')
+    expect(source).toContain('stop-color="#d0b4ff"')
+    expect(source).toContain('.ultra-dither{opacity:.7}')
+    expect(source).toContain('@media (prefers-color-scheme:light){.ultra-dither{opacity:.42}}')
+    expect(source).toContain('id="ultra-dither-density-mask"')
+    expect(source).toContain('<g mask="url(#ultra-dither-density-mask)">')
+    expect(source).toContain('id="ultra-dither-pattern-add-0"')
+    const patterns = [...source.matchAll(/<pattern\b[\s\S]*?<\/pattern>/g)].map(match => match[0])
+    expect(patterns.join('')).not.toContain('ultra-dither-density')
+    expect(source).toContain('@keyframes ultra-dither-twinkle')
+    expect(source).toContain('@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}')
+  }
+})
+
+test('休息时：不画紫色像素背景，SVG 保持原样', ZH, async () => {
+  const source = bandSvg(EMPTY_BARS, false, 1100)
+  expect(source).not.toContain('ultra-dither')
+  expect(source.length).toBe(18549)
+  expect(fingerprint(source)).toBe(3976551832)
+})
+
+test('干活时：1100px 信息栏的 SVG 源码远低于宿主限制', ZH, async () => {
+  const expanded = bandSvg(EMPTY_BARS, true, 1100)
+  const mini = bandSvg(EMPTY_BARS, true, 1100, true)
+  expect(expanded.length).toBeLessThan(131072)
+  expect(mini.length).toBeLessThan(131072)
+})
 
 test('终端：直接画三个读数（不用 Client），数字、token 和进度条都在', ZH, async ($, on) => {
   on('session.measure', ($, e) => ({ changed: e.changed }))

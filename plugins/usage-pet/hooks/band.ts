@@ -659,6 +659,70 @@ const DEFS =
   `<filter id="blur" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="2.2"/></filter>` +
   `</defs>`
 
+// 干活时用三张固定种子的图案轮流闪烁；单元格按密度拆成常亮底层和渐变显出的高密度层。
+const ditherHash = (n: number) => {
+  let x = n + 0x9e3779b9
+  x = Math.imul(x ^ (x >>> 16), 0x21f0aaad)
+  x = Math.imul(x ^ (x >>> 15), 0x735a2d97)
+  return (x ^ (x >>> 15)) >>> 0
+}
+
+const DITHER_CELLS = Array.from({ length: 100 }, (_, i) => i).sort((a, b) => ditherHash(a) - ditherHash(b))
+const DITHER_BASE = new Set(DITHER_CELLS.slice(0, 22))
+const ditherPath = (cells: number[]) =>
+  cells.map(i => `M${(i % 10) * 3} ${Math.floor(i / 10) * 3}h2v2h-2z`).join('')
+
+const DITHER_STYLE =
+  `.ultra-dither{opacity:.7}` +
+  `@media (prefers-color-scheme:light){.ultra-dither{opacity:.42}}` +
+  `.ultra-dither .layer-0{opacity:.8;animation:ultra-dither-twinkle-0 1.2s ease-in-out -.4s infinite alternate}` +
+  `.ultra-dither .layer-1{opacity:.8;animation:ultra-dither-twinkle-1 2s ease-in-out -1.1s infinite alternate}` +
+  `.ultra-dither .layer-2{opacity:.8;animation:ultra-dither-twinkle-2 2.8s ease-in-out -2.2s infinite alternate}` +
+  `@keyframes ultra-dither-twinkle-0{from{opacity:.6}to{opacity:1}}` +
+  `@keyframes ultra-dither-twinkle-1{from{opacity:1}to{opacity:.6}}` +
+  `@keyframes ultra-dither-twinkle-2{from{opacity:.6}to{opacity:1}}`
+
+function ditherSvg(width: number, height: number): string {
+  const patterns = Array.from({ length: 3 }, (_, layer) => {
+    const base = DITHER_CELLS.filter(i => DITHER_BASE.has(i) && i % 3 === layer)
+    const added = DITHER_CELLS.filter(i => !DITHER_BASE.has(i) && i % 3 === layer)
+    return (
+      `<pattern id="ultra-dither-pattern-${layer}" width="30" height="30" patternUnits="userSpaceOnUse">` +
+      `<path fill="#fff" d="${ditherPath(base)}"/></pattern>` +
+      `<pattern id="ultra-dither-pattern-add-${layer}" width="30" height="30" patternUnits="userSpaceOnUse">` +
+      `<path fill="#fff" d="${ditherPath(added)}"/>` +
+      `</pattern>`
+    )
+  }).join('')
+  const masks = Array.from(
+    { length: 3 },
+    (_, layer) =>
+      `<mask id="ultra-dither-mask-${layer}"><rect width="${width}" height="${height}" fill="url(#ultra-dither-pattern-${layer})"/></mask>` +
+      `<mask id="ultra-dither-mask-add-${layer}"><rect width="${width}" height="${height}" fill="url(#ultra-dither-pattern-add-${layer})"/></mask>`,
+  ).join('')
+  const layers = Array.from({ length: 3 }, (_, layer) =>
+    `<g class="layer-${layer}">` +
+    `<rect width="${width}" height="${height}" fill="url(#ultra-dither-color)" mask="url(#ultra-dither-mask-${layer})"/>` +
+    `<g mask="url(#ultra-dither-density-mask)"><rect width="${width}" height="${height}" fill="url(#ultra-dither-color)" mask="url(#ultra-dither-mask-add-${layer})"/></g>` +
+    `</g>`,
+  ).join('')
+
+  return (
+    `<defs>` +
+    `<linearGradient id="ultra-dither-color" x1="0" y1="0" x2="1" y2="0">` +
+    `<stop offset="0" stop-color="#4a3f8a" stop-opacity=".6"/><stop offset="25%" stop-color="#6a5acd" stop-opacity=".7"/>` +
+    `<stop offset="50%" stop-color="#8a76e8" stop-opacity=".8"/><stop offset="75%" stop-color="#b9a3ff" stop-opacity=".9"/>` +
+    `<stop offset="100%" stop-color="#d0b4ff"/></linearGradient>` +
+    `<linearGradient id="ultra-dither-density" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="${width}" y2="0">` +
+    `<stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset="25%" stop-color="#fff" stop-opacity=".33"/>` +
+    `<stop offset="50%" stop-color="#fff" stop-opacity=".57"/><stop offset="75%" stop-color="#fff" stop-opacity=".79"/>` +
+    `<stop offset="100%" stop-color="#fff"/></linearGradient>` +
+    patterns + masks +
+    `<mask id="ultra-dither-density-mask" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x="0" y="0" width="${width}" height="${height}"><rect width="${width}" height="${height}" fill="url(#ultra-dither-density)"/></mask>` +
+    `</defs><g class="ultra-dither">${layers}</g>`
+  )
+}
+
 // ───────────────────────── 整条 ─────────────────────────
 
 // 收起后的细条：小 Clawd + 所有可用读数的「标签 细进度条 百分比」，同样左右留白相等、间距相等；不画分隔线，靠间距分组
@@ -700,8 +764,9 @@ function miniSvg(gauges: Gauge[], isWorking: boolean, isStressed: boolean, width
 
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${H_MINI}" width="${width}" height="${H_MINI}" style="color-scheme:light dark;background:transparent">` +
-    `<style>${STYLE}</style>` +
+    `<style>${STYLE}${isWorking ? DITHER_STYLE : ''}</style>` +
     DEFS +
+    (isWorking ? ditherSvg(width, H_MINI) : '') +
     `<g class="gauges">${parts.join('')}</g>` +
     clawd(isWorking, isStressed, false, true, isChill, pet) +
     `</svg>`
@@ -811,8 +876,9 @@ export function bandSvg(bars: Bars, isWorking: boolean, width: number, mini = fa
 
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${H}" width="${width}" height="${H}" style="color-scheme:light dark;background:transparent">` +
-    `<style>${STYLE}${css.join('')}</style>` +
+    `<style>${STYLE}${css.join('')}${isWorking ? DITHER_STYLE : ''}</style>` +
     DEFS +
+    (isWorking ? ditherSvg(width, H) : '') +
     `<g class="gauges">${seps}${blocks}</g>` +
     clawd(isWorking, isStressed, clawdChanged, false, isChill, pet) +
     `</svg>`
