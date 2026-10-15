@@ -1,7 +1,16 @@
 import { expect, mock, test } from 'claude-code/testing'
 
-import type { Bars } from '../types'
-import { bandSvg, H, H_MINI, MIN_BAND_W, MIN_BAND_W_WITH_FABLE } from './band'
+import type { Activity, Bars } from '../types'
+import { moodAt } from './mood'
+import {
+  bandSvg,
+  H,
+  H_MINI,
+  MIN_BAND_W,
+  MIN_BAND_W_WITH_ACTIVITY,
+  MIN_BAND_W_WITH_FABLE,
+  MIN_BAND_W_WITH_FABLE_AND_ACTIVITY,
+} from './band'
 
 // 原有用例都按中文界面断言：显式指定 /config 的 language = zh
 const ZH = { options: { language: 'zh' } }
@@ -99,6 +108,8 @@ test('圆环和细条：展开尺寸、描边、文字与进度条都按新比�
   expect(mini).toContain('translate(14 0) scale(3)')
   expect(MIN_BAND_W).toBe(372)
   expect(MIN_BAND_W_WITH_FABLE).toBe(436)
+  expect(MIN_BAND_W_WITH_ACTIVITY).toBe(398)
+  expect(MIN_BAND_W_WITH_FABLE_AND_ACTIVITY).toBe(462)
 })
 
 test('浅色外观：工作底纹隐藏，不叠加深色描边或标签颜色', ZH, async () => {
@@ -113,6 +124,159 @@ test('休息时：不画紫色像素背景，SVG 保持原样', ZH, async () => 
   expect(source).not.toContain('ultra-dither')
   expect(source.length).toBe(18967)
   expect(fingerprint(source)).toBe(2498379622)
+})
+
+test('工具活动：展开图标替代浮动字形，细条仅在图标和首个读数之间留得下间距时显示', () => {
+  const activity: Activity = { kind: 'working', icon: 'terminal', owner: 1 }
+  const expanded = bandSvg(EMPTY_BARS, true, 1100, false, 'zh', undefined, undefined, activity)
+  const expandedAtMin = bandSvg(EMPTY_BARS, true, MIN_BAND_W_WITH_ACTIVITY, false, 'zh', undefined, undefined, activity)
+  const mini = bandSvg(EMPTY_BARS, true, 1100, true, 'zh', undefined, undefined, activity)
+  const miniAtMin = bandSvg(EMPTY_BARS, true, MIN_BAND_W_WITH_ACTIVITY, true, 'zh', undefined, undefined, activity)
+  const narrowMini = bandSvg(EMPTY_BARS, true, 110, true, 'zh', undefined, undefined, activity)
+  const expandedClawd = expanded.match(/class="clawd working[^"]*" transform="translate\(([\d.]+) [\d.]+\) scale\(([\d.]+)\)"/)
+  const expandedIcon = expanded.match(/class="activity-icon terminal" transform="translate\(([\d.]+) (-?[\d.]+)\) scale\(([\d.]+)\)"/)
+  const expandedFirstGauge = expandedAtMin.match(/<g class="g[^\"]*"[^>]*><title>[\s\S]*?<rect x="([\d.]+)" y="0"/)
+  const miniClawd = mini.match(/class="clawd working[^"]* mini" transform="translate\(([\d.]+) [\d.]+\) scale\(([\d.]+)\)"/)
+  const miniIcon = mini.match(/class="activity-icon terminal" transform="translate\(([\d.]+) ([\d.]+)\) scale\(([\d.]+)\)"/)
+
+  expect(expanded).toContain('class="activity-icon terminal"')
+  expect(expandedClawd).not.toBeNull()
+  expect(expandedIcon).not.toBeNull()
+  const expandedClawdRight = Number(expandedClawd?.[1]) + 16 * Number(expandedClawd?.[2])
+  const expandedIconLeft = Number(expandedClawd?.[1]) + Number(expandedIcon?.[1]) * Number(expandedClawd?.[2])
+  expect(expandedIconLeft).toBeGreaterThanOrEqual(expandedClawdRight)
+  expect(7 * Number(expandedIcon?.[3]) * Number(expandedClawd?.[2])).toBeGreaterThanOrEqual(22)
+  expect(7 * Number(expandedIcon?.[3]) * Number(expandedClawd?.[2])).toBeLessThanOrEqual(27)
+  expect(expanded).not.toContain('class="glyph"')
+  expect(expanded).toContain('<g class="laptop">')
+  expect(expanded).toContain('.working .armL{animation:tap')
+  expect(mini).toContain('class="activity-icon terminal"')
+  expect(miniClawd).not.toBeNull()
+  expect(miniIcon).not.toBeNull()
+  const miniClawdRight = Number(miniClawd?.[1]) + 16 * Number(miniClawd?.[2])
+  const miniIconLeft = Number(miniClawd?.[1]) + Number(miniIcon?.[1]) * Number(miniClawd?.[2])
+  expect(miniIconLeft).toBeGreaterThanOrEqual(miniClawdRight)
+  expect(Math.abs(7 * Number(miniIcon?.[3]) * Number(miniClawd?.[2]) - 15.75) < 0.01).toBe(true)
+  expect(expandedFirstGauge).not.toBeNull()
+  const iconRight = Number(expandedClawd?.[1]) + (Number(expandedIcon?.[1]) + 7 * Number(expandedIcon?.[3])) * Number(expandedClawd?.[2])
+  expect(Number(expandedFirstGauge?.[1])).toBeGreaterThanOrEqual(iconRight)
+  const miniAtMinClawd = miniAtMin.match(/class="clawd working[^\"]* mini" transform="translate\(([\d.]+) [\d.]+\) scale\(([\d.]+)\)"/)
+  const miniAtMinIcon = miniAtMin.match(/class="activity-icon terminal" transform="translate\(([\d.]+) ([\d.]+)\) scale\(([\d.]+)\)"/)
+  const miniAtMinFirstGauge = miniAtMin.match(/<g class="gauges">[\s\S]*?<rect x="([\d.]+)" y="0" width="[\d.]+" height="30"/)
+  expect(miniAtMin).toContain('class="activity-icon terminal"')
+  expect(miniAtMinClawd).not.toBeNull()
+  expect(miniAtMinIcon).not.toBeNull()
+  expect(miniAtMinFirstGauge).not.toBeNull()
+  const miniIconRight =
+    Number(miniAtMinClawd?.[1]) + (10 + Number(miniAtMinIcon?.[1]) + 7 * Number(miniAtMinIcon?.[3])) * Number(miniAtMinClawd?.[2])
+  expect(Number(miniAtMinFirstGauge?.[1])).toBeGreaterThanOrEqual(miniIconRight)
+  expect(Number(mini.match(/<rect x="([\d.]+)" y="0" width="[\d.]+" height="30" fill="transparent"/)?.[1])).toBeGreaterThan(120)
+  expect(narrowMini).not.toContain('class="activity-icon terminal"')
+})
+
+test('需要你、完成、压缩和睡眠：展开与细条都画对应姿势并遵守减弱动态设置', () => {
+  const states: { activity: Activity; marker?: string; pose: string }[] = [
+    { activity: { kind: 'needs-you', icon: 'question' }, marker: 'class="activity-icon question"', pose: '.needs-you .hop{animation:' },
+    { activity: { kind: 'done' }, marker: 'class="done-sparkle"', pose: '.done .happy{opacity:1}' },
+    { activity: { kind: 'compacting' }, marker: '.compacting .hop{transform:scale', pose: '@keyframes compacting-squish' },
+    { activity: { kind: 'sleep' }, marker: 'class="sleep-z"', pose: '.clawd.sleep{opacity:.5}' },
+  ]
+
+  for (const mini of [false, true]) {
+    for (const { activity, marker, pose } of states) {
+      const src = bandSvg(EMPTY_BARS, false, 1100, mini, 'zh', undefined, undefined, activity)
+      expect(src).toContain(`class="clawd ${mini ? 'mini ' : ''}${activity.kind}`)
+      expect(src).toContain(marker)
+      expect(src).toContain(pose)
+      expect(src).toContain('@media (prefers-reduced-motion:reduce)')
+    }
+  }
+  const sleep = bandSvg(EMPTY_BARS, false, 1100, false, 'zh', undefined, undefined, { kind: 'sleep' })
+  expect(sleep).toContain('class="sleep-eyes"')
+})
+
+test('反应：测试通过、失败、普通错误和发火在展开与细条上都有对应像素姿势', () => {
+  const reactions: { activity: Activity; markers: string[] }[] = [
+    { activity: { kind: 'reaction', reaction: 'test-pass', icon: 'check' }, markers: ['class="activity-icon check"', 'class="reaction-confetti"', '.test-pass .armL'] },
+    { activity: { kind: 'reaction', reaction: 'test-fail', icon: 'cross' }, markers: ['class="activity-icon cross"', 'class="reaction-x-eyes"', 'class="sweat"'] },
+    { activity: { kind: 'reaction', reaction: 'oops', icon: 'cross' }, markers: ['class="activity-icon cross"', 'class="reaction-x-eyes"', '.oops .hop{animation:oops-shake'] },
+    { activity: { kind: 'reaction', reaction: 'tantrum' }, markers: ['class="angry-eyes"', 'class="tantrum-steam"', '.tantrum .hop{animation:tantrum-stomp'] },
+  ]
+
+  for (const mini of [false, true]) {
+    for (const { activity, markers } of reactions) {
+      const src = bandSvg(EMPTY_BARS, false, 1100, mini, 'zh', undefined, undefined, activity)
+      expect(src).toMatch(new RegExp(`class="clawd${mini ? ' mini' : ''} reaction ${activity.reaction}`))
+      for (const marker of markers) expect(src).toContain(marker)
+      expect(src).toContain('@media (prefers-reduced-motion:reduce)')
+    }
+  }
+})
+
+test('时段和节日装扮：帽子优先级正确，细条保留帽子与咖啡但不画粒子', () => {
+  const crown = '<path d="M4.2 0V-2.4L6.1-1.2 8-3 9.9-1.2 11.8-2.4V0Z" fill="#F2C14E"/>'
+  const christmas = { level: 10, title: 'Clawd Lv.10', mood: moodAt(new Date(2026, 11, 25, 23))! }
+  const christmasExpanded = bandSvg(EMPTY_BARS, false, 1100, false, 'zh', christmas)
+  const christmasMini = bandSvg(EMPTY_BARS, false, 1100, true, 'zh', christmas)
+  expect(christmasExpanded).toContain('class="mood-hat santa"')
+  expect(christmasExpanded).not.toContain('class="mood-hat nightcap"')
+  expect(christmasExpanded).not.toContain(crown)
+  expect(christmasExpanded).toContain('class="mood-particles winter"')
+  expect(christmasMini).toContain('class="mood-hat santa"')
+  expect(christmasMini).not.toContain('class="mood-particles')
+
+  const spring = { level: 1, title: 'Clawd Lv.1', mood: moodAt(new Date(2026, 2, 1, 12))! }
+  const autumn = { level: 1, title: 'Clawd Lv.1', mood: moodAt(new Date(2026, 8, 1, 12))! }
+  expect(bandSvg(EMPTY_BARS, false, 1100, false, 'zh', spring)).toContain('class="mood-particles spring"')
+  expect(bandSvg(EMPTY_BARS, false, 1100, false, 'zh', autumn)).toContain('class="mood-particles autumn"')
+
+  const newYear = { level: 10, title: 'Clawd Lv.10', mood: moodAt(new Date(2026, 11, 31, 23))! }
+  const newYearSvg = bandSvg(EMPTY_BARS, false, 1100, false, 'zh', newYear)
+  const newYearMini = bandSvg(EMPTY_BARS, false, 1100, true, 'zh', newYear)
+  expect(newYearSvg).toContain('class="mood-hat party"')
+  expect(newYearSvg).toContain('class="mood-fireworks"')
+  expect(newYearSvg).not.toContain('class="mood-hat nightcap"')
+  expect(newYearSvg).not.toContain(crown)
+  expect(newYearMini).toContain('class="mood-hat party"')
+  expect(newYearMini).not.toContain('class="mood-fireworks"')
+
+  const night = { level: 10, title: 'Clawd Lv.10', mood: moodAt(new Date(2026, 5, 1, 23))! }
+  const nightSvg = bandSvg(EMPTY_BARS, false, 1100, false, 'zh', night)
+  const nightMini = bandSvg(EMPTY_BARS, false, 1100, true, 'zh', night)
+  expect(nightSvg).toContain('class="mood-hat nightcap"')
+  expect(nightSvg).not.toContain(crown)
+  expect(nightMini).toContain('class="mood-hat nightcap"')
+
+  const morning = { level: 1, title: 'Clawd Lv.1', mood: moodAt(new Date(2026, 5, 1, 8))! }
+  const morningExpanded = bandSvg(EMPTY_BARS, false, 1100, false, 'zh', morning)
+  const morningMini = bandSvg(EMPTY_BARS, false, 1100, true, 'zh', morning)
+  expect(morningExpanded).toContain('class="mood-coffee"')
+  expect(morningExpanded).toContain('class="mood-sun"')
+  expect(morningMini).toContain('class="mood-coffee"')
+  expect(morningMini).not.toContain('class="mood-sun"')
+  expect(morningMini).not.toContain('class="mood-particles')
+})
+
+test('活动和反应覆盖时段、季节与节日装扮，睡眠仍可显示', () => {
+  const pet = { level: 10, title: 'Clawd Lv.10', mood: moodAt(new Date(2026, 11, 25, 8))! }
+  const active: { isWorking: boolean; activity: Activity }[] = [
+    { isWorking: true, activity: { kind: 'working', icon: 'terminal', owner: 1 } },
+    { isWorking: false, activity: { kind: 'needs-you', icon: 'bang' } },
+    { isWorking: false, activity: { kind: 'compacting' } },
+    { isWorking: false, activity: { kind: 'reaction', reaction: 'oops', icon: 'cross' } },
+    { isWorking: false, activity: { kind: 'done' } },
+  ]
+
+  for (const { isWorking, activity } of active) {
+    const src = bandSvg(EMPTY_BARS, isWorking, 1100, false, 'zh', pet, undefined, activity)
+    expect(src).not.toContain('class="mood-hat santa"')
+    expect(src).not.toContain('class="mood-coffee"')
+    expect(src).not.toContain('class="mood-particles')
+  }
+
+  const asleep = bandSvg(EMPTY_BARS, false, 1100, false, 'zh', pet, undefined, { kind: 'sleep' })
+  expect(asleep).toContain('class="mood-hat santa"')
+  expect(asleep).toContain('class="mood-coffee"')
 })
 
 test('干活时：1100px 信息栏的 SVG 源码远低于宿主限制', ZH, async () => {
@@ -346,86 +510,9 @@ test('连续刷新：只认最后一次的 5 秒，早先的定时器不会提�
   expect((await svgOf(ui)).props?.height).toBe(H_MINI)
 })
 
-// ───────── 更新提示 ─────────
-import { CHANGELOG } from './changelog'
+// ───────── 跟随系统语言 ─────────
 
 const START = { cwd: '/tmp', surface: 'desktop' as const, isInteractive: true }
-
-async function startWith($: Parameters<Parameters<typeof test>[1]>[0], on: Parameters<Parameters<typeof test>[1]>[1], stored: Record<string, unknown>) {
-  mock.store(on, stored)
-  on('session.measure', ($, e) => ({ changed: e.changed }))
-  // 测试里没有真实会话：补上「会话开始」和「读用量」的底层应答
-  on('session.start', ($, e) => ({ cwd: e.cwd }))
-  on('session.usage', () => ({ value: { startedAt: 0, context: { window: 200000 }, rateLimits: [] } }))
-  // 桌面窗口已连上（/reload-plugins 的情形）
-  on('session.surfaces', () => ({ value: ['desktop'] }))
-  on('command.register', ($, e) => ({ value: { command: e.name } }))
-  const toasts: { text: string; timeoutMs?: number }[] = []
-  on('ui.toast', ($, e) => {
-    toasts.push(e)
-    return { value: undefined }
-  })
-  await $.session.start(START as never)
-
-  return toasts
-}
-
-test('更新提示：从上一版升上来，弹出新版本改了什么，记住已看过', ZH, async ($, on) => {
-  const toasts = await startWith($, on, { lastSeenVersion: CHANGELOG[1].version })
-  expect(toasts).toHaveLength(1)
-  expect(toasts[0].text).toContain(`Clawd 信息栏 ${CHANGELOG[0].version}`)
-  expect(toasts[0].text).toContain(CHANGELOG[0].notes.zh[0])
-  // 末尾请大家去 GitHub 点 star
-  expect(toasts[0].text).toContain('去 GitHub 点个 ⭐ 支持一下：github.com/Geek0x0/claude-desktop-mods')
-  // 停到 App 允许的上限 60 秒（超过 60000 整条会被丢掉）
-  expect(toasts[0].timeoutMs).toBe(60000)
-
-  // 已记下看过：再加载一次（比如 /reload-plugins）不再弹
-  await $.session.start(START as never)
-  expect(toasts).toHaveLength(1)
-})
-
-test('更新提示：一次跨好几版，每版各弹一条，「点个 star」只在最新那条末尾出现一次', ZH, async ($, on) => {
-  const toasts = await startWith($, on, { lastSeenVersion: CHANGELOG[3].version })
-  expect(toasts).toHaveLength(3)
-  const nudged = toasts.filter(t => t.text.includes('点个 ⭐'))
-  expect(nudged).toHaveLength(1)
-  // 最新那条最后弹（落在最上面），star 就在它末尾
-  expect(toasts[2].text).toContain(`Clawd 信息栏 ${CHANGELOG[0].version}`)
-  expect(toasts[2].text.endsWith('github.com/Geek0x0/claude-desktop-mods')).toBe(true)
-})
-
-test('更新提示：已经看过最新版，不弹', ZH, async ($, on) => {
-  const toasts = await startWith($, on, { lastSeenVersion: CHANGELOG[0].version })
-  expect(toasts).toHaveLength(0)
-})
-
-test('更新提示：新装（从没看过）只介绍最新一版', ZH, async ($, on) => {
-  const toasts = await startWith($, on, {})
-  expect(toasts).toHaveLength(1)
-  expect(toasts[0].text).toContain(CHANGELOG[0].version)
-  expect(toasts[0].text).not.toContain(CHANGELOG[1].version)
-  await $.session.start(START as never)
-  expect(toasts).toHaveLength(1)
-})
-
-test('更新提示：后面的步骤出错（注册命令失败）也不影响弹窗', ZH, async ($, on) => {
-  mock.store(on, { lastSeenVersion: CHANGELOG[1].version })
-  on('session.start', ($, e) => ({ cwd: e.cwd }))
-  on('session.usage', () => ({ value: { startedAt: 0, context: { window: 200000 }, rateLimits: [] } }))
-  // 桌面窗口已连上（/reload-plugins 的情形）
-  on('session.surfaces', () => ({ value: ['desktop'] }))
-  on('command.register', () => {
-    throw new Error('注册失败')
-  })
-  const toasts: { text: string }[] = []
-  on('ui.toast', ($, e) => {
-    toasts.push(e)
-    return { value: undefined }
-  })
-  await $.session.start(START as never)
-  expect(toasts).toHaveLength(1)
-})
 
 // ───────── 语言 / 放松模式 ─────────
 const EN = { options: { language: 'en' } }
@@ -438,13 +525,11 @@ async function startAuto(
   env: Record<string, string>,
   appleLanguages: string | null,
 ) {
-  mock.store(on, { lastSeenVersion: CHANGELOG[0].version })
+  mock.store(on, {})
   mock.env(on, env)
   on('session.measure', ($, e) => ({ changed: e.changed }))
   on('session.start', ($, e) => ({ cwd: e.cwd }))
   on('session.usage', () => ({ value: { startedAt: 0, context: { window: 200000 }, rateLimits: [] } }))
-  // 桌面窗口已连上（/reload-plugins 的情形）
-  on('session.surfaces', () => ({ value: ['desktop'] }))
   on('command.register', ($, e) => ({ value: { command: e.name } }))
   const asked: string[][] = []
   on('process.run', ($, e) => {
@@ -484,25 +569,6 @@ test('英文界面：四块仍然左右留白相等、间距相等', EN, async (
   const gaps = [blocks[0][0] - (22 + 16 * 4.5), ...[1, 2, 3].map(i => blocks[i][0] - (blocks[i - 1][0] + blocks[i - 1][1]))]
   for (const g of gaps) expect(near(g, gaps[0])).toBe(true)
   expect(near(1068 - (blocks[3][0] + blocks[3][1]), 22)).toBe(true)
-})
-
-test('英文界面：更新提示也是英文', EN, async ($, on) => {
-  mock.store(on, { lastSeenVersion: CHANGELOG[1].version })
-  on('session.start', ($, e) => ({ cwd: e.cwd }))
-  on('session.usage', () => ({ value: { startedAt: 0, context: { window: 200000 }, rateLimits: [] } }))
-  // 桌面窗口已连上（/reload-plugins 的情形）
-  on('session.surfaces', () => ({ value: ['desktop'] }))
-  on('command.register', ($, e) => ({ value: { command: e.name } }))
-  const toasts: { text: string }[] = []
-  on('ui.toast', ($, e) => {
-    toasts.push(e)
-    return { value: undefined }
-  })
-  await $.session.start(START as never)
-  expect(toasts).toHaveLength(1)
-  expect(toasts[0].text).toContain(`Clawd band ${CHANGELOG[0].version}: `)
-  expect(toasts[0].text).toContain(CHANGELOG[0].notes.en[0])
-  expect(toasts[0].text).toContain('A ⭐ on GitHub helps')
 })
 
 test('跟随系统：环境变量是中文 → 中文，不去问 macOS', AUTO, async ($, on) => {
@@ -581,34 +647,6 @@ test('放松模式 + 干活：墨镜和干活两种状态同时挂在 Clawd 上�
   expect(src).toMatch(/class="clawd working[^"]* chill"/)
   expect(src).toContain('.chill.working .shades{animation:none;transform:translateY(-1.9px)}')
 })
-
-test('更新提示：App 重启时会话先启动、窗口还没连上，先不弹也不记「看过」；窗口连上再弹', ZH, async ($, on) => {
-  const stored: Record<string, unknown> = { lastSeenVersion: CHANGELOG[1].version }
-  mock.store(on, stored)
-  on('session.measure', ($, e) => ({ changed: e.changed }))
-  on('session.start', ($, e) => ({ cwd: e.cwd }))
-  on('session.usage', () => ({ value: { startedAt: 0, context: { window: 200000 }, rateLimits: [] } }))
-  on('command.register', ($, e) => ({ value: { command: e.name } }))
-  let surfaces: string[] = []
-  on('session.surfaces', () => ({ value: surfaces }))
-  on('session.attach', ($, e) => ({ clientId: e.clientId }))
-  const toasts: string[] = []
-  on('ui.toast', ($, e) => {
-    toasts.push(e.text)
-    return { value: undefined }
-  })
-  await $.session.start(START as never)
-  expect(toasts).toHaveLength(0)
-
-  surfaces = ['desktop']
-  await $.session.attach({ surface: 'desktop', clientId: 'desktop:default' })
-  expect(toasts).toHaveLength(1)
-  expect(toasts[0]).toContain(`Clawd 信息栏 ${CHANGELOG[0].version}`)
-  // 弹过才记看过：再连一次不重复弹
-  await $.session.attach({ surface: 'desktop', clientId: 'desktop:2' })
-  expect(toasts).toHaveLength(1)
-})
-
 
 test('悬停换上的详情（如「84,000 tokens」）比副标题长时，这一块按详情留宽，不压分隔线、不出右边界', EN, async ($, on) => {
   on('session.measure', ($, e) => ({ changed: e.changed }))

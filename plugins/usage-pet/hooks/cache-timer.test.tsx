@@ -2,7 +2,6 @@ import { expect, mock, test } from 'claude-code/testing'
 
 import type { Bars } from '../types'
 import { bandSvg } from './band'
-import { CHANGELOG } from './changelog'
 
 const BARS: Bars = {
   from: null,
@@ -80,14 +79,13 @@ const measure = {
 type Harness = Parameters<Parameters<typeof test>[1]>
 const NOW = new Date(2026, 9, 10, 14).getTime()
 async function setup($: Harness[0], on: Harness[1], withLimits: boolean) {
-  mock.store(on, { lastSeenVersion: CHANGELOG[0].version })
+  mock.store(on, {})
   const clock = mock.clock(on, { now: NOW })
   on('session.start', ($, e) => ({ cwd: e.cwd }))
   on('session.usage', () => ({ value: { startedAt: 0, context: { window: 200000 }, rateLimits: [] } }))
   on('session.measure', ($, e) => ({ changed: e.changed }))
   on('command.register', ($, e) => ({ value: { command: e.name } }))
   on('turn.complete', ($, e) => ({ text: '', usage: e.usage }))
-  on('ui.toast', () => ({ value: undefined }))
   await $.session.start(START as never)
   if (withLimits) {
     await $.session.measure(measure)

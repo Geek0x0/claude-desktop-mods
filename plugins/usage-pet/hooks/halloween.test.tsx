@@ -3,7 +3,6 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { Bars } from '../types'
 import { bandSvg } from './band'
 import { cardSvg } from './card'
-import { CHANGELOG } from './changelog'
 import { isHalloween, NEW_PET } from './pet'
 
 const WITCH = '#3B2A55'
@@ -113,13 +112,12 @@ type Harness = Parameters<Parameters<typeof test>[1]>
 // 把插件的时钟拨到指定的本机日期（默认 10 月 26 日下午，万圣节期间）
 const OCT_26 = new Date(2026, 9, 26, 14).getTime()
 async function bandAfterTurn($: Harness[0], on: Harness[1], turn = TURN, now = OCT_26) {
-  mock.store(on, { lastSeenVersion: CHANGELOG[0].version })
+  mock.store(on, {})
   mock.clock(on, { now })
   on('session.start', ($, e) => ({ cwd: e.cwd }))
   on('session.usage', () => ({ value: { startedAt: 0, context: { window: 200000 }, rateLimits: [] } }))
   on('command.register', ($, e) => ({ value: { command: e.name } }))
   on('turn.complete', ($, e) => ({ text: '', usage: e.usage }))
-  on('ui.toast', () => ({ value: undefined }))
   await $.session.start(START as never)
   await $.turn.complete(turn)
   const ui = await $.ui.mount(BAND)

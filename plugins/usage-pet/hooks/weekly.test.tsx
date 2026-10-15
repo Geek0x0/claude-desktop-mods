@@ -2,7 +2,6 @@ import { expect, mock, test } from 'claude-code/testing'
 
 import type { Ledger } from '../types'
 import { cardAlt, cardSvg } from './card'
-import { CHANGELOG } from './changelog'
 import { NEW_PET } from './pet'
 import { addTurn, hourOf, isStale, mergeLedgers, partialSince, SINCE_KEY, sumWeek, toLedger } from './weekly'
 
@@ -91,7 +90,6 @@ function fakeStore(on: Harness[1], entries: Record<string, unknown>) {
 
 async function setup($: Harness[0], on: Harness[1], since = NOW - 10 * DAY) {
   const store = fakeStore(on, {
-    lastSeenVersion: CHANGELOG[0].version,
     [SINCE_KEY]: since,
     'tok:other': { [NOW_HOUR - 48]: [5000, 0, 0, 0] },
     'tok:old': { [NOW_HOUR - 240]: [9, 9, 9, 9] },
@@ -102,7 +100,6 @@ async function setup($: Harness[0], on: Harness[1], since = NOW - 10 * DAY) {
   on('session.usage', () => ({ value: { startedAt: 0, context: { window: 200000 }, rateLimits: [] } }))
   on('command.register', ($, e) => ({ value: { command: e.name } }))
   on('turn.complete', ($, e) => ({ text: '', usage: e.usage }))
-  on('ui.toast', () => ({ value: undefined }))
   await $.session.start({ cwd: '/tmp', surface: 'desktop', isInteractive: true } as never)
 
   return { clock, ...store }
@@ -154,14 +151,13 @@ test('记账不满 7 天：写明从哪天开始记', { options: { language: 'zh
 })
 
 test('第一次记账时记下开始时间', { options: { language: 'en' } }, async ($, on) => {
-  const { data } = fakeStore(on, { lastSeenVersion: CHANGELOG[0].version })
+  const { data } = fakeStore(on, {})
   mock.clock(on, { now: NOW })
   on('session.id', () => ({ value: 'sess-B' }))
   on('session.start', ($, e) => ({ cwd: e.cwd }))
   on('session.usage', () => ({ value: { startedAt: 0, context: { window: 200000 }, rateLimits: [] } }))
   on('command.register', ($, e) => ({ value: { command: e.name } }))
   on('turn.complete', ($, e) => ({ text: '', usage: e.usage }))
-  on('ui.toast', () => ({ value: undefined }))
   await $.session.start({ cwd: '/tmp', surface: 'desktop', isInteractive: true } as never)
   await $.turn.complete(TURN)
   expect(data.get(SINCE_KEY)).toBe(NOW)

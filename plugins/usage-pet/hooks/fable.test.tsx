@@ -2,7 +2,6 @@ import { expect, mock, test } from 'claude-code/testing'
 
 import type { Bars } from '../types'
 import { bandAlt, bandSvg, MIN_BAND_W, MIN_BAND_W_WITH_FABLE } from './band'
-import { CHANGELOG } from './changelog'
 
 const gaugeCount = (svg: string) => svg.match(/<g class="g(?: enter)?"/g)?.length ?? 0
 
@@ -78,14 +77,13 @@ const fableResponse = (percent: number) => ({
 
 async function setup($: Harness[0], on: Harness[1], responses: UsageResponse[] = [], authorize: unknown = { handle: 'test-oauth-handle' }) {
   const network = { fetches: 0 }
-  mock.store(on, { lastSeenVersion: CHANGELOG[0].version })
+  mock.store(on, {})
   const clock = mock.clock(on, { now: Date.UTC(2026, 9, 15, 12) })
   on('session.start', ($, e) => ({ cwd: e.cwd }))
   on('session.usage', () => ({ value: { startedAt: 0, context: { window: 200000, tokens: 84000, percent: 42 }, rateLimits: [] } }))
   on('session.measure', ($, e) => ({ changed: e.changed }))
   on('command.register', ($, e) => ({ value: { command: e.name } }))
   on('turn.complete', ($, e) => ({ text: '', usage: e.usage }))
-  on('ui.toast', () => ({ value: undefined }))
   on('session.authorize', () => ({ value: authorize }))
   on('http.fetch', () => {
     const response = responses[Math.min(network.fetches, responses.length - 1)] ?? { status: 200, text: '{"limits":[]}' }

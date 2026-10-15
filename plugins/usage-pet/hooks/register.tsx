@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, ModelUsage, Register, SessionContextUsage, SessionRateLimit } from 'claude-code'
+import type { EngineInterface, ModelUsage, Register, SessionContextUsage, SessionRateLimit, Timer } from 'claude-code'
 
-import type { Bars, CacheStat, CacheTotals, Pet, Report, Snap, Week, Window } from '../types'
+import type { Activity, Bars, CacheStat, CacheTotals, Pet, ReactionKind, Report, Snap, Week, Window } from '../types'
 import {
   bandAlt,
   bandSvg,
@@ -9,13 +9,16 @@ import {
   H,
   H_MINI,
   MIN_BAND_W,
+  MIN_BAND_W_WITH_ACTIVITY,
   MIN_BAND_W_WITH_FABLE,
+  MIN_BAND_W_WITH_FABLE_AND_ACTIVITY,
   type PetView,
   tokensText,
 } from './band'
+import { canReplaceActivity, iconForTool, isFrustrated, reactionForToolResult } from './activity'
 import { CARD_H, CARD_W, type CardData, cardAlt, cardSvg } from './card'
-import { CHANGELOG, unseenReleases } from './changelog'
 import { type Lang, type LangChoice, langFromTags, parseAppleLanguages, T, weekday } from './i18n'
+import { moodAt } from './mood'
 import { type Achievement, isHalloween, levelOf, NEW_PET, normalize, onTurn, threshold } from './pet'
 import { addTurn, isStale, LEDGER_PREFIX, mergeLedgers, partialSince, SINCE_KEY, sumWeek, toLedger } from './weekly'
 
@@ -33,6 +36,180 @@ const EXPAND_MS = 5000
 const petAtom = atom({ plugin: 'usage-pet', key: 'pet' } as const, NEW_PET as Pet)
 const NEW_REPORT: Report = { startedAt: 0, turns: 0, toolCalls: 0, files: [], output: 0, earned: [] }
 const reportAtom = atom({ plugin: 'usage-pet', key: 'report' } as const, NEW_REPORT)
+const activityAtom = atom({ plugin: 'usage-pet', key: 'activity' } as const, { kind: 'idle' } as Activity)
+let activityOwner = 0
+const activeActivityOwners = new Set<number>()
+const SLEEP_AFTER_MS = 10 * 60000
+const DONE_MS = 6000
+const REACTION_MS: Record<ReactionKind, number> = { 'test-pass': 6000, 'test-fail': 6000, oops: 3000, tantrum: 8000 }
+const TANTRUM_WINDOW_MS = 20 * 60000
+let sleepTimer: Timer | undefined
+let sleepGeneration = 0
+let lastActivityAt = 0
+let mainTurnActive = false
+let tantrumTimes: number[] = [] // Keep timestamps only; submitted prompt text is never retained.
+
+function restoreActivity(activity: Activity | undefined): Activity {
+  if (!activity) {
+    return { kind: 'idle' }
+  }
+  if (activity.kind === 'needs-you') {
+    return restoreActivity(activity.previous)
+  }
+  if (activity.owner !== undefined && !activeActivityOwners.has(activity.owner)) {
+    return restoreActivity(activity.previous)
+  }
+
+  return activity
+}
+
+function previousActivity(current: Activity): Activity {
+  return current.kind === 'needs-you' || current.kind === 'done' || current.kind === 'sleep' ? restoreActivity(current.previous) : current
+}
+
+async function armSleepTimer($: EngineInterface, since = lastActivityAt) {
+  sleepTimer?.cancel()
+  sleepTimer = undefined
+  const generation = ++sleepGeneration
+  if (mainTurnActive) {
+    return
+  }
+  const remaining = Math.max(0, since + SLEEP_AFTER_MS - (await clockNow($)))
+  try {
+    sleepTimer = $.clock.after(remaining, () => {
+      if (generation !== sleepGeneration) {
+        return
+      }
+      sleepTimer = undefined
+      if (mainTurnActive) {
+        return
+      }
+      void update($, activityAtom, current =>
+        generation === sleepGeneration && !mainTurnActive && canReplaceActivity(current, 'sleep')
+          ? { kind: 'sleep', previous: current }
+          : current,
+      )
+    })
+  } catch {
+    sleepTimer = undefined
+  }
+}
+
+async function noteActivity($: EngineInterface) {
+  lastActivityAt = await clockNow($)
+  await armSleepTimer($, lastActivityAt)
+}
+
+async function needsYou($: EngineInterface, icon: 'bang' | 'question') {
+  await update($, activityAtom, current => {
+    const previous = previousActivity(current)
+    if (!canReplaceActivity(previous, 'needs-you')) {
+      return previous
+    }
+
+    return { kind: 'needs-you', icon, previous }
+  })
+}
+
+async function noteFrustration($: EngineInterface, text: string): Promise<boolean> {
+  const now = await clockNow($)
+  tantrumTimes = tantrumTimes.filter(at => now - at < TANTRUM_WINDOW_MS)
+  if (!isFrustrated(text)) {
+    return false
+  }
+
+  tantrumTimes.push(now)
+  if (tantrumTimes.length < 3) {
+    return false
+  }
+
+  tantrumTimes = []
+
+  return true
+}
+
+async function showReaction($: EngineInterface, reaction: ReactionKind) {
+  const owner = ++activityOwner
+  activeActivityOwners.add(owner)
+  let applied = false
+  const icon: Activity['icon'] = reaction === 'test-pass' ? 'check' : reaction === 'tantrum' ? undefined : 'cross'
+
+  try {
+    await update($, activityAtom, stored => {
+      const current = stored.kind === 'needs-you' ? stored : restoreActivity(stored)
+      if (!canReplaceActivity(current, 'reaction')) {
+        return current
+      }
+      const previous = current.kind === 'reaction' ? restoreActivity(current.previous) : current
+      applied = true
+
+      return { kind: 'reaction', reaction, icon, owner, previous }
+    })
+  } finally {
+    if (!applied) {
+      activeActivityOwners.delete(owner)
+    }
+  }
+
+  if (!applied) return
+  try {
+    $.clock.after(REACTION_MS[reaction], () => {
+      activeActivityOwners.delete(owner)
+      void update($, activityAtom, current =>
+        current.kind === 'reaction' && current.owner === owner ? restoreActivity(current.previous) : current,
+      )
+    })
+  } catch {
+    activeActivityOwners.delete(owner)
+    await update($, activityAtom, current =>
+      current.kind === 'reaction' && current.owner === owner ? restoreActivity(current.previous) : current,
+    )
+  }
+}
+
+async function completeActivity($: EngineInterface, aborted: boolean) {
+  if (aborted) {
+    await update($, activityAtom, current => {
+      const previous = previousActivity(current)
+      return canReplaceActivity(previous, 'idle') ? { kind: 'idle' } : previous
+    })
+    return
+  }
+
+  const owner = ++activityOwner
+  activeActivityOwners.add(owner)
+  let applied = false
+  try {
+    await update($, activityAtom, current => {
+      const previous = previousActivity(current)
+      if (!canReplaceActivity(previous, 'done')) {
+        return previous
+      }
+      applied = true
+
+      return { kind: 'done', owner, previous }
+    })
+  } finally {
+    if (!applied) {
+      activeActivityOwners.delete(owner)
+    }
+  }
+  if (applied) {
+    try {
+      $.clock.after(DONE_MS, () => {
+        activeActivityOwners.delete(owner)
+        void update($, activityAtom, current =>
+          current.kind === 'done' && current.owner === owner ? restoreActivity(current.previous) : current,
+        )
+      })
+    } catch {
+      activeActivityOwners.delete(owner)
+      await update($, activityAtom, current =>
+        current.kind === 'done' && current.owner === owner ? restoreActivity(current.previous) : current,
+      )
+    }
+  }
+}
 // 万圣节讨糖：最近一次答完的时间（0 = 不讨糖）。等自动展开收起后再开始讨，讨 ASK_WINDOW_MS 内有效
 const askAtom = atom({ plugin: 'usage-pet', key: 'ask' } as const, 0)
 // 缓存倒计时：主对话最近一次答完的时间（0 = 这个会话还没答过）。
@@ -140,11 +317,6 @@ const PX_PER_COLUMN = 8
 
 // 桌面端任何状态变化都会重画整条、SVG 动画从头播（anthropics/claude-code#99211），
 // 所以滚动播完后把 from 收成 to，之后的重画就是静止的最终值，不会重播滚动。
-// 更新提示：$.store 跨会话保存「上次给用户看过的版本」，有没看过的就弹 toast，看过就不再弹
-const SEEN_KEY = 'lastSeenVersion'
-// 提示（更新内容、升级、成就）停到上限 60 秒：toast 只能设停留时长（App 限定 1–60000 ms，超出整条丢弃），
-// 位置由 App 定（对话区右上角）；鼠标放上去会停住，点一下就关
-const STICKY_MS = 60000
 
 // 插件跑在独立环境里，没有 process.platform；Windows 一定有 OS=Windows_NT
 async function isWindows($: EngineInterface): Promise<boolean> {
@@ -193,23 +365,6 @@ async function detectLang($: EngineInterface): Promise<Lang> {
 // /config 指定了语言就直接用（切换立刻生效）；auto 才用 session.start 探测到的
 async function langOf($: EngineInterface, choice: LangChoice): Promise<Lang> {
   return choice === 'zh' || choice === 'en' ? choice : read($, langAtom)
-}
-
-// 只在有界面连着的时候弹，弹了才记「看过」：App 重启时会话先启动、窗口后连上，
-// 那时弹的提示没人看得到，却会被记成看过（1.4.0 就这样被吞了）。没连上就等 session.attach 再弹
-async function showWhatsNew($: EngineInterface, lang: Lang) {
-  const latest = CHANGELOG[0].version
-  const lastSeen = await $.store.get(SEEN_KEY)
-  if (lastSeen === latest || (await $.session.surfaces()).length === 0) {
-    return
-  }
-  // 旧的先弹、新的后弹，最新的那条落在最上面；只在最新这条末尾请大家点个 star（装了的人多，点 star 的少）
-  const releases = unseenReleases(lastSeen).reverse()
-  releases.forEach((release, i) => {
-    const notes = release.notes[lang].join(' · ')
-    $.ui.toast(T[lang].whatsNew(release.version) + notes + (i === releases.length - 1 ? `\n${T[lang].starNudge}` : ''), { timeoutMs: STICKY_MS })
-  })
-  await $.store.set(SEEN_KEY, latest)
 }
 
 async function expandForAWhile($: EngineInterface) {
@@ -361,29 +516,26 @@ async function clockNow($: EngineInterface): Promise<number> {
 }
 
 // now 来自 $.clock.now()：测试里能把日期拨到万圣节前后
-function petView(pet: Pet, lang: Lang, halloween = false, askSince = 0, now = 0): PetView {
+function petView(pet: Pet, lang: Lang, halloween = false, askSince = 0, now = 0, seasonal = true): PetView {
   const level = levelOf(pet.xp)
   const since = now - askSince - ASK_DELAY_MS
   const askAgo = halloween && askSince > 0 && since < ASK_WINDOW_MS ? since / 1000 : undefined
   const title = T[lang].petTitle(level, pet.xp, threshold(level + 1), pet.streak)
 
-  return { level, title: askAgo === undefined ? title : `${T[lang].askCandy} · ${title}`, halloween, askAgo }
+  const mood = moodAt(new Date(now), seasonal)
+
+  return { level, title: askAgo === undefined ? title : `${T[lang].askCandy} · ${title}`, halloween, askAgo, ...(mood ? { mood } : {}) }
 }
 
 // 每答完一轮：从 store 读最新的（别的会话可能也在涨经验），算完写回，升级 / 成就弹提示
-async function growPet($: EngineInterface, rate: number | undefined, lang: Lang) {
+async function growPet($: EngineInterface, rate: number | undefined) {
   const bars = await read($, barsAtom)
   const maxLimit = Math.max(bars.to?.session?.percent ?? 0, bars.to?.weekly?.percent ?? 0)
   const { pet, events } = onTurn(normalize(await $.store.get(PET_KEY)), { now: new Date(), turnRate: rate, maxLimit })
   await $.store.set(PET_KEY, pet)
   await update($, petAtom, () => pet)
-  const t = T[lang]
   for (const ev of events) {
-    if (ev.kind === 'level') {
-      $.ui.toast(t.levelUp(ev.level, ev.gear ? t.gear[ev.gear] : undefined), { timeoutMs: STICKY_MS })
-    } else {
-      const [name, how] = t.achievement[ev.id]
-      $.ui.toast(t.unlocked(name, how), { timeoutMs: STICKY_MS })
+    if (ev.kind === 'achievement') {
       await update($, reportAtom, r => ({ ...r, earned: [...r.earned, ev.id] }))
     }
   }
@@ -473,11 +625,12 @@ export const register: Register = (on, options) => {
   const choice = (options?.language ?? 'auto') as LangChoice
   // 节日装扮：/config 里 seasonal 填 off 就不换（不分大小写、去掉首尾空格；以前是下拉，现在是文本框）
   const seasonal = String(options?.seasonal ?? 'auto').trim().toLowerCase() !== 'off'
+  const tantrumsEnabled = String(options?.tantrums ?? 'on').trim().toLowerCase() !== 'off'
   const fableState: FableSession = {}
 
   on('session.start', async ($, e, next) => {
     refreshFable($, fableState)
-    // 先定语言（更新提示要用）；读不出来就英文
+    // 先定语言；读不出来就英文
     let lang: Lang = 'en'
     try {
       lang = choice === 'zh' || choice === 'en' ? choice : await detectLang($)
@@ -493,13 +646,6 @@ export const register: Register = (on, options) => {
       $.ui.log(`usage-pet: 读养成数据失败：${String(err)}`, { to: 'debug' })
     }
     await update($, reportAtom, r => (r.startedAt ? r : { ...r, startedAt: Date.now() }))
-    // 更新提示放最前：后面注册命令、读用量出错（整个 hook 会被跳过）也不会吞掉它；
-    // 它自己出错只记调试日志，不拦后面的步骤
-    try {
-      await showWhatsNew($, lang)
-    } catch (err) {
-      $.ui.log(`usage-pet: 更新提示失败：${String(err)}`, { to: 'debug' })
-    }
     await $.command.register({
       name: 'clawd',
       description: 'Clawd band: toggle always-expanded / auto-collapse · 在「一直展开」和「自动收起」之间切换',
@@ -525,19 +671,38 @@ export const register: Register = (on, options) => {
       $.ui.log(`usage-pet: 读近 7 天用量失败：${String(err)}`, { to: 'debug' })
     }
 
+    activeActivityOwners.clear()
+    mainTurnActive = false
+    tantrumTimes = []
+    await update($, activityAtom, () => ({ kind: 'idle' }))
+    await noteActivity($)
+
     return next(e)
   })
 
-  // 窗口连上（App 重启后窗口晚于会话启动）：补弹更新提示
-  on('session.attach', async ($, e, next) => {
-    const attached = await next(e)
-    try {
-      await showWhatsNew($, await langOf($, choice))
-    } catch (err) {
-      $.ui.log(`usage-pet: 更新提示失败：${String(err)}`, { to: 'debug' })
+  on('prompt.submit', async ($, e, next) => {
+    const isMainPrompt = !e.text.trim().startsWith('/')
+    mainTurnActive = isMainPrompt
+    await noteActivity($)
+    await update($, activityAtom, previousActivity)
+    if (isMainPrompt && tantrumsEnabled && (await noteFrustration($, e.text))) {
+      await showReaction($, 'tantrum')
     }
+    try {
+      return await next(e)
+    } finally {
+      await armSleepTimer($, lastActivityAt)
+    }
+  })
 
-    return attached
+  on('classic.PermissionRequest', async ($, e, next) => {
+    await noteActivity($)
+    await needsYou($, 'bang')
+    try {
+      return await next(e)
+    } finally {
+      await armSleepTimer($, lastActivityAt)
+    }
   })
 
   // 每轮结束累计缓存 token（只算主循环，子代理有自己的缓存）
@@ -575,10 +740,13 @@ export const register: Register = (on, options) => {
         await update($, askAtom, () => now)
       }
       try {
-        await growPet($, u ? turnRate(u) : undefined, await langOf($, choice))
+        await growPet($, u ? turnRate(u) : undefined)
       } catch (err) {
         $.ui.log(`usage-pet: 养成更新失败：${String(err)}`, { to: 'debug' })
       }
+      mainTurnActive = false
+      await completeActivity($, e.isAborted || e.reason === 'aborted')
+      await noteActivity($)
     }
 
     return next(e)
@@ -586,9 +754,49 @@ export const register: Register = (on, options) => {
 
   // 战报：工具调用次数（含子代理），改过的文件按路径去重；被拦下的不算
   on('tool.call', async ($, e, next) => {
-    const ran = await next(e)
+    await noteActivity($)
+    const needsIcon =
+      e.agentId === undefined ? (e.tool === 'AskUserQuestion' ? 'question' : e.tool === 'ExitPlanMode' ? 'bang' : undefined) : undefined
+    if (needsIcon) {
+      await needsYou($, needsIcon)
+    }
+    const owner = ++activityOwner
+    if (!needsIcon) {
+      activeActivityOwners.add(owner)
+    }
+    let applied = false
+    let ran!: Awaited<ReturnType<typeof next>>
+    try {
+      if (!needsIcon) {
+        await update($, activityAtom, current => {
+          const previous =
+            e.agentId === undefined
+              ? previousActivity(current)
+              : current.kind === 'sleep' || current.kind === 'done'
+                ? restoreActivity(current.previous)
+                : current
+          if (!canReplaceActivity(previous, 'working')) {
+            return previous
+          }
+          applied = true
+
+          return { kind: 'working', icon: iconForTool(e.tool), owner, previous }
+        })
+      }
+      ran = await next(e)
+    } finally {
+      if (!needsIcon) {
+        activeActivityOwners.delete(owner)
+      }
+      if (applied) {
+        await update($, activityAtom, current =>
+          current.kind === 'working' && current.owner === owner ? restoreActivity(current.previous) : current,
+        )
+      }
+      await armSleepTimer($, lastActivityAt)
+    }
     if (!('deny' in ran && ran.deny !== undefined)) {
-      const input = e as unknown as { file_path?: unknown; notebook_path?: unknown }
+      const input = e as unknown as { command?: unknown; file_path?: unknown; notebook_path?: unknown }
       const path = EDIT_TOOLS.has(e.tool) ? (input.file_path ?? input.notebook_path) : undefined
       await update($, reportAtom, r => ({
         ...r,
@@ -597,7 +805,47 @@ export const register: Register = (on, options) => {
       }))
     }
 
+    const input = e as unknown as { command?: unknown }
+    const reaction = reactionForToolResult(e.tool, String(input.command ?? ''), ran)
+    if (reaction) {
+      await showReaction($, reaction)
+    }
+
     return ran
+  })
+
+  on('session.compact', async ($, e, next) => {
+    if (e.agentId !== undefined) {
+      return next(e)
+    }
+
+    await noteActivity($)
+    const owner = ++activityOwner
+    activeActivityOwners.add(owner)
+    let applied = false
+    let result!: Awaited<ReturnType<typeof next>>
+    try {
+      await update($, activityAtom, current => {
+        const previous = current.kind === 'done' || current.kind === 'sleep' ? restoreActivity(current.previous) : current
+        if (!canReplaceActivity(previous, 'compacting')) {
+          return previous
+        }
+        applied = true
+
+        return { kind: 'compacting', owner, previous }
+      })
+      result = await next(e)
+    } finally {
+      activeActivityOwners.delete(owner)
+      if (applied) {
+        await update($, activityAtom, current =>
+          current.kind === 'compacting' && current.owner === owner ? restoreActivity(current.previous) : current,
+        )
+      }
+      await armSleepTimer($, lastActivityAt)
+    }
+
+    return result
   })
 
   on('command.run', { command: 'clawd-card' }, async $ => {
@@ -646,14 +894,23 @@ export const register: Register = (on, options) => {
     const bars = await read($, barsAtom)
     const lang = await langOf($, choice)
     const now = await clockNow($)
-    const pet = petView(await read($, petAtom), lang, seasonal && isHalloween(new Date(now)), await read($, askAtom), now)
+    const pet = petView(await read($, petAtom), lang, seasonal && isHalloween(new Date(now)), await read($, askAtom), now, seasonal)
 
     // 桌面端的 Client 在 2.1.286 上一律 10 秒超时（缺 CSP nonce，同见 #99211），所以桌面只用 Svg
     if (e.surface === 'desktop') {
       const { Box, Button, Svg } = $.ui.resolve(e)
+      const activity = await read($, activityAtom)
+      const hasActivityIcon = activity.icon !== undefined
       // 不设大下限：以前最少 560px，窗口窄时信息栏比可用宽度还宽，按钮就被挤到下一行。
       // 窄了由 bandSvg 自己逐级收（去副标题 → 只剩圆环），按钮始终在同一行右侧
-      const minimumWidth = bars.to?.fable ? MIN_BAND_W_WITH_FABLE : MIN_BAND_W
+      // 工具图标伸出 Clawd 本体的排布框，活动时给它单独留位
+      const minimumWidth = bars.to?.fable
+        ? hasActivityIcon
+          ? MIN_BAND_W_WITH_FABLE_AND_ACTIVITY
+          : MIN_BAND_W_WITH_FABLE
+        : hasActivityIcon
+          ? MIN_BAND_W_WITH_ACTIVITY
+          : MIN_BAND_W
       const width = Math.max(minimumWidth, e.props.bodyColumns * PX_PER_COLUMN - 8 - BUTTON_W)
       const pinned = await read($, pinnedAtom)
       const isMini = !pinned && !(await read($, expandedAtom))
@@ -672,7 +929,7 @@ export const register: Register = (on, options) => {
       return (
         <Box flexDirection="row" alignItems="center" flexWrap="nowrap">
           <Svg
-            source={bandSvg(bars, e.props.isWorking, width, isMini, lang, shown, cacheTimer(await read($, warmAtom), bars, now))}
+            source={bandSvg(bars, e.props.isWorking, width, isMini, lang, shown, cacheTimer(await read($, warmAtom), bars, now), activity)}
             alt={bandAlt(bars.to, e.props.isWorking, lang)}
             width={width}
             height={isMini ? H_MINI : H}

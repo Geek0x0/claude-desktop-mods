@@ -51,12 +51,9 @@ export const T = {
     ttlFive: '5 分钟',
     working: 'Claude 正在干活',
     resting: 'Claude 在休息',
-    whatsNew: (v: string) => `🦀 Clawd 信息栏 ${v}：`,
-    starNudge: '觉得好玩，去 GitHub 点个 ⭐ 支持一下：github.com/Geek0x0/claude-desktop-mods',
     pinned: 'Clawd 信息栏：一直展开',
     autoCollapse: 'Clawd 信息栏：自动收起（数据刷新时展开 5 秒）',
     // 养成
-    gear: { sprout: '头顶小芽', bowtie: '红领结', cap: '棒球帽', crown: '小皇冠' },
     achievement: {
       'cache-99': ['缓存大师', '单轮缓存命中 99%'],
       'streak-3': ['三天打鱼', '连续 3 天写代码'],
@@ -67,8 +64,6 @@ export const T = {
       'night-owl': ['夜猫子', '凌晨 0–5 点还在写代码'],
       'close-call': ['极限操作', '额度 95% 了还在冲'],
     },
-    levelUp: (level: number, gear?: string) => `⬆️ Clawd 升到 Lv.${level}！${gear ? `解锁：${gear}` : ''}`,
-    unlocked: (name: string, how: string) => `🏅 成就解锁：${name}（${how}）`,
     askCandy: 'Clawd 想要糖果 🍬 点他一下给糖',
     petTitle: (level: number, xp: number, next: number, streak: number) => `Clawd Lv.${level} · 经验 ${xp} / ${next} · 连续 ${streak} 天`,
     // 近 7 天用量（所有会话，含子代理）；记账不满 7 天时注明从哪天开始记
@@ -119,11 +114,8 @@ export const T = {
     ttlFive: '5 minutes',
     working: 'Claude is working',
     resting: 'Claude is resting',
-    whatsNew: (v: string) => `🦀 Clawd band ${v}: `,
-    starNudge: 'Enjoying Clawd? A ⭐ on GitHub helps: github.com/Geek0x0/claude-desktop-mods',
     pinned: 'Clawd band: always expanded',
     autoCollapse: 'Clawd band: auto-collapse (expands for 5 s when usage refreshes)',
-    gear: { sprout: 'a sprout', bowtie: 'a red bow tie', cap: 'a baseball cap', crown: 'a tiny crown' },
     achievement: {
       'cache-99': ['Cache master', '99% cache hit in one turn'],
       'streak-3': ['Warming up', '3 days in a row'],
@@ -134,8 +126,6 @@ export const T = {
       'night-owl': ['Night owl', 'Coding between midnight and 5 am'],
       'close-call': ['Close call', 'Still going at 95% of a limit'],
     },
-    levelUp: (level: number, gear?: string) => `⬆️ Clawd reached Lv.${level}!${gear ? ` Unlocked: ${gear}` : ''}`,
-    unlocked: (name: string, how: string) => `🏅 Achievement unlocked: ${name} (${how})`,
     askCandy: 'Clawd wants candy 🍬 Click him to give some',
     petTitle: (level: number, xp: number, next: number, streak: number) => `Clawd Lv.${level} · XP ${xp} / ${next} · ${streak}-day streak`,
     weekTokens: (total: string, since?: string) => `Last 7 days: ${total} tokens (all sessions, incl. subagents${since ? `; counting since ${since}` : ''})`,

@@ -1,10 +1,27 @@
-// 更新日志：最新的放最前面。每次发布改动，在这里加一条（中英各一份），用户更新后第一次加载会弹出来。
+// 更新日志：最新的放最前面。每次发布改动，在这里加一条（中英各一份），只作版本记录，插件不再弹出提示。
 // version 是给人看的版本号（plugin.json 故意不写 version，安装版本按提交号算）。
 import type { Lang } from './i18n'
 
 export type Release = { version: string; notes: Record<Lang, string[]> }
 
 export const CHANGELOG: Release[] = [
+  {
+    version: '1.12.0',
+    notes: {
+      zh: [
+        'Claude 干活时 Clawd 会显示对应的工具像素图标；需要你、完成、睡眠和上下文压缩都有专属姿势',
+        '测试通过会欢呼，测试失败或工具报错会显示失误表情；20 分钟内第三次烦躁提示会跺脚，可在 /config 把 tantrums 设为 off 关闭',
+        '新增时段、季节与节日装扮：早晨咖啡、夜帽、季节天气、圣诞帽和新年派对帽',
+        '不再弹出任何提示：更新说明、升级和成就都只记在 Clawd 悬停提示和战报卡里',
+      ],
+      en: [
+        'Clawd now shows per-tool pixel icons while Claude works, with distinct looks for needs-you, done, sleep and compaction',
+        'He celebrates passing tests and reacts to failed tests or tool errors; the third frustrated prompt in 20 minutes triggers a tantrum (turn it off with tantrums = off in /config)',
+        'New time-of-day, seasonal and holiday looks: morning coffee, a nightcap, seasonal weather, a Santa hat and a New Year party hat',
+        'No more pop-ups: release notes, level-ups and achievements now live only in the Clawd tooltip and the report card',
+      ],
+    },
+  },
   {
     version: '1.11.0',
     notes: {
@@ -142,14 +159,3 @@ export const CHANGELOG: Release[] = [
     },
   },
 ]
-
-// 还没给用户看过的版本：从最新一直数到上次看过的那一版（不含）。
-// 从没看过（新装）时只介绍最新一版，免得一次弹出全部历史。
-export function unseenReleases(lastSeen: unknown): Release[] {
-  const seenAt = CHANGELOG.findIndex(r => r.version === lastSeen)
-  if (seenAt === -1) {
-    return CHANGELOG.slice(0, 1)
-  }
-
-  return CHANGELOG.slice(0, seenAt)
-}

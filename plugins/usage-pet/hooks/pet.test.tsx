@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
+import type { PromptSubmitInput, SessionCompactInput } from 'claude-code'
 
-import { CHANGELOG } from './changelog'
 import { NEW_PET, levelOf, normalize, onTurn, threshold } from './pet'
 
 const ZH = { options: { language: 'zh' } }
@@ -65,30 +65,38 @@ test('store 里读出来的脏数据补齐成完整的 Pet', () => {
   expect(normalize({ xp: -5, turns: 'x', streak: 3, achievements: ['a', 1] })).toEqual({ xp: 0, turns: 0, streak: 3, lastDay: undefined, achievements: ['a'] })
 })
 
-// ───────── 接进插件：store、提示、信息栏、战报 ─────────
+// ───────── 接进插件：store、等级、信息栏、战报 ─────────
 
 type Harness = Parameters<Parameters<typeof test>[1]>
 // 测试里的「核心」应答都要在第一次调用 $ 之前注册：beneath 传进来
-async function start($: Harness[0], on: Harness[1], stored: Record<string, unknown>, beneath?: (on: Harness[1]) => void) {
-  const store = { lastSeenVersion: CHANGELOG[0].version, ...stored }
-  mock.store(on, store)
-  mock.clock(on)
+async function start(
+  $: Harness[0],
+  on: Harness[1],
+  stored: Record<string, unknown>,
+  beneath?: (on: Harness[1]) => void,
+  capturePrompt?: (event: PromptSubmitInput) => void,
+) {
+  mock.store(on, stored)
+  const clock = mock.clock(on)
   on('session.measure', ($, e) => ({ changed: e.changed }))
   on('session.start', ($, e) => ({ cwd: e.cwd }))
+  on('prompt.submit', ($, e) => {
+    capturePrompt?.(e)
+
+    return { text: e.text, origin: e.origin }
+  })
   on('session.usage', () => ({ value: { startedAt: 0, context: { window: 200000 }, rateLimits: [] } }))
   on('command.register', ($, e) => ({ value: { command: e.name } }))
   on('turn.complete', ($, e) => ({ text: '', usage: e.usage }))
   const toasts: string[] = []
-  const timeouts: (number | undefined)[] = []
   on('ui.toast', ($, e) => {
     toasts.push(e.text)
-    timeouts.push(e.timeoutMs)
     return { value: undefined }
   })
   beneath?.(on)
   await $.session.start(START as never)
 
-  return { store, toasts, timeouts }
+  return { toasts, clock }
 }
 
 const turn = (read: number, write: number, fresh: number) => ({
@@ -101,28 +109,391 @@ const turn = (read: number, write: number, fresh: number) => ({
 })
 
 // 关掉节日装扮：万圣节期间头顶是巫师帽，看不到小芽
-test('答完一轮：经验写回 store，升级弹提示，信息栏上的 Clawd 戴上小芽、悬停显示等级', { options: { language: 'zh', seasonal: 'off' } }, async ($, on) => {
-  const { toasts, timeouts } = await start($, on, { pet: { xp: 95, turns: 9, streak: 1, lastDay: '2000-01-01', achievements: [] } })
-  await $.turn.complete(turn(50, 0, 50))
+test('通知：会话开始、升级和解锁成就都不弹提示，等级和成就仍出现在信息栏和战报卡', { options: { language: 'zh', seasonal: 'off' } }, async ($, on) => {
+  const { toasts } = await start($, on, { pet: { xp: 95, turns: 9, streak: 1, lastDay: '2000-01-01', achievements: [] } }, on =>
+    on('session.surfaces', () => ({ value: ['desktop'] })),
+  )
+  expect(toasts).toEqual([])
 
-  // mock.store 存的是副本：经验和回合数看信息栏上的悬停提示（经验 95 + 10 + 每天第一轮 20 = 125）
-  expect(toasts.some(t => t.includes('Clawd 升到 Lv.2') && t.includes('头顶小芽'))).toBe(true)
-  // 升级 / 成就提示也停到上限 60 秒
-  expect(timeouts.length).toBeGreaterThan(0)
-  expect(timeouts.every(ms => ms === 60000)).toBe(true)
+  await $.turn.complete(turn(9900, 0, 100))
+  expect(toasts).toEqual([])
 
-  const ui = await $.ui.mount(BAND)
-  const src = String((await ui.findAll({ type: 'Svg' }))[0].props?.source)
-  expect(src).toContain('#7BC163')
-  expect(src).toContain('<title>Clawd Lv.2 · 经验 125 / 300')
+  const band = await $.ui.mount(BAND)
+  const bandSvg = String((await band.findAll({ type: 'Svg' }))[0].props?.source)
+  expect(bandSvg).toContain('<title>Clawd Lv.2 · 经验 130 / 300')
+
+  const card = await $.ui.mount({ plugin: 'usage-pet', component: 'Pane', requestId: 'clawd-card', props: {}, viewport: { columns: 100, rows: 40 }, surface: 'desktop' } as never)
+  const cardSvg = String((await card.findAll({ type: 'Svg' }))[0].props?.source)
+  expect(cardSvg).toContain('class="chip">缓存大师</text>')
+  expect(toasts).toEqual([])
 })
 
 test('子代理的回合不涨经验', ZH, async ($, on) => {
-  const { toasts } = await start($, on, { pet: { xp: 95, turns: 0, streak: 0, achievements: [] } })
+  await start($, on, { pet: { xp: 95, turns: 0, streak: 0, achievements: [] } })
   await $.turn.complete({ ...turn(50, 0, 50), agentId: 'sub-1' })
-  expect(toasts.filter(t => t.includes('升到'))).toEqual([])
   const ui = await $.ui.mount(BAND)
   expect(String((await ui.findAll({ type: 'Svg' }))[0].props?.source)).toContain('<title>Clawd Lv.1 · 经验 95 / 100')
+})
+
+test('工具调用期间显示工具图标，完成后恢复工作字形并透传工具结果', ZH, async ($, on) => {
+  let release!: () => void
+  let markStarted!: () => void
+  const gate = new Promise<void>(resolve => (release = resolve))
+  const started = new Promise<void>(resolve => (markStarted = resolve))
+  await start($, on, {}, on => {
+    on('tool.call', async () => {
+      markStarted()
+      await gate
+      return { result: { marker: 'unchanged' } as never }
+    })
+  })
+
+  const pending = $.tool.call({ tool: 'Bash', command: 'pwd' } as never)
+  await started
+  const workingBand = { ...BAND, props: { ...BAND.props, isWorking: true, bodyColumns: 20 } }
+  const during = await $.ui.mount(workingBand as never)
+  const duringSvgNode = (await during.findAll({ type: 'Svg' }))[0]
+  const duringSvg = String(duringSvgNode.props?.source)
+
+  expect(duringSvg).toContain('class="activity-icon terminal"')
+  expect(duringSvg).toContain('<g class="laptop">')
+  expect(duringSvgNode.props?.width).toBe(398)
+
+  release()
+  expect(await pending).toEqual({ result: { marker: 'unchanged' } })
+
+  const after = await $.ui.mount(workingBand as never)
+  const afterSvg = String((await after.findAll({ type: 'Svg' }))[0].props?.source)
+  expect(afterSvg).not.toContain('class="activity-icon terminal"')
+  expect(afterSvg).toContain('class="glyph"')
+})
+
+test('并行工具调用：较早调用结束时保留最新图标，全部结束后不残留旧图标', ZH, async ($, on) => {
+  let releaseBash!: () => void
+  let releaseRead!: () => void
+  let markBashStarted!: () => void
+  let markReadStarted!: () => void
+  const bashGate = new Promise<void>(resolve => (releaseBash = resolve))
+  const readGate = new Promise<void>(resolve => (releaseRead = resolve))
+  const bashStarted = new Promise<void>(resolve => (markBashStarted = resolve))
+  const readStarted = new Promise<void>(resolve => (markReadStarted = resolve))
+  await start($, on, {}, on => {
+    on('tool.call', async ($, e) => {
+      if (e.tool === 'Bash') {
+        markBashStarted()
+        await bashGate
+      } else {
+        markReadStarted()
+        await readGate
+      }
+      return { result: {} as never }
+    })
+  })
+
+  const bash = $.tool.call({ tool: 'Bash', command: 'pwd' } as never)
+  await bashStarted
+  const read = $.tool.call({ tool: 'Read', file_path: '/tmp/a' } as never)
+  await readStarted
+  const workingBand = { ...BAND, props: { ...BAND.props, isWorking: true } }
+  const newest = await $.ui.mount(workingBand as never)
+  expect(String((await newest.findAll({ type: 'Svg' }))[0].props?.source)).toContain('class="activity-icon magnifier"')
+
+  releaseBash()
+  await bash
+  const afterOlder = await $.ui.mount(workingBand as never)
+  expect(String((await afterOlder.findAll({ type: 'Svg' }))[0].props?.source)).toContain('class="activity-icon magnifier"')
+
+  releaseRead()
+  await read
+  const afterAll = await $.ui.mount(workingBand as never)
+  const afterAllSvg = String((await afterAll.findAll({ type: 'Svg' }))[0].props?.source)
+  expect(afterAllSvg).not.toContain('class="activity-icon magnifier"')
+  expect(afterAllSvg).not.toContain('class="activity-icon terminal"')
+})
+
+test('权限请求：只观察并透传结果，悬而未决时不会被在途工具图标覆盖', ZH, async ($, on) => {
+  let release!: () => void
+  let markStarted!: () => void
+  const gate = new Promise<void>(resolve => (release = resolve))
+  const started = new Promise<void>(resolve => (markStarted = resolve))
+  const permissionResult = { additionalContext: ['permission result unchanged'] }
+  await start($, on, {}, on => {
+    on('tool.call', async ($, e) => {
+      if (e.tool === 'Bash') {
+        markStarted()
+        await gate
+      }
+      return { result: { tool: e.tool } as never }
+    })
+    on('classic.PermissionRequest', () => permissionResult)
+  })
+
+  const bash = $.tool.call({ tool: 'Bash', command: 'sleep 1' } as never)
+  await started
+  expect(await $.classic.PermissionRequest({ tool_name: 'Bash', tool_input: { command: 'sleep 1' } } as never)).toEqual(permissionResult)
+
+  const waiting = await $.ui.mount(BAND)
+  const waitingSvg = String((await waiting.findAll({ type: 'Svg' }))[0].props?.source)
+  expect(waitingSvg).toContain('class="activity-icon bang"')
+  expect(waitingSvg).not.toContain('class="activity-icon terminal"')
+
+  release()
+  await bash
+  const afterBash = await $.ui.mount(BAND)
+  expect(String((await afterBash.findAll({ type: 'Svg' }))[0].props?.source)).toContain('class="activity-icon bang"')
+
+  await $.tool.call({ tool: 'Read', file_path: '/tmp/a' } as never)
+  const afterRead = await $.ui.mount(BAND)
+  const afterReadSvg = String((await afterRead.findAll({ type: 'Svg' }))[0].props?.source)
+  expect(afterReadSvg).not.toContain('class="activity-icon bang"')
+  expect(afterReadSvg).not.toContain('class="activity-icon magnifier"')
+})
+
+test('问题和计划：工具调用显示问号或感叹号，提示提交和主回合结束时清除', ZH, async ($, on) => {
+  await start($, on, {}, on => on('tool.call', ($, e) => ({ result: { tool: e.tool } as never })))
+
+  await $.tool.call({ tool: 'AskUserQuestion', questions: [] } as never)
+  let ui = await $.ui.mount(BAND)
+  let src = String((await ui.findAll({ type: 'Svg' }))[0].props?.source)
+  expect(src).toContain('class="activity-icon question"')
+
+  await $.prompt.submit({ text: 'please continue', asUser: true } as never)
+  ui = await $.ui.mount(BAND)
+  src = String((await ui.findAll({ type: 'Svg' }))[0].props?.source)
+  expect(src).not.toContain('class="activity-icon question"')
+
+  await $.tool.call({ tool: 'ExitPlanMode', plan: 'ready' } as never)
+  ui = await $.ui.mount(BAND)
+  src = String((await ui.findAll({ type: 'Svg' }))[0].props?.source)
+  expect(src).toContain('class="activity-icon bang"')
+
+  await $.turn.complete(turn(0, 0, 0))
+  ui = await $.ui.mount(BAND)
+  src = String((await ui.findAll({ type: 'Svg' }))[0].props?.source)
+  expect(src).not.toContain('class="activity-icon bang"')
+  expect(src).toContain('class="clawd done')
+})
+
+test('主回合完成：完成姿势停留六秒，中断和子代理不显示完成状态', ZH, async ($, on) => {
+  const { clock } = await start($, on, {})
+  const ui = await $.ui.mount(BAND)
+
+  await $.turn.complete(turn(0, 0, 0))
+  await ui.redraw()
+  expect(String((await ui.findAll({ type: 'Svg' }))[0].props?.source)).toContain('class="clawd done')
+  await clock.advance(6000)
+  await ui.redraw()
+  expect(String((await ui.findAll({ type: 'Svg' }))[0].props?.source)).not.toMatch(/class="clawd[^\"]* done"/)
+
+  await $.turn.complete({ ...turn(0, 0, 0), isAborted: true, reason: 'aborted' } as never)
+  await $.turn.complete({ ...turn(0, 0, 0), agentId: 'sub-1' } as never)
+  await ui.redraw()
+  expect(String((await ui.findAll({ type: 'Svg' }))[0].props?.source)).not.toContain('class="clawd done')
+})
+
+test('十分钟没有活动后进入睡眠，提示提交会唤醒 Clawd', ZH, async ($, on) => {
+  const { clock } = await start($, on, {}, on => on('tool.call', () => ({ result: {} as never })))
+  const ui = await $.ui.mount(BAND)
+
+  await clock.advance(599_999)
+  await ui.redraw()
+  expect(String((await ui.findAll({ type: 'Svg' }))[0].props?.source)).not.toMatch(/class="clawd[^\"]* sleep"/)
+  await clock.advance(1)
+  await ui.redraw()
+  const asleep = String((await ui.findAll({ type: 'Svg' }))[0].props?.source)
+  expect(asleep).toMatch(/class="clawd[^\"]* sleep"/)
+  expect(asleep).toContain('class="sleep-eyes"')
+  expect(asleep).toContain('class="sleep-z"')
+
+  await $.tool.call({ tool: 'Read', file_path: '/tmp/a' } as never)
+  await ui.redraw()
+  expect(String((await ui.findAll({ type: 'Svg' }))[0].props?.source)).not.toMatch(/class="clawd[^\"]* sleep"/)
+  await clock.advance(600_000)
+  await ui.redraw()
+  expect(String((await ui.findAll({ type: 'Svg' }))[0].props?.source)).toMatch(/class="clawd[^\"]* sleep"/)
+
+  await $.prompt.submit({ text: 'wake up', asUser: true } as never)
+  await ui.redraw()
+  expect(String((await ui.findAll({ type: 'Svg' }))[0].props?.source)).not.toMatch(/class="clawd[^\"]* sleep"/)
+})
+
+test('上下文压缩：期间显示压扁姿势，结束后恢复并透传压缩结果', ZH, async ($, on) => {
+  let release!: () => void
+  let markStarted!: () => void
+  const gate = new Promise<void>(resolve => (release = resolve))
+  const started = new Promise<void>(resolve => (markStarted = resolve))
+  const compactResult = { messages: [{ role: 'user', text: 'summary', toolUses: [] }], tokensBefore: 120, tokensAfter: 60 }
+  await start($, on, {}, on => {
+    on('session.compact', async () => {
+      markStarted()
+      await gate
+      return compactResult as never
+    })
+  })
+
+  const compactInput: SessionCompactInput = {
+    trigger: 'plugin',
+    instructions: 'keep this summary',
+    messages: [{ role: 'user', text: 'hello', toolUses: [] }] as never,
+  }
+  const compact = $.session.compact(compactInput as never)
+  await started
+  const during = await $.ui.mount(BAND)
+  const duringSvg = String((await during.findAll({ type: 'Svg' }))[0].props?.source)
+  expect(duringSvg).toContain('class="clawd compacting')
+  expect(duringSvg).toContain('.compacting .hop{transform:scale')
+
+  release()
+  expect(await compact).toEqual(compactResult)
+  const after = await $.ui.mount(BAND)
+  expect(String((await after.findAll({ type: 'Svg' }))[0].props?.source)).not.toContain('class="clawd compacting')
+})
+
+test('测试工具结果：通过和失败显示六秒反应，安装命令不误报为测试', ZH, async ($, on) => {
+  let testRuns = 0
+  const pass = { stdout: '4 passed', stderr: '', exitCode: 0 }
+  const install = { stdout: 'added 1 package', stderr: '', exitCode: 0 }
+  const fail = { stdout: '2 failed', stderr: 'assertion failed', exitCode: 1 }
+  const { clock } = await start($, on, {}, on => {
+    on('tool.call', ($, e) => {
+      if (e.tool !== 'Bash') return { result: {} as never }
+      if (e.command === 'npm install vitest') return { result: install as never }
+      if (e.command === 'npm test') return { result: (testRuns++ === 0 ? pass : fail) as never }
+
+      return { result: {} as never }
+    })
+  })
+  const ui = await $.ui.mount(BAND)
+
+  await $.tool.call({ tool: 'Bash', command: 'npm test' } as never)
+  await ui.redraw()
+  let src = String((await ui.findAll({ type: 'Svg' }))[0].props?.source)
+  expect(src).toMatch(/class="clawd[^\"]*\breaction test-pass\b/)
+  expect(src).toContain('class="activity-icon check"')
+  expect(src).toContain('class="reaction-confetti"')
+
+  await clock.advance(6000)
+  await ui.redraw()
+  await $.tool.call({ tool: 'Bash', command: 'npm install vitest' } as never)
+  await ui.redraw()
+  src = String((await ui.findAll({ type: 'Svg' }))[0].props?.source)
+  expect(src).not.toMatch(/class="clawd[^\"]*\breaction\b/)
+
+  await $.tool.call({ tool: 'Bash', command: 'npm test' } as never)
+  await ui.redraw()
+  src = String((await ui.findAll({ type: 'Svg' }))[0].props?.source)
+  expect(src).toMatch(/class="clawd[^\"]*\breaction test-fail\b/)
+  expect(src).toContain('class="activity-icon cross"')
+  expect(src).toContain('class="sweat"')
+  await clock.advance(6000)
+  await ui.redraw()
+  expect(String((await ui.findAll({ type: 'Svg' }))[0].props?.source)).not.toMatch(/class="clawd[^\"]*\breaction\b/)
+})
+
+test('失误反应：工具错误显示叉叉，拒绝调用不显示失误', ZH, async ($, on) => {
+  const { clock } = await start($, on, {}, on => {
+    on('tool.call', ($, e) =>
+      e.tool === 'Read' ? { result: 'read failed' as never, isError: true } : { deny: 'blocked' },
+    )
+  })
+  const ui = await $.ui.mount(BAND)
+
+  await $.tool.call({ tool: 'Read', file_path: '/tmp/missing' } as never)
+  await ui.redraw()
+  let src = String((await ui.findAll({ type: 'Svg' }))[0].props?.source)
+  expect(src).toMatch(/class="clawd[^\"]*\breaction oops\b/)
+  expect(src).toContain('class="activity-icon cross"')
+  expect(src).toContain('.oops .hop{animation:oops-shake')
+
+  await clock.advance(3000)
+  await ui.redraw()
+  await $.tool.call({ tool: 'Bash', command: 'npm test' } as never)
+  await ui.redraw()
+  src = String((await ui.findAll({ type: 'Svg' }))[0].props?.source)
+  expect(src).not.toMatch(/class="clawd[^\"]*\breaction\b/)
+})
+
+test('烦躁提示：二十分钟内第三次触发跺脚，八秒后恢复并原样透传提示词', ZH, async ($, on) => {
+  let forwarded: PromptSubmitInput | undefined
+  const { clock } = await start($, on, {}, undefined, e => (forwarded = e))
+  const ui = await $.ui.mount(BAND)
+  const prompts = ['为什么又坏了？', '还是不行，继续试', '搞什么，还是不行']
+
+  const firstAttachments = [{ type: 'document' as const, filename: 'feedback.txt' }]
+  const first = await $.prompt.submit({ text: prompts[0], asUser: true, attachments: firstAttachments } as never)
+  expect(first).toMatchObject({ text: prompts[0] })
+  expect(forwarded).toMatchObject({
+    text: prompts[0],
+    attachments: firstAttachments,
+  })
+  await clock.advance(10 * 60_000)
+  const second = await $.prompt.submit({ text: prompts[1], asUser: true } as never)
+  expect(second).toMatchObject({ text: prompts[1] })
+  await ui.redraw()
+  expect(String((await ui.findAll({ type: 'Svg' }))[0].props?.source)).not.toMatch(/class="clawd[^\"]*\breaction tantrum\b/)
+
+  await clock.advance(9 * 60_000)
+  const third = await $.prompt.submit({ text: prompts[2], asUser: true } as never)
+  expect(third).toMatchObject({ text: prompts[2] })
+  await ui.redraw()
+  let src = String((await ui.findAll({ type: 'Svg' }))[0].props?.source)
+  expect(src).toMatch(/class="clawd[^\"]*\breaction tantrum\b/)
+  expect(src).toContain('class="angry-eyes"')
+  expect(src).toContain('class="tantrum-steam"')
+
+  await clock.advance(8000)
+  await ui.redraw()
+  expect(String((await ui.findAll({ type: 'Svg' }))[0].props?.source)).not.toMatch(/class="clawd[^\"]*\breaction tantrum\b/)
+  await $.prompt.submit({ text: 'still not working', asUser: true } as never)
+  await $.prompt.submit({ text: '气死了', asUser: true } as never)
+  await ui.redraw()
+  expect(String((await ui.findAll({ type: 'Svg' }))[0].props?.source)).not.toMatch(/class="clawd[^\"]*\breaction tantrum\b/)
+})
+
+test('烦躁识别关闭：tantrums=off 时仍透传提示词但不触发跺脚', { options: { language: 'zh', tantrums: ' OFF ' } }, async ($, on) => {
+  await start($, on, {})
+  const prompts = ['为什么又这样', '还是不行', '搞什么']
+
+  for (const text of prompts) {
+    expect(await $.prompt.submit({ text, asUser: true } as never)).toMatchObject({ text })
+  }
+  const ui = await $.ui.mount(BAND)
+  const src = String((await ui.findAll({ type: 'Svg' }))[0].props?.source)
+  expect(src).not.toMatch(/class="clawd[^\"]*\breaction tantrum\b/)
+})
+
+test('节日与季节关闭：seasonal=off 时不画时段、季节或节日装扮', { options: { language: 'zh', seasonal: ' OFF ' } }, async ($, on) => {
+  await start($, on, {})
+  const ui = await $.ui.mount(BAND)
+  const src = String((await ui.findAll({ type: 'Svg' }))[0].props?.source)
+  expect(src).not.toContain('class="mood-')
+})
+
+test('反应优先级：测试失败反应不会覆盖待处理的权限请求', ZH, async ($, on) => {
+  const permissionResult = { additionalContext: ['permission result unchanged'] }
+  let release!: () => void
+  let markStarted!: () => void
+  const gate = new Promise<void>(resolve => (release = resolve))
+  const started = new Promise<void>(resolve => (markStarted = resolve))
+  await start($, on, {}, on => {
+    on('classic.PermissionRequest', () => permissionResult)
+    on('tool.call', async () => {
+      markStarted()
+      await gate
+
+      return { result: { stdout: '1 failed', exitCode: 1 } as never }
+    })
+  })
+
+  const tool = $.tool.call({ tool: 'Bash', command: 'npm test' } as never)
+  await started
+  expect(await $.classic.PermissionRequest({ tool_name: 'Bash', tool_input: { command: 'npm test' } } as never)).toEqual(permissionResult)
+  release()
+  await tool
+  const ui = await $.ui.mount(BAND)
+  const src = String((await ui.findAll({ type: 'Svg' }))[0].props?.source)
+  expect(src).toContain('class="activity-icon bang"')
+  expect(src).not.toMatch(/class="clawd[^\"]*\breaction test-fail\b/)
 })
 
 test('战报：工具调用计数，改过的文件按路径去重，被拦下的不算；/clawd-card 导出图片', ZH, async ($, on) => {

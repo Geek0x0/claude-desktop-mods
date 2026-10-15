@@ -1,4 +1,5 @@
-import type { Bars, Snap } from '../types'
+import type { Activity, Bars, ReactionKind, Snap, ToolIcon } from '../types'
+import type { Mood } from './mood'
 import { type Lang, T, weekday } from './i18n'
 import { gearOf } from './pet'
 
@@ -18,6 +19,16 @@ const MINI_X = 14
 const MINI_Y = (H_MINI - 10 * MINI_U) / 2
 const MINI_W = 16 * MINI_U
 const MINI_LAYOUT_W = MINI_W + 10 * MINI_U // 细条里 Clawd 最多向右跑 10 格
+const ACTIVITY_ICON_X = 16.4
+const ACTIVITY_ICON_Y = -1.5
+const MINI_ACTIVITY_ICON_Y = 0.15
+const ACTIVITY_ICON_SIZE = 7
+const ACTIVITY_ICON_CELL = 0.75
+// Expanded icon protrudes beyond the 16-unit Clawd box; mini also accounts for its 10-unit walk.
+export const ACTIVITY_LAYOUT_RESERVE = Math.ceil((ACTIVITY_ICON_X + ACTIVITY_ICON_SIZE * ACTIVITY_ICON_CELL - 16) * U)
+const MINI_ACTIVITY_RESERVE = Math.ceil(
+  (10 + ACTIVITY_ICON_X + ACTIVITY_ICON_SIZE * ACTIVITY_ICON_CELL - MINI_LAYOUT_W / MINI_U) * MINI_U,
+)
 const MINI_BAR = 40
 const CLAWD_Y = (H - 10 * U) / 2 + 4 // 身子仍比圆环中心低 4px
 const R = 26
@@ -45,6 +56,161 @@ const MINI_LABEL_SIZE = 13
 const MINI_VALUE_SIZE = 13
 const OUT = 'cubic-bezier(.23,1,.32,1)'
 const SPRING = 'cubic-bezier(.34,1.56,.64,1)'
+
+const ACTIVITY_PIXELS: Record<ToolIcon, string[]> = {
+  terminal: ['.TTTTT.', 'TNNNNNT', 'TNWNNNT', 'TNNWNNT', 'TNWNNNT', 'TNNWWWT', '.TTTTT.'],
+  pencil: ['......P', '.....PP', '....PYP', '...PYP.', '..PYP..', '.PYP...', 'YP.....'],
+  magnifier: ['..GGG..', '.GBBBG.', 'GB...BG', 'GB...BG', '.GBBBG.', '..GGGG.', '.....G.'],
+  globe: ['..BBB..', '.B...B.', 'B.G.G.B', 'B..G..B', 'B.G.G.B', '.B...B.', '..BBB..'],
+  bolt: ['...Y...', '..YY...', '.YYYYY.', '...YY..', '..YY...', '.YY....', 'YY.....'],
+  mini: ['.P...P.', '.P...P.', '.P...P.', '.PPPPP.', '..PPP..', '...P...', '...P...'],
+  spinner: ['...W...', '..S.S..', '.S...S.', 'S.....S', 'S.....S', '.S...S.', '..S.S..'],
+  bang: ['...R...', '...R...', '...R...', '...R...', '...R...', '.......', '...R...'],
+  question: ['..AAA..', '.A...A.', '.....A.', '....A..', '...A...', '.......', '...A...'],
+  check: ['......G', '.....G.', 'G...G..', '.G.G...', '..GG...', '.......', '.......'],
+  cross: ['R.....R', '.R...R.', '..R.R..', '...R...', '..R.R..', '.R...R.', 'R.....R'],
+}
+
+const ACTIVITY_COLORS: Record<string, string> = {
+  T: '#83CFA7',
+  N: '#3C3A35',
+  W: '#F0EEE6',
+  P: '#E98D6E',
+  Y: '#F2C14E',
+  G: '#91BDA2',
+  B: '#69A9D0',
+  S: '#F0EEE6',
+  R: '#E5484D',
+  A: '#F2C14E',
+}
+
+const SLEEP_Z_PIXELS = ['ZZZZ', '...Z', '..Z.', '.Z..', 'ZZZZ']
+
+function activityIconSvg(icon: ToolIcon, mini: boolean): string {
+  const pixels = ACTIVITY_PIXELS[icon]
+    .map((row, y) =>
+      [...row]
+        .map((color, x) => (color === '.' ? '' : `<rect x="${x}" y="${y}" width=".92" height=".92" fill="${ACTIVITY_COLORS[color]}"/>`))
+        .join(''),
+    )
+    .join('')
+  const spinner = icon === 'spinner' ? '<g class="activity-spinner">' + pixels + '</g>' : pixels
+
+  return `<g class="activity-icon ${icon}" transform="translate(${ACTIVITY_ICON_X} ${mini ? MINI_ACTIVITY_ICON_Y : ACTIVITY_ICON_Y}) scale(${ACTIVITY_ICON_CELL})">${spinner}</g>`
+}
+
+function sleepZSvg(mini: boolean): string {
+  const pixels = SLEEP_Z_PIXELS.map((row, y) =>
+    [...row].map((cell, x) => (cell === 'Z' ? `<rect x="${x}" y="${y}" width=".9" height=".9" fill="#F0EEE6"/>` : '')).join(''),
+  ).join('')
+  const positions: [number, number][] = mini ? [[13.4, 0.25], [15.7, 1.25]] : [[13.4, -2.2], [15.7, -3.5]]
+
+  return positions
+    .map(
+      ([x, y], i) =>
+        `<g transform="translate(${x} ${y}) scale(.35)"><g class="sleep-z" style="animation-delay:${i * 0.45}s">${pixels}</g></g>`,
+    )
+    .join('')
+}
+
+function doneSparklesSvg(mini: boolean): string {
+  const sparkle = `<rect x="1" y="0" width="1" height="3" fill="#F2C14E"/><rect x="0" y="1" width="3" height="1" fill="#F2C14E"/>`
+  const positions: [number, number, number][] = mini
+    ? [
+        [1.2, 0.2, 0.45],
+        [13.8, 0.4, 0.5],
+        [15.2, 2, 0.4],
+      ]
+    : [
+        [1.2, -1.6, 0.55],
+        [13.4, -2.1, 0.45],
+        [14.8, 1.4, 0.4],
+      ]
+
+  return positions
+    .map(
+      ([x, y, scale], i) =>
+        `<g transform="translate(${x} ${y}) scale(${scale})"><g class="done-sparkle" style="animation-delay:${i * 0.18}s">${sparkle}</g></g>`,
+    )
+    .join('')
+}
+
+function reactionFaceSvg(reaction?: ReactionKind): string {
+  if (reaction === 'test-fail' || reaction === 'oops') {
+    return `<g class="reaction-x-eyes" fill="none" stroke="#231511" stroke-width=".65" stroke-linecap="square"><path d="M3.6 1.9 5.1 3.4M5.1 1.9 3.6 3.4M10.9 1.9 12.4 3.4M12.4 1.9 10.9 3.4"/></g>`
+  }
+  if (reaction === 'tantrum') {
+    return `<g class="angry-eyes" fill="none" stroke="#231511" stroke-width=".65" stroke-linecap="square"><path d="M3.4 1.6 5.2 2.1M10.8 2.1 12.6 1.6M4 3.2h1.2M10.8 3.2H12"/></g>`
+  }
+
+  return ''
+}
+
+function reactionEffectsSvg(reaction: ReactionKind | undefined): string {
+  if (reaction === 'test-pass') {
+    const pieces: [number, number, string][] = [[0.3, 4.8, '#E5484D'], [1.1, 1.2, '#69A9D0'], [14.5, 2.8, '#F2C14E'], [15.3, 6.2, '#91BDA2'], [7.7, 0.6, '#9B6BDF']]
+
+    return `<g class="reaction-confetti">${pieces
+      .map(
+        ([x, y, color], i) =>
+          `<g class="confetti-piece" style="animation-delay:${i * 0.12}s"><rect x="${x}" y="${y}" width=".8" height="1.2" fill="${color}"/></g>`,
+      )
+      .join('')}</g>`
+  }
+  if (reaction === 'tantrum') {
+    const puff = `<rect x="1" y="1" width="2" height="1" fill="#B4B1A8"/><rect x=".5" y="2" width="3" height="1" fill="#8C8A84"/><rect x="1.5" y="0" width="1" height="1" fill="#D4D1C9"/>`
+
+    return `<g class="tantrum-steam"><g transform="translate(.1 .1) scale(.65)">${puff}</g><g transform="translate(13.9 .1) scale(.65)">${puff}</g></g>`
+  }
+
+  return ''
+}
+
+function moodForClawd(isWorking: boolean, activity: Activity | undefined, pet?: PetView): Mood | undefined {
+  const pose = activity?.kind
+  if (isWorking || (pose !== undefined && pose !== 'idle' && pose !== 'sleep')) return undefined
+
+  return pet?.mood
+}
+
+function moodEffectsSvg(mood: Mood | undefined, mini: boolean): string {
+  if (!mood) return ''
+
+  const coffee = mood.timeOfDay === 'morning'
+    ? `<g class="mood-coffee" transform="translate(14.2 4.5)"><rect x="0" y=".7" width="2.4" height="2.2" fill="#E7DDD0"/><rect x=".3" y="1" width="1.8" height=".5" fill="#6B4226"/><path d="M2.4 1.1h.6v1.2h-.6" fill="none" stroke="#E7DDD0" stroke-width=".35"/><path class="mood-steam" d="M.6.4Q0-.2.6-.7M1.6.4Q1-.2 1.6-.7" fill="none" stroke="#D4D1C9" stroke-width=".28"/></g>`
+    : ''
+  if (mini) return coffee
+
+  const particles: [number, number, string][] =
+    mood.season === 'winter'
+      ? [[.4, 1.2, '#F4F2EC'], [15.2, 2.8, '#DDE8F2'], [1.1, 6.7, '#F4F2EC']]
+      : mood.season === 'spring'
+        ? [[.4, 1.2, '#F7909F'], [15.2, 2.8, '#F2C14E'], [1.1, 6.7, '#F7909F']]
+        : mood.season === 'autumn'
+          ? [[.4, 1.2, '#D97757'], [15.2, 2.8, '#E7A44C'], [1.1, 6.7, '#C2603F']]
+          : []
+  const seasonParticles = particles.length
+    ? `<g class="mood-particles ${mood.season}">${particles
+      .map(
+        ([x, y, color], i) =>
+          `<g transform="translate(${x} ${y})"><g class="mood-particle" style="animation-delay:${i * 2.1}s">${
+            mood.season === 'winter'
+              ? `<rect x=".3" y="0" width=".25" height="1" fill="${color}"/><rect x="0" y=".3" width=".85" height=".25" fill="${color}"/>`
+              : mood.season === 'spring'
+                ? `<path d="M.45 0Q1 .4.45.9Q-.1.4.45 0Z" fill="${color}"/>`
+                : `<path d="M.05.55Q.3-.1.95.08.82.75.22.95Z" fill="${color}"/><path d="M.18.82.78.2" stroke="#754A34" stroke-width=".1"/>`
+          }</g></g>`,
+      )
+      .join('')}</g>`
+    : mood.season === 'summer'
+      ? `<g class="mood-sun" transform="translate(14.1 .4)"><rect x="1" y="0" width="1" height="3" fill="#F2C14E"/><rect x="0" y="1" width="3" height="1" fill="#F2C14E"/><rect x=".7" y=".7" width="1.6" height="1.6" fill="#FFD86A"/></g>`
+      : ''
+  const fireworks = mood.holiday === 'new-year'
+    ? `<g class="mood-fireworks"><g transform="translate(1 1.2)"><g class="mood-firework"><rect x=".8" y="0" width=".5" height="2.2" fill="#F2C14E"/><rect x="0" y=".8" width="2.2" height=".5" fill="#69A9D0"/><rect x=".3" y=".3" width=".5" height=".5" fill="#E5484D"/></g></g><g transform="translate(14 3.2) scale(.8)"><g class="mood-firework"><rect x=".8" y="0" width=".5" height="2.2" fill="#E98D6E"/><rect x="0" y=".8" width="2.2" height=".5" fill="#9B6BDF"/><rect x="1.7" y=".2" width=".5" height=".5" fill="#F2C14E"/></g></g></g>`
+    : ''
+
+  return coffee + seasonParticles + fireworks
+}
 // 背景透明。小窗口的配色方案和 App 不一致时，浏览器会给它垫一块不透明的底，
 // 所以声明 color-scheme: light dark：小窗口跟着 App 的外观走（浅色 / 深色 / 跟随系统），
 // 两边永远一致；浅色配色在 STYLE 末尾的 prefers-color-scheme:light 里。
@@ -54,7 +220,7 @@ type Tier = 'ok' | 'warn' | 'danger'
 
 // 信息栏上 Clawd 的养成状态：等级决定装扮，title 是鼠标悬停的提示
 // halloween：万圣节装扮；askAgo：答完一轮后 Clawd 讨糖开始了几秒（负数 = 还没开始，undefined = 不讨糖）
-export type PetView = { level: number; title: string; halloween?: boolean; askAgo?: number }
+export type PetView = { level: number; title: string; halloween?: boolean; askAgo?: number; mood?: Mood }
 
 const tier = (p: number): Tier => (p >= 95 ? 'danger' : p >= 80 ? 'warn' : 'ok')
 
@@ -177,10 +343,12 @@ const MIN_GAP: Record<Layout, number> = { full: 14, compact: 14, stacked: 10, ri
 // 最窄排法只留圆环；Clawd 按本体的 16 格计宽，笔记本和动效伸进间距
 export const MIN_BAND_W = Math.ceil(2 * CLAWD_X + CLAWD_W + 4 * RING_W + 4 * MIN_GAP.rings)
 export const MIN_BAND_W_WITH_FABLE = Math.ceil(2 * CLAWD_X + CLAWD_W + 5 * RING_W + 5 * MIN_GAP.rings)
+export const MIN_BAND_W_WITH_ACTIVITY = MIN_BAND_W + ACTIVITY_LAYOUT_RESERVE
+export const MIN_BAND_W_WITH_FABLE_AND_ACTIVITY = MIN_BAND_W_WITH_FABLE + ACTIVITY_LAYOUT_RESERVE
 
-export function pickLayout(gauges: { label: string; sub: string; detail: string }[], width: number): Layout {
+export function pickLayout(gauges: { label: string; sub: string; detail: string }[], width: number, clawdWidth = CLAWD_W): Layout {
   const need = (layout: Layout) =>
-    2 * CLAWD_X + CLAWD_W + gauges.reduce((a, g) => a + blockWidth(g as Gauge, layout), 0) + gauges.length * MIN_GAP[layout]
+    2 * CLAWD_X + clawdWidth + gauges.reduce((a, g) => a + blockWidth(g as Gauge, layout), 0) + gauges.length * MIN_GAP[layout]
 
   return (['full', 'compact', 'stacked'] as const).find(layout => need(layout) <= width) ?? 'rings'
 }
@@ -327,6 +495,27 @@ const WITCH_HAT =
   px(2.6, -0.8, 10.8, 0.8, '#2A1E3D') +
   px(5.7, -1.45, 4.6, 0.55, '#F28C28') +
   px(7.6, -1.5, 0.9, 0.65, '#F2C14E')
+const SANTA_HAT =
+  `<g class="mood-hat santa"><path d="M4.4-.25H12L10.5-2.1Q8.5-3.1 6.5-1.55Z" fill="#D94343"/>` +
+  px(3.7, -0.65, 9.2, 0.75, '#F4F2EC') +
+  `<circle cx="10.8" cy="-2.45" r=".62" fill="#F4F2EC"/></g>`
+const PARTY_HAT =
+  `<g class="mood-hat party"><path d="M4.8-.2 8-4 11.4-.2Z" fill="#8F63CE"/>` +
+  px(5.5, -1.35, 4.8, 0.4, '#F2C14E') +
+  px(6.8, -2.4, 0.55, 0.55, '#69A9D0') +
+  px(8.8, -3.25, 0.55, 0.55, '#E5484D') +
+  `<circle cx="8" cy="-4.1" r=".45" fill="#F2C14E"/></g>`
+const NIGHTCAP =
+  `<g class="mood-hat nightcap"><path d="M3.8-.2Q4.2-2.65 7.5-3.1 10.8-3.45 12-.2Z" fill="#4766B2"/>` +
+  `<path d="M9.2-2.7Q11.5-3.55 13.1-2.65L11.9-1.25Z" fill="#354F91"/>` +
+  px(3.6, -0.65, 8.8, 0.6, '#293F79') +
+  `<circle cx="13.2" cy="-2.65" r=".55" fill="#F4F2EC"/></g>`
+const MINI_SANTA_HAT =
+  `<g class="mood-hat santa"><path d="M5 1.2 8 .15 11 1.2Z" fill="#D94343"/>${px(4.4, 1.05, 7.2, 0.5, '#F4F2EC')}<circle cx="8" cy=".1" r=".35" fill="#F4F2EC"/></g>`
+const MINI_PARTY_HAT =
+  `<g class="mood-hat party"><path d="M5 1.3 8 .1 11 1.3Z" fill="#8F63CE"/>${px(6.3, .8, 3.4, .35, '#F2C14E')}<circle cx="8" cy=".05" r=".35" fill="#F2C14E"/></g>`
+const MINI_NIGHTCAP =
+  `<g class="mood-hat nightcap"><path d="M4.5 1.25Q5 .15 8 .15 10.8 .15 11.5 1.25L12.5 1.55 11.6 1.8Z" fill="#4766B2"/>${px(4.5, 1.05, 7.2, .35, '#293F79')}<circle cx="12.55" cy="1.55" r=".35" fill="#F4F2EC"/></g>`
 
 // 讨糖南瓜桶（以桶左上角为原点，3×2.4 格）
 const PAIL =
@@ -338,11 +527,18 @@ const PAIL =
   px(0.5, -0.15, 0.6, 0.45, '#E5484D') +
   px(1.9, -0.2, 0.6, 0.5, '#5FB0F0')
 
-function gearSvg(level: number, halloween = false, pailExtra = ''): string {
+function gearSvg(level: number, halloween = false, pailExtra = '', mood?: Mood, mini = false): string {
   const { head, bowtie } = gearOf(level)
+  const moodHat = mood?.holiday === 'christmas'
+    ? mini ? MINI_SANTA_HAT : SANTA_HAT
+    : mood?.holiday === 'new-year'
+      ? mini ? MINI_PARTY_HAT : PARTY_HAT
+      : mood?.timeOfDay === 'night'
+        ? mini ? MINI_NIGHTCAP : NIGHTCAP
+        : ''
   const hat = halloween
     ? WITCH_HAT
-    : head === 'sprout'
+    : moodHat || (head === 'sprout'
       ? px(7.75, -1.7, 0.5, 1.7, '#5E9E4B') + px(6.3, -2.3, 1.4, 0.7, '#7BC163') + px(8.3, -2.8, 1.4, 0.7, '#8ED073')
       : head === 'cap'
         ? `<rect x="3.4" y="-1.8" width="9" height="1.9" rx=".8" fill="#3E6FD8"/>` +
@@ -355,7 +551,7 @@ function gearSvg(level: number, halloween = false, pailExtra = ''): string {
             px(7.6, -1.5, 0.8, 0.8, '#E5484D') +
             px(5.1, -1, 0.6, 0.6, '#5FB0F0') +
             px(10.3, -1, 0.6, 0.6, '#5FB0F0')
-          : ''
+          : '')
   const tie = bowtie
     ? `<path d="M6.4 5.3 7.8 5.85 6.4 6.4Z" fill="#E5484D"/><path d="M9.6 5.3 8.2 5.85 9.6 6.4Z" fill="#E5484D"/>` + px(7.6, 5.55, 0.8, 0.6, '#B83238')
     : ''
@@ -367,7 +563,7 @@ function gearSvg(level: number, halloween = false, pailExtra = ''): string {
 }
 
 // Clawd 的身子（不含阴影、笔记本、爱心）：信息栏和战报卡共用
-export function clawdBody(isStressed: boolean, level = 1, halloween = false, pailExtra = ''): string {
+export function clawdBody(isStressed: boolean, level = 1, halloween = false, pailExtra = '', mood?: Mood, mini = false): string {
   const eyes =
     `<g class="eyes"><g class="look">` +
     px(4, 2, 1, 2, '#231511', ' class="eye"') +
@@ -401,7 +597,7 @@ export function clawdBody(isStressed: boolean, level = 1, halloween = false, pai
     happy +
     cheeks +
     brows +
-    gearSvg(level, halloween, pailExtra)
+    gearSvg(level, halloween, pailExtra, mood, mini)
 
   return body
 }
@@ -492,16 +688,36 @@ function candyTimeline(askAgo: number) {
   }
 }
 
-function clawd(isWorking: boolean, isStressed: boolean, didChange: boolean, mini = false, isChill = false, pet?: PetView): string {
+function clawd(
+  isWorking: boolean,
+  isStressed: boolean,
+  didChange: boolean,
+  mini = false,
+  isChill = false,
+  pet?: PetView,
+  activity?: Activity,
+  showActivityIcon = true,
+): string {
+  const pose = activity?.kind
+  const reaction = pose === 'reaction' ? activity?.reaction : undefined
+  const mood = moodForClawd(isWorking, activity, pet)
+  const hasSpecialPose = pose === 'needs-you' || pose === 'reaction' || pose === 'done' || pose === 'compacting' || pose === 'sleep'
+  const clawdWorking = !hasSpecialPose && (isWorking || (pose === 'working' && activity?.icon !== undefined))
   const isHalloween = pet?.halloween === true
-  const candy = isHalloween && !isWorking && pet?.askAgo !== undefined ? candyTimeline(pet.askAgo) : undefined
-  const body = clawdBody(isStressed, pet?.level, isHalloween, candy?.pail)
+  const candy = isHalloween && !clawdWorking && pet?.askAgo !== undefined ? candyTimeline(pet.askAgo) : undefined
+  const activityIcon = showActivityIcon ? activity?.icon : undefined
+  const isSleeping = pose === 'sleep'
+  const isDone = pose === 'done'
+  const reactionFace = reactionFaceSvg(reaction)
+  const body = clawdBody(isStressed, pet?.level, isHalloween, candy?.pail, mood, mini)
+  const sleepEyes = isSleeping ? `<g class="sleep-eyes">${px(3.7, 3.1, 1.6, 0.45, '#231511')}${px(10.7, 3.1, 1.6, 0.45, '#231511')}</g>` : ''
+  const activityClass = pose && pose !== 'idle' && pose !== 'working' ? ` ${pose}${reaction ? ` ${reaction}` : ''}` : ''
   // 头上戴了东西，干活时的小火花挪到头的左边，不跟帽子打架
   const sparkAt = isHalloween || gearOf(pet?.level ?? 1).head ? '-1.2 -1.2' : '8 -2.6'
   // 讨糖时：第一下点击是给糖，第二下才空翻
   const flipOn = candy ? 'hit2.click' : 'hit.click'
 
-  const laptop = isWorking && !mini
+  const laptop = clawdWorking && !mini
     ? `<g class="laptop">` +
       `<rect x="3.6" y="4.7" width="8.8" height="4.4" rx=".5" fill="#34332F"/>` +
       `<rect x="3.6" y="4.7" width="8.8" height=".35" rx=".17" fill="#5A5852"/>` +
@@ -509,7 +725,9 @@ function clawd(isWorking: boolean, isStressed: boolean, didChange: boolean, mini
       `<rect x="1.4" y="8.9" width="13.2" height=".9" rx=".3" fill="#55534D"/>` +
       `<rect x="1.4" y="8.9" width="13.2" height=".25" rx=".12" fill="#77746C"/>` +
       `</g>` +
-      (isHalloween
+      (activityIcon
+        ? ''
+        : isHalloween
         ? [16.6, 17.8, 17]
             .map((x, k) => `<g transform="translate(${x} 3.4)"><g class="glyph" style="animation-delay:${k * 0.8}s">${CANDIES[k]}</g></g>`)
             .join('')
@@ -523,9 +741,10 @@ function clawd(isWorking: boolean, isStressed: boolean, didChange: boolean, mini
       `<g transform="translate(${sparkAt})"><g class="spark-pulse"><g class="spark-spin">${spark(0, 0, 1.45, 0.5, '#E98D6E')}</g></g></g>`
     : ''
 
-  const sweat = isStressed
+  const sweat = (isStressed || reaction === 'test-fail') && !isSleeping
     ? `<path class="sweat" d="M14.9-.4q.75 1.05.75 1.6a.75.75 0 0 1-1.5 0q0-.55.75-1.6z" fill="#8FD0FF"/>`
     : ''
+  const moodEffects = moodEffectsSvg(mood, mini)
 
   const hearts = [
     [2.2, -1.2, '0s', -1.2],
@@ -552,23 +771,28 @@ function clawd(isWorking: boolean, isStressed: boolean, didChange: boolean, mini
     )
   }).join('')
 
-  const hopClass = didChange ? 'hop once' : isWorking ? 'hop' : 'hop idle'
+  const hopClass = didChange || isDone ? 'hop once' : isSleeping ? 'hop sleep' : clawdWorking ? 'hop' : 'hop idle'
 
   return (
-    `<g class="clawd${isWorking ? ' working' : ''}${isStressed ? ' stressed' : ''}${mini ? ' mini' : ''}${isChill ? ' chill' : ''}" ` +
+    `<g class="clawd${clawdWorking ? ' working' : ''}${isStressed ? ' stressed' : ''}${mini ? ' mini' : ''}${activityClass}${isChill ? ' chill' : ''}" ` +
     `transform="translate(${mini ? MINI_X : CLAWD_X} ${mini ? MINI_Y : CLAWD_Y}) scale(${mini ? MINI_U : U})">` +
     (pet ? `<title>${pet.title}</title>` : '') +
     `<circle cx="8" cy="5" r="9.5" fill="url(#aura)" class="aura"/>` +
     `<g class="pace">` +
-    `<ellipse cx="8" cy="9.75" rx="6.3" ry=".55" class="shadow ${didChange ? 'once' : isWorking ? '' : 'idle'}"/>` +
+    `<ellipse cx="8" cy="9.75" rx="6.3" ry=".55" class="shadow ${didChange ? 'once' : clawdWorking ? '' : 'idle'}"/>` +
     `<g class="spin"><animateTransform attributeName="transform" type="rotate" from="0 8 4.5" to="360 8 4.5" dur=".7s" begin="${flipOn}" calcMode="spline" keyTimes="0;1" keySplines=".3 .1 .2 1"/>` +
     `<g>${candy?.jump ?? ''}<g>${candy?.stomp ?? ''}` +
-    `<g class="${hopClass}"><g class="tremble"><g class="breath">${body}${isHalloween && isWorking ? GHOST : ''}${candy?.face ?? ''}</g></g></g>` +
+    `<g class="${hopClass}"><g class="tremble"><g class="breath">${body}${reactionFace}${sleepEyes}${isHalloween && clawdWorking ? GHOST : ''}${candy?.face ?? ''}</g></g></g>` +
     `</g></g>` +
     `</g>` +
     sweat +
+    moodEffects +
+    (activityIcon ? activityIconSvg(activityIcon, mini) : '') +
     `</g>` +
     laptop +
+    (isDone ? doneSparklesSvg(mini) : '') +
+    (isSleeping ? sleepZSvg(mini) : '') +
+    reactionEffectsSvg(reaction) +
     hearts +
     burst +
     (candy ? candy.overlay + candy.hits : `<rect id="hit" ${HIT_RECT}/>`) +
@@ -675,6 +899,47 @@ const STYLE =
   `.glyph{fill:#6B6862}.sweat{fill:#3D9BE0}.hw-q{fill:#C2603F}.tm{fill:#C2603F}.tm.warn{fill:#B26E12}.tm.cold{fill:#B4B1A8}` +
   `#grad-ok stop+stop{stop-color:#EC9A78}#grad-warn stop+stop{stop-color:#F2B04E}#grad-danger stop+stop{stop-color:#F2705C}}`
 
+const ACTIVITY_STYLE = `.activity-icon{shape-rendering:crispEdges}.activity-spinner{transform-box:fill-box;transform-origin:center;animation:activity-spin .9s steps(8) infinite}@keyframes activity-spin{to{transform:rotate(360deg)}}`
+const NEEDS_STYLE =
+  `.needs-you .eyes{transform:scale(1.25);transform-origin:center}.needs-you .hop{animation:needs-hop .85s ease-in-out infinite}.needs-you .activity-icon{animation:needs-blink .7s steps(2,end) infinite}` +
+  `@keyframes needs-hop{0%,100%{transform:none}50%{transform:translateY(-1.4px)}}@keyframes needs-blink{0%,49%{opacity:1}50%,100%{opacity:0}}`
+const DONE_STYLE =
+  `.done .eyes{opacity:0}.done .happy{opacity:1}.done .shades{opacity:0;animation:none}.done-sparkle{opacity:.75;animation:done-sparkle 1.1s ease-in-out infinite}` +
+  `@keyframes done-sparkle{0%,100%{opacity:.4}50%{opacity:1;transform:scale(1.15)}}`
+const COMPACTING_STYLE =
+  `.compacting .hop{transform:scale(1.18,.76);transform-origin:50% 100%;animation:compacting-squish .36s ease-in-out infinite alternate}` +
+  `@keyframes compacting-squish{from{transform:scale(1.12,.82)}to{transform:scale(1.24,.7)}}`
+const SLEEP_STYLE =
+  `.clawd.sleep{opacity:.5}.sleep .eyes{opacity:0}.sleep .shades{opacity:0;animation:none}.sleep-eyes{display:block}.sleep .hop,.sleep .pace{animation:none!important;transform:none}.sleep-z{opacity:.8;animation:sleep-z 1.8s ease-out infinite}` +
+  `@keyframes sleep-z{0%{opacity:0;transform:translateY(1px)}20%{opacity:.8}100%{opacity:0;transform:translateY(-2.5px)}}`
+const REACTION_STYLE =
+  `.reaction .eyes,.reaction .shades{opacity:0;animation:none}.reaction .happy{opacity:0}` +
+  `.reaction.test-pass .happy{opacity:1}.reaction.test-pass .armL{transform-origin:100% 100%;transform:rotate(42deg) translateY(-.45px)}.reaction.test-pass .armR{transform-origin:0 100%;transform:rotate(-42deg) translateY(-.45px)}` +
+  `.reaction.test-pass .hop{animation:reaction-hop .78s ease-in-out infinite}.reaction.test-fail .reaction-x-eyes,.reaction.oops .reaction-x-eyes,.reaction.tantrum .angry-eyes{display:block}` +
+  `.clawd.reaction.test-fail .happy,.clawd.reaction.oops .happy,.clawd.reaction.tantrum .happy{opacity:0}` +
+  `.reaction.oops .hop{animation:oops-shake .32s ease-in-out infinite}.reaction.tantrum .hop{animation:tantrum-stomp .42s steps(2,end) infinite}` +
+  `.reaction.tantrum .legA,.reaction.tantrum .legB{transform-origin:50% 0;animation:stomp-leg .42s steps(2,end) infinite}.reaction.tantrum .legB{animation-delay:.21s}` +
+  `.reaction-confetti{shape-rendering:crispEdges}.confetti-piece{transform-origin:center;animation:confetti-float 1.2s ease-in-out infinite alternate}.tantrum-steam{opacity:.95}.tantrum-steam g{transform-origin:center;animation:steam-puff 1s ease-out infinite alternate}` +
+  `@keyframes reaction-hop{0%,100%{transform:none}50%{transform:translateY(-1.5px)}}@keyframes oops-shake{0%,100%{transform:none}25%{transform:translateX(-.55px)}75%{transform:translateX(.55px)}}` +
+  `@keyframes tantrum-stomp{0%,100%{transform:translateY(0)}50%{transform:translateY(-.45px)}}@keyframes stomp-leg{from{transform:rotate(-12deg)}to{transform:rotate(12deg)}}` +
+  `@keyframes confetti-float{from{transform:translateY(0) rotate(0)}to{transform:translateY(-1px) rotate(18deg)}}@keyframes steam-puff{from{opacity:.5;transform:translateY(0)}to{opacity:1;transform:translateY(-1px)}}`
+const MOOD_STYLE =
+  `.mood-coffee{shape-rendering:crispEdges}.mood-steam{transform-origin:center;animation:mood-steam 2.6s ease-in-out infinite}` +
+  `.mood-particles,.mood-sun,.mood-fireworks{shape-rendering:crispEdges}.mood-particle{transform-origin:center;animation:mood-fall 8s ease-in-out infinite}.mood-firework{transform-origin:center;animation:mood-firework 3.6s ease-in-out infinite alternate}` +
+  `@keyframes mood-fall{from{opacity:.25;transform:translateY(-1px)}20%{opacity:1}to{opacity:.35;transform:translateY(2.5px)}}@keyframes mood-firework{0%,100%{opacity:.45;transform:scale(.8)}50%{opacity:1;transform:scale(1.1)}}@keyframes mood-steam{0%,100%{opacity:.35;transform:translateY(0)}50%{opacity:.8;transform:translateY(-.7px)}}`
+
+function activityStyle(activity?: Activity, showIcon = true): string {
+  if (!activity || activity.kind === 'idle') return ''
+  return (
+    (activity.icon && showIcon ? ACTIVITY_STYLE : '') +
+    (activity.kind === 'needs-you' ? NEEDS_STYLE : '') +
+    (activity.kind === 'done' ? DONE_STYLE : '') +
+    (activity.kind === 'compacting' ? COMPACTING_STYLE : '') +
+    (activity.kind === 'sleep' ? SLEEP_STYLE : '') +
+    (activity.kind === 'reaction' ? REACTION_STYLE : '')
+  )
+}
+
 const DEFS =
   `<defs>` +
   `<linearGradient id="grad-ok" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#D97757"/><stop offset="1" stop-color="#F5BC98"/></linearGradient>` +
@@ -755,7 +1020,7 @@ function ditherSvg(width: number, height: number): string {
 // ───────────────────────── 整条 ─────────────────────────
 
 // 收起后的细条：小 Clawd + 所有可用读数的「标签 细进度条 百分比」，同样左右留白相等、间距相等；不画分隔线，靠间距分组
-function miniSvg(gauges: Gauge[], isWorking: boolean, isStressed: boolean, width: number, isChill: boolean, pet?: PetView, lang: Lang = 'zh'): string {
+function miniSvg(gauges: Gauge[], isWorking: boolean, isStressed: boolean, width: number, isChill: boolean, pet?: PetView, lang: Lang = 'zh', activity?: Activity): string {
   // 窄窗口同样逐级收：标签 + 细条 + 百分比 → 标签 + 百分比 → 短标签 + 百分比 → 只剩百分比（完整标签在悬停提示里）
   const measure = (showBar: boolean, showLabel: boolean, isShort = false) =>
     gauges.map(g => {
@@ -767,10 +1032,18 @@ function miniSvg(gauges: Gauge[], isWorking: boolean, isStressed: boolean, width
       return { g, value, label, labelW, valueW, showBar, showLabel, w: (showLabel ? labelW + 8 : 0) + (showBar ? MINI_BAR + 8 : 0) + valueW + timerWidth(g, TIMER_SIZE) }
     })
   // 间距至少 24px：Clawd 干活时会往右跑 20px，不能撞上第一项
-  const fits = (list: { w: number }[]) => 2 * MINI_X + MINI_LAYOUT_W + list.reduce((a, b) => a + b.w, 0) + list.length * 24 <= width
-  const items = [measure(true, true), measure(false, true), measure(false, true, true)].find(fits) ?? measure(false, false)
-  const gap = Math.max(24, (width - 2 * MINI_X - MINI_LAYOUT_W - items.reduce((a, b) => a + b.w, 0)) / items.length)
-  let x = MINI_X + MINI_LAYOUT_W + gap
+  const fits = (list: { w: number }[], activityReserve = 0) =>
+    2 * MINI_X + MINI_LAYOUT_W + activityReserve + list.reduce((a, b) => a + b.w, 0) + list.length * 24 <= width
+  const compact = measure(false, false)
+  const layouts = [measure(true, true), measure(false, true), measure(false, true, true), compact]
+  const iconItems = activity?.icon ? layouts.find(list => fits(list, MINI_ACTIVITY_RESERVE)) : undefined
+  const showActivityIcon = iconItems !== undefined
+  const items = iconItems ?? layouts.find(list => fits(list)) ?? compact
+  const activityReserve = showActivityIcon ? MINI_ACTIVITY_RESERVE : 0
+  const mood = moodForClawd(isWorking, activity, pet)
+  const layoutWidth = MINI_LAYOUT_W + activityReserve
+  const gap = Math.max(24, (width - 2 * MINI_X - layoutWidth - items.reduce((a, b) => a + b.w, 0)) / items.length)
+  let x = MINI_X + layoutWidth + gap
   const parts: string[] = []
   items.forEach(({ g, value, label, labelW, valueW, showBar, showLabel, w }) => {
     const t = g.tier ?? tier(g.to ?? 0)
@@ -793,11 +1066,11 @@ function miniSvg(gauges: Gauge[], isWorking: boolean, isStressed: boolean, width
 
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${H_MINI}" width="${width}" height="${H_MINI}" style="color-scheme:light dark;background:transparent">` +
-    `<style>${STYLE}${isWorking ? DITHER_STYLE : ''}</style>` +
+    `<style>${STYLE}${activityStyle(activity, showActivityIcon)}${mood ? MOOD_STYLE : ''}${isWorking ? DITHER_STYLE : ''}</style>` +
     DEFS +
     (isWorking ? ditherSvg(width, H_MINI) : '') +
     `<g class="gauges">${parts.join('')}</g>` +
-    clawd(isWorking, isStressed, false, true, isChill, pet) +
+    clawd(isWorking, isStressed, false, true, isChill, pet, activity, showActivityIcon) +
     `</svg>`
   )
 }
@@ -805,8 +1078,12 @@ function miniSvg(gauges: Gauge[], isWorking: boolean, isStressed: boolean, width
 // cacheTimer：离缓存过期的毫秒数和有效期（Claude 干活时不显示：那时缓存一直在用）
 export type CacheTimer = { remainMs: number; ttlMs: number }
 
-export function bandSvg(bars: Bars, isWorking: boolean, width: number, mini = false, lang: Lang = 'zh', pet?: PetView, cacheTimer?: CacheTimer): string {
+export function bandSvg(bars: Bars, isWorking: boolean, width: number, mini = false, lang: Lang = 'zh', pet?: PetView, cacheTimer?: CacheTimer, activity?: Activity): string {
   timerLang = lang
+  // The host's live working flag outranks a lingering done/sleep pose.
+  const displayActivity: Activity | undefined =
+    isWorking && (activity?.kind === 'done' || activity?.kind === 'sleep') ? { kind: 'working' } : activity
+  const mood = moodForClawd(isWorking, displayActivity, pet)
   const { from, to } = bars
   // $.state 存取会序列化，from/to 永远是两个对象，必须比内容
   const isChanged = JSON.stringify(from) !== JSON.stringify(to)
@@ -882,15 +1159,17 @@ export function bandSvg(bars: Bars, isWorking: boolean, width: number, mini = fa
   ]
 
   if (mini) {
-    return miniSvg(gauges, isWorking, isStressed, width, isChill, pet, lang)
+    return miniSvg(gauges, isWorking, isStressed, width, isChill, pet, lang, displayActivity)
   }
 
   // 按内容实际宽度排：左右留白相等（都是 CLAWD_X），Clawd 与每块之间的间距相等
-  const layout = pickLayout(gauges, width)
+  const hasActivityIcon = displayActivity?.icon !== undefined
+  const clawdWidth = CLAWD_W + (hasActivityIcon ? ACTIVITY_LAYOUT_RESERVE : 0)
+  const layout = pickLayout(gauges, width, clawdWidth)
   const widths = gauges.map(g => blockWidth(g, layout))
-  const gap = Math.max(MIN_GAP[layout], (width - 2 * CLAWD_X - CLAWD_W - widths.reduce((a, b) => a + b, 0)) / gauges.length)
+  const gap = Math.max(MIN_GAP[layout], (width - 2 * CLAWD_X - clawdWidth - widths.reduce((a, b) => a + b, 0)) / gauges.length)
   const xs: number[] = []
-  widths.reduce((x, w) => (xs.push(x), x + w + gap), CLAWD_X + CLAWD_W + gap)
+  widths.reduce((x, w) => (xs.push(x), x + w + gap), CLAWD_X + clawdWidth + gap)
   const blocks = gauges.map((g, i) => gauge(g, i, xs[i], widths[i], isChanged, isFirst, css, layout, lang)).join('')
   // 分隔线放在两块之间那段间距的正中间
   const seps = Array.from({ length: gauges.length - 1 }, (_, i) => i + 1)
@@ -905,11 +1184,11 @@ export function bandSvg(bars: Bars, isWorking: boolean, width: number, mini = fa
 
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${H}" width="${width}" height="${H}" style="color-scheme:light dark;background:transparent">` +
-    `<style>${STYLE}${css.join('')}${isWorking ? DITHER_STYLE : ''}</style>` +
+    `<style>${STYLE}${activityStyle(displayActivity)}${mood ? MOOD_STYLE : ''}${css.join('')}${isWorking ? DITHER_STYLE : ''}</style>` +
     DEFS +
     (isWorking ? ditherSvg(width, H) : '') +
     `<g class="gauges">${seps}${blocks}</g>` +
-    clawd(isWorking, isStressed, clawdChanged, false, isChill, pet) +
+    clawd(isWorking, isStressed, clawdChanged, false, isChill, pet, displayActivity) +
     `</svg>`
   )
 }

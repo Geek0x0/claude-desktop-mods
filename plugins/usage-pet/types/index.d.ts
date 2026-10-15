@@ -32,8 +32,13 @@ export type Ledger = Record<string, Cell>
 export type Week = { hours: Ledger; since: number }
 export type WeekTotals = { total: number; fresh: number; write: number; read: number; output: number; since: number }
 
+export type ToolIcon = 'terminal' | 'pencil' | 'magnifier' | 'globe' | 'bolt' | 'mini' | 'spinner' | 'bang' | 'question' | 'check' | 'cross'
+export type ActivityKind = 'needs-you' | 'reaction' | 'compacting' | 'working' | 'done' | 'sleep' | 'idle'
+export type ReactionKind = 'test-pass' | 'test-fail' | 'oops' | 'tantrum'
+export type Activity = { kind: ActivityKind; icon?: ToolIcon; reaction?: ReactionKind; owner?: number; previous?: Activity }
+
 declare module 'claude-code' {
   interface PluginState {
-    'usage-pet': { bars: Bars; cache: CacheTotals; expanded: boolean; pinned: boolean; lang: 'zh' | 'en'; pet: Pet; report: Report; ask: number; warm: number; week: Week }
+    'usage-pet': { bars: Bars; cache: CacheTotals; expanded: boolean; pinned: boolean; lang: 'zh' | 'en'; pet: Pet; report: Report; ask: number; warm: number; week: Week; activity: Activity }
   }
 }

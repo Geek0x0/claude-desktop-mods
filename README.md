@@ -45,16 +45,17 @@ Forked from [manson341349-beep/claude-desktop-mods](https://github.com/manson341
 - **自动折叠**：平时是一条 30px 的细条；每次 Claude 回答完、数据刷新时自动展开 5 秒，播完动画再收起
 - **展开时**：圆环依次扫入、数字像老虎机一样滚动、旁边飘出「+N%」
 - **缓存倒计时**：缓存命中旁边显示缓存还能热多久（订阅约 1 小时、API 密钥 5 分钟，每次回复重新计时），剩 5 分钟变色，过期显示「已过期」。缓存过期后下一轮要把整段对话重新写入缓存，更耗额度，赶在过期前回复更划算
-- **Clawd**：空闲时呼吸、眨眼、张望；Claude 干活时搬出笔记本敲代码（收起时在细条上来回小跑）；额度 ≥90% 冒汗发抖；缓存命中 ≥90% 戴上墨镜放松（点子来自 [@Joshua_WD](https://x.com/Joshua_WD)）
+- **Clawd**：干活时显示工具图标，空闲时呼吸、眨眼、张望；需要你、完成、睡眠和压缩各有姿势；测试通过会欢呼，失败或工具报错会显示失误表情；20 分钟内 3 次烦躁提示后跺脚（`/config` 里 `tantrums` 设为 `off` 可关闭）。空闲或睡着时还有早晨咖啡、夜帽、季节天气、圣诞帽和新年派对帽；缓存命中 ≥90% 时戴墨镜放松（点子来自 [@Joshua_WD](https://x.com/Joshua_WD)）
+- **隐私**：只观察 `classic.PermissionRequest` 来显示「需要你」，从不替你回答或修改请求；情绪爆发功能只在本地检查 `prompt.submit` 文本是否含烦躁词句，不保存、不发送、不改写，`tantrums: off` 会关闭此检查；读取工具结果仅用于判断测试通过/失败和工具错误。
 - **中英双语**：默认跟随系统语言（macOS 读系统首选语言，Windows 读显示语言）；`/config` 里的 `language` 可以选 `auto` / `zh` / `en`
 - **浅色 / 深色**：跟着 Claude App 的外观设置自动切换，背景始终透明
 - **养成**：Claude 每答完一轮 Clawd 涨 10 点经验（缓存命中 ≥90% 再 +5，每天第一轮 +20）。Lv.2 头顶冒出小芽、Lv.3 戴红领结、Lv.5 换棒球帽、Lv.10 戴皇冠；还有 8 个成就（缓存大师、夜猫子、极限操作、连续 7 天……）。鼠标放到 Clawd 身上看等级和经验，数据跨会话保存
 - **战报卡**：输入 `/clawd-card`，生成本次会话的战报（时长、回合、工具调用、改动文件、Tokens、缓存命中、等级、本次解锁的成就），复制到剪贴板、存到「图片/Clawd Reports」（只留最近 20 张，更早的自动移进废纸篓），直接粘贴到 X（macOS 用系统自带的 Quick Look 导出；Windows 用系统自带的 Edge，没有 Edge 时用 Chrome，旧图移进回收站）
-- **万圣节**（10 月 25 日到 11 月 1 日）：Clawd 戴巫师帽、拎南瓜桶；Claude 干活时披上床单变幽灵，旁边飘的代码换成糖果。每答完一轮他会举起桶**讨糖**：点他一下就是给糖（开心 3 秒），连点两下空翻、三下跳起来撒糖；12 秒没人理他就生气跺脚，点一下就消气。不想要节日装扮：`/config` 里把 `seasonal` 填成 `off`
+- **万圣节**（10 月 25 日到 11 月 1 日）：Clawd 戴巫师帽、拎南瓜桶；Claude 干活时披上床单变幽灵，旁边飘的代码换成糖果。每答完一轮他会举起桶**讨糖**：点他一下就是给糖（开心 3 秒），连点两下空翻、三下跳起来撒糖；12 秒没人理他就生气跺脚，点一下就消气。不想要时段、季节和节日装扮：`/config` 里把 `seasonal` 填成 `off`
 - **鼠标**：放到 Clawd 身上会冒爱心，点它会空翻；放到圆环上显示详细数值
 - **近 7 天用量**：信息栏展开时，鼠标放到 Clawd 身上显示最近 7 天（从现在往回 7×24 小时）用了多少 tokens，所有会话合计、含子代理；战报卡上也有这一行。插件自己按小时记账（Claude 只给当前会话的用量），所以从装上 1.9.0 起才开始记，不满 7 天时会写明从哪天开始
 - **切换**：点右侧 ▲ 一直展开，点 ▼ 收起；或在输入框输入 `/clawd`
-- **更新提示**：插件更新后第一次打开，右上角会弹出这次改了什么（停 1 分钟，鼠标放上去会停住，点一下就关；看过就不再弹）。升级、解锁成就也是这样提示
+- **Clawd 成长**：升级和成就仍会计入等级与战报卡，不发送弹出提示
 
 ### 安装
 
@@ -76,7 +77,7 @@ claude plugin install usage-pet@claude-desktop-mods
 
 ### 更新
 
-第三方插件市场**默认不自动更新**。想自动收到新版本：在会话里打开 `/plugin` → **Marketplaces** → 选 `claude-desktop-mods` → **Enable auto-update**。之后有新版本时会提示 `Plugin updated: usage-pet · Run /reload-plugins to apply`，重载后插件会弹出这次的更新内容。
+第三方插件市场**默认不自动更新**。想自动收到新版本：在会话里打开 `/plugin` → **Marketplaces** → 选 `claude-desktop-mods` → **Enable auto-update**。之后有新版本时会提示 `Plugin updated: usage-pet · Run /reload-plugins to apply`；插件不会弹出更新说明，版本记录保存在 [`changelog.ts`](plugins/usage-pet/hooks/changelog.ts)。
 
 手动更新：
 
@@ -108,16 +109,17 @@ claude plugin uninstall usage-pet@claude-desktop-mods
 - **Auto-collapse**: a 30px strip most of the time; expands for 5 seconds whenever usage data refreshes, plays its animations, then collapses
 - **Expanded**: rings sweep in, digits roll like an odometer, `+N%` chips float up
 - **Cache countdown**: next to Cache hit, how long the cache stays warm (about 1 hour on a subscription, 5 minutes on an API key; every reply restarts it). Amber in the last 5 minutes, "cold" once expired. A cold cache means the next turn re-caches the whole conversation, which costs more of your limit
-- **Clawd**: breathes, blinks and looks around when idle; types on a tiny laptop while Claude works (paces back and forth when collapsed); sweats when a limit is above 90%; puts on sunglasses when the cache hit rate is 90%+ (idea by [@Joshua_WD](https://x.com/Joshua_WD))
+- **Clawd**: shows tool icons while working and distinct needs-you, done, sleep and compaction looks; celebrates passing tests and reacts to failures or tool errors; stomps after 3 frustrated prompts in 20 minutes (`tantrums: off` in `/config` disables it). When idle or asleep he can have morning coffee, wear a nightcap, and show seasonal weather or Christmas and New Year hats. He sweats above 90% limits and wears sunglasses at 90%+ cache hit (idea by [@Joshua_WD](https://x.com/Joshua_WD))
+- **Privacy**: observes `classic.PermissionRequest` only to show "needs you" and never answers or changes a request; the tantrum feature checks `prompt.submit` text locally for frustration (not stored, sent or changed; `tantrums: off` disables this check); reads tool results only to spot test pass/fail and tool errors.
 - **English / 中文**: follows your system language by default (macOS preferred languages, Windows display language); set `language` in `/config` to `auto`, `zh` or `en`
 - **Light / dark**: follows the Claude app appearance, always on a transparent background
 - **Growth**: Clawd earns 10 XP per turn (+5 at 90%+ cache hit, +20 for the first turn of the day). A sprout at Lv.2, a red bow tie at Lv.3, a cap at Lv.5, a crown at Lv.10, and 8 achievements (Cache master, Night owl, Close call, Full week…). Hover Clawd for his level and XP; progress is kept across sessions
 - **Report card**: `/clawd-card` makes a card of this session (duration, turns, tool calls, files edited, tokens, cache hit, level, achievements unlocked), copies it to the clipboard and saves it to Pictures/Clawd Reports (keeps the latest 20; older ones go to the Trash), ready to paste into X (exported with Quick Look on macOS; on Windows with Edge, or Chrome, and older cards go to the Recycle Bin)
-- **Halloween** (Oct 25 to Nov 1): Clawd wears a witch hat and carries a pumpkin pail; while Claude works he turns into a bedsheet ghost and candy floats up instead of code. After each turn he holds out his pail for **trick or treat**: click him once to give candy (he's happy for 3 seconds), twice for a flip, three times and he jumps for joy and throws candy. Ignore him for 12 seconds and he stomps in a huff until you click. Turn costumes off by setting `seasonal` to `off` in `/config`
+- **Halloween** (Oct 25 to Nov 1): Clawd wears a witch hat and carries a pumpkin pail; while Claude works he turns into a bedsheet ghost and candy floats up instead of code. After each turn he holds out his pail for **trick or treat**: click him once to give candy (he's happy for 3 seconds), twice for a flip, three times and he jumps for joy and throws candy. Ignore him for 12 seconds and he stomps in a huff until you click. Turn time-of-day, seasonal and holiday looks off with `seasonal: off` in `/config`
 - **Pointer**: hover Clawd for hearts, click for a flip; hover a ring for details
 - **Last 7 days**: with the band expanded, hover Clawd to see how many tokens you used in the last 7 days (the past 7×24 hours), all sessions together, subagents included; the report card shows it too. The plugin keeps its own hourly tally (Claude only reports the current session), so counting starts when you install 1.9.0, and until a full week has passed it says since when
 - **Toggle**: ▲ keeps it expanded, ▼ collapses; or type `/clawd`
-- **What's new**: after an update, the first load shows a toast with the release notes (one minute, hover to hold, click to close; once); level-ups and achievements show the same way
+- **Clawd growth**: level-ups and achievements still update his level and report card; the plugin sends no pop-up notifications
 
 ### Install
 
@@ -155,8 +157,8 @@ claude plugin validate plugins/usage-pet
 claude plugin test plugins/usage-pet
 ```
 
-发布改动时，在 [`plugins/usage-pet/hooks/changelog.ts`](plugins/usage-pet/hooks/changelog.ts) 最前面加一条，用户更新后会看到。
-When you ship a change, add an entry at the top of `changelog.ts`; users see it after they update.
+发布改动时，在 [`plugins/usage-pet/hooks/changelog.ts`](plugins/usage-pet/hooks/changelog.ts) 最前面加一条，作为项目版本记录；插件不会自动弹出更新说明。
+When you ship a change, add an entry at the top of `changelog.ts` as the project release record; the plugin does not show it automatically.
 
 做桌面端 mod 踩过的坑：[docs/desktop-mod-notes.md](docs/desktop-mod-notes.md)
 Pitfalls we hit building a desktop mod: [docs/desktop-mod-notes.md](docs/desktop-mod-notes.md)

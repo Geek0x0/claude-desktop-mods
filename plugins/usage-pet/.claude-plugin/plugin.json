@@ -23,9 +23,15 @@
     },
     "seasonal": {
       "type": "string",
-      "title": "Seasonal costumes / 节日装扮",
-      "description": "auto dresses Clawd up for holidays (Halloween: Oct 25 to Nov 1); type off to turn it off · auto 节日自动换装（万圣节：10 月 25 日到 11 月 1 日），填 off 关闭",
+      "title": "Seasonal looks / 时段与节日装扮",
+      "description": "auto adds morning coffee, a nightcap, seasonal weather and holiday looks (Christmas: Dec 20–26; New Year: Dec 31–Jan 1; Halloween: Oct 25–Nov 1); type off to turn them all off · auto 添加早晨咖啡、夜帽、季节天气和节日装扮（圣诞节：12 月 20–26 日；新年：12 月 31 日至 1 月 1 日；万圣节：10 月 25 日至 11 月 1 日），填 off 全部关闭",
       "default": "auto"
+    },
+    "tantrums": {
+      "type": "string",
+      "title": "Tantrums / 烦躁反应",
+      "description": "on shows an angry stomp after 3 frustrated prompts in 20 minutes; type off to disable · on：20 分钟内 3 次烦躁提示后显示跺脚；填 off 关闭",
+      "default": "on"
     }
   }
 }
