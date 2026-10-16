@@ -31,14 +31,15 @@ export const H = 80
 // 收起后的细条高度：Clawd 10 格 × 3px，刚好容下本体；帽子等装扮可以稍微探出
 export const H_MINI = 30
 
-const U = 4.5 // Clawd 的一个像素 = 4.5px
-const CLAWD_X = 22 // 左右留白都是这么宽
+export const U = 4.5 // Clawd 的一个像素 = 4.5px
+export const CLAWD_X = 22 // 左右留白都是这么宽
 const CLAWD_W = 16 * U // Clawd 本体 16 格宽
-const MINI_U = 3
-const MINI_X = 14
+export const MINI_U = 3
+export const MINI_X = 14
+export const MINI_WALK_X = 10
 const MINI_Y = (H_MINI - 10 * MINI_U) / 2
 const MINI_W = 16 * MINI_U
-const MINI_LAYOUT_W = MINI_W + 10 * MINI_U // 细条里 Clawd 最多向右跑 10 格
+const MINI_LAYOUT_W = MINI_W + MINI_WALK_X * MINI_U // 细条里 Clawd 最多向右跑 10 格
 const ACTIVITY_ICON_X = 16.4
 const ACTIVITY_ICON_Y = -1.5
 const MINI_ACTIVITY_ICON_Y = 0.15
@@ -47,7 +48,7 @@ const ACTIVITY_ICON_CELL = 0.75
 // Expanded icon protrudes beyond the 16-unit Clawd box; mini also accounts for its 10-unit walk.
 export const ACTIVITY_LAYOUT_RESERVE = Math.ceil((ACTIVITY_ICON_X + ACTIVITY_ICON_SIZE * ACTIVITY_ICON_CELL - 16) * U)
 const MINI_ACTIVITY_RESERVE = Math.ceil(
-  (10 + ACTIVITY_ICON_X + ACTIVITY_ICON_SIZE * ACTIVITY_ICON_CELL - MINI_LAYOUT_W / MINI_U) * MINI_U,
+  (MINI_WALK_X + ACTIVITY_ICON_X + ACTIVITY_ICON_SIZE * ACTIVITY_ICON_CELL - MINI_LAYOUT_W / MINI_U) * MINI_U,
 )
 const MINI_BAR = 40
 const CLAWD_Y = (H - 10 * U) / 2 + 4 // 身子仍比圆环中心低 4px
@@ -722,6 +723,15 @@ const CANDIES = [
   `<path d="M0-.75.6.6-.6.6Z" class="halloween-gold"/><path d="M-.38.15.38.15.6.6-.6.6Z" class="halloween-paper"/><path d="M-.21-.27.21-.27.35.05-.35.05Z" class="halloween-orange"/>`,
 ]
 
+export const WORKING_GLYPH_FLOAT_X = 1.2
+export const WORKING_GLYPH_LAYOUT = [
+  { x: 14.7, width: 3.4, text: '{ }', delay: '0s' },
+  { x: 15.9, width: 4.2, text: '&lt;/&gt;', delay: '.8s' },
+  { x: 15.1, width: 1.8, text: '✓', delay: '1.6s' },
+] as const
+export const WORKING_CANDY_XS = [15.1, 16.3, 15.5] as const
+export const WORKING_CANDY_HALF_WIDTH = 1.1
+
 // Claude 干活时披上白床单当幽灵（帽子照戴）
 const GHOST =
   `<path d="M2.6-.9Q8-2.4 13.4-.9L14.6 6.6 15.6 8.6 13.6 8 12.2 8.9 10.6 8 9 8.9 7.4 8 5.8 8.9 4.2 8 2.6 8.9 1.4 8 .4 8.6 1.4 6.6Z" class="halloween-paper"/>` +
@@ -838,15 +848,11 @@ function clawd(
       (activityIcon
         ? ''
         : isHalloween
-        ? [16.6, 17.8, 17]
+        ? WORKING_CANDY_XS
             .map((x, k) => `<g transform="translate(${x} 3.4)"><g class="glyph" style="animation-delay:${k * 0.8}s">${CANDIES[k]}</g></g>`)
             .join('')
-        : [
-            ['{ }', 16.2, '0s'],
-            ['&lt;/&gt;', 17.4, '.8s'],
-            ['✓', 16.6, '1.6s'],
-          ]
-            .map(([glyph, x, delay]) => `<text x="${x}" y="4.2" class="glyph" style="animation-delay:${delay}">${glyph}</text>`)
+        : WORKING_GLYPH_LAYOUT
+            .map(({ text, x, delay }) => `<text x="${x}" y="4.2" class="glyph" style="animation-delay:${delay}">${text}</text>`)
             .join('')) +
       `<g transform="translate(${sparkAt})"><g class="spark-pulse"><g class="spark-spin">${spark(0, 0, 1.45, 0.5, '#E98D6E')}</g></g></g>`
     : ''
@@ -943,7 +949,7 @@ const STYLE =
   `.clawd:hover .eyes,.clawd:hover .shades{opacity:0;animation:none}.clawd:hover .happy{opacity:1}.clawd:hover .cheek{opacity:.9}` +
   `.clawd:hover .heart{animation:heart 1.35s ${OUT} infinite}}` +
   `.glyph{font-size:2.3px;font-weight:700;fill:#F0EEE6;opacity:0;animation:float 2.4s ${OUT} infinite}` +
-  `@keyframes float{0%{opacity:0;transform:translate(0,1px) scale(.7)}18%{opacity:.9;transform:translate(.3px,-1px) scale(1)}100%{opacity:0;transform:translate(1.2px,-8px) scale(.9)}}` +
+  `@keyframes float{0%{opacity:0;transform:translate(0,1px) scale(.7)}18%{opacity:.9;transform:translate(.3px,-1px) scale(1)}100%{opacity:0;transform:translate(${WORKING_GLYPH_FLOAT_X}px,-8px) scale(.9)}}` +
   `#hit,#hit2,#hit3{cursor:pointer}` +
   // keyframes
   `@keyframes shadesCycle{0%,50%{transform:none}56%,80%{transform:translateY(-1.9px)}86%,100%{transform:none}}` +
@@ -1008,7 +1014,7 @@ const COST_STYLE =
 const MINI_CLAWD_STYLE =
   `.pace{transform-origin:center}.mini.working .pace{animation:pace 3.2s ease-in-out infinite}` +
   `.mini.working .legA,.mini.working .legB{opacity:1}.mini.working .legA{animation:step .3s ease-in-out infinite alternate}.mini.working .legB{animation:step .3s ease-in-out .15s infinite alternate}` +
-  `@keyframes pace{0%{transform:none}46%{transform:translateX(10px)}50%{transform:translateX(10px) scaleX(-1)}96%{transform:scaleX(-1)}100%{transform:none}}` +
+  `@keyframes pace{0%{transform:none}46%{transform:translateX(${MINI_WALK_X}px)}50%{transform:translateX(${MINI_WALK_X}px) scaleX(-1)}96%{transform:scaleX(-1)}100%{transform:none}}` +
   `@keyframes step{from{transform:none}to{transform:translateY(-.9px)}}`
 
 const MINI_GAUGE_STYLE =
@@ -1416,11 +1422,24 @@ export function bandSvgParts(
     (isWorking ? ditherSvg(width, height) : '') +
     gaugesContent +
     `</g>`
+  const paceKey = (window: { percent: number; resetsAt?: string } | undefined, lengthMs: number, weekly: boolean) => {
+    const at = paceWarningAt(window, lengthMs, now)
+    if (at === undefined) return null
+    if (!weekly) return false
+    const date = new Date(at)
+
+    return date.toDateString() === new Date(now).toDateString() ? false : date.getDay()
+  }
   const gaugesKey = JSON.stringify({
-    gauges: gauges.map(g => ({ ...g, timerMs: undefined })),
+    bars: { from, to },
+    pace: {
+      session: paceKey(to?.session, FIVE_HOUR_MS, false),
+      weekly: paceKey(to?.weekly, WEEK_MS, true),
+      fable: paceKey(to?.fable, WEEK_MS, true),
+    },
     isChanged,
     isFirst,
-    timer: timer ? { ttlMs: timer.ttlMs, expired: timer.remainMs <= 0 } : null,
+    timer: timer ? { ttlMs: timer.ttlMs, expired: timer.remainMs <= 0, startedAt: timer.startedAt } : null,
     isWorking,
     width,
     mini,

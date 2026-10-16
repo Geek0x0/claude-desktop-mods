@@ -5,6 +5,15 @@ import { moodAt } from './mood'
 import {
   ACTIVITY_LAYOUT_RESERVE,
   bandSvgParts,
+  CLAWD_X,
+  MINI_U,
+  MINI_WALK_X,
+  MINI_X,
+  U,
+  WORKING_CANDY_HALF_WIDTH,
+  WORKING_CANDY_XS,
+  WORKING_GLYPH_FLOAT_X,
+  WORKING_GLYPH_LAYOUT,
   H,
   H_MINI,
   MIN_BAND_W_WITH_ACTIVITY,
@@ -92,6 +101,82 @@ test('姿势变化只改变 Clawd SVG，读数数据改变时才改变 gauges SV
     expect(calm.gauges).not.toContain(clawdOnly)
   }
   expect(changed.gauges).not.toBe(calm.gauges)
+})
+
+test('resetsAt 的显示分钟变化不改变 gauges memo key，但 bars 变化会改变', () => {
+  const now = new Date(2026, 9, 10, 14).getTime()
+  const bars = {
+    from: null,
+    to: {
+      contextPercent: 42,
+      contextTokens: 84000,
+      contextWindow: 200000,
+      compactAt: 160000,
+      session: { percent: 50, resetsAt: new Date(now + 60 * 60000).toISOString() },
+      weekly: { percent: 63, resetsAt: new Date(now + 3 * 86400000).toISOString() },
+      cache: { rate: 92, read: 900000, write: 50000, fresh: 50000 },
+      cost: { usd: 1.25 },
+    },
+  } as unknown as Bars
+  const first = bandSvgParts(bars, false, 1100, false, 'zh', undefined, undefined, undefined, now)
+  const minuteLater = bandSvgParts(bars, false, 1100, false, 'zh', undefined, undefined, undefined, now + 60000)
+  const changed = bandSvgParts(
+    { ...bars, to: { ...bars.to!, contextPercent: 43 } } as Bars,
+    false,
+    1100,
+    false,
+    'zh',
+    undefined,
+    undefined,
+    undefined,
+    now + 60000,
+  )
+
+  expect(first.gaugesKey).toBe(minuteLater.gaugesKey)
+  expect(changed.gaugesKey).not.toBe(first.gaugesKey)
+})
+
+test('展开字形和糖果的浮动范围留在 cut 内，细条步行范围也留有同等空间', () => {
+  const now = new Date(2026, 9, 10, 14).getTime()
+  const readBounds = (parts: ReturnType<typeof bandSvgParts>, mini: boolean) => {
+    const clawd = parts.clawd.match(/<g class="clawd[^\"]*" transform="translate\(([\d.]+) [\d.]+\) scale\(([\d.]+)\)">/)
+    expect(clawd).not.toBeNull()
+    const translateX = Number(clawd?.[1])
+    const scale = Number(clawd?.[2])
+    const walk = mini ? MINI_WALK_X : 0
+    const availableRight = (parts.cut - translateX) / scale - walk
+
+    return { availableRight }
+  }
+  const expanded = bandSvgParts(EMPTY_BARS, true, 1100, false, 'zh', undefined, undefined, undefined, now)
+  const { availableRight } = readBounds(expanded, false)
+  const glyphXs = [...expanded.clawd.matchAll(/<text x="([\d.]+)" y="4\.2" class="glyph"/g)].map(match => Number(match[1]))
+
+  expect(glyphXs).toEqual(WORKING_GLYPH_LAYOUT.map(glyph => glyph.x))
+  expect(expanded.clawd).toContain(`translate(${WORKING_GLYPH_FLOAT_X}px,-8px)`)
+  for (const glyph of WORKING_GLYPH_LAYOUT) {
+    expect(glyph.x + glyph.width + WORKING_GLYPH_FLOAT_X).toBeLessThanOrEqual(availableRight)
+  }
+
+  const halloween = bandSvgParts(EMPTY_BARS, true, 1100, false, 'zh', { level: 1, title: 'Clawd', halloween: true }, undefined, undefined, now)
+  const candyXs = [...halloween.clawd.matchAll(/<g transform="translate\(([\d.]+) 3\.4\)"><g class="glyph"/g)].map(match => Number(match[1]))
+  expect(candyXs).toEqual(WORKING_CANDY_XS)
+  for (const x of WORKING_CANDY_XS) {
+    expect(x + WORKING_CANDY_HALF_WIDTH + WORKING_GLYPH_FLOAT_X).toBeLessThanOrEqual(availableRight)
+  }
+
+  const mini = bandSvgParts(EMPTY_BARS, true, 1100, true, 'zh', undefined, undefined, undefined, now)
+  const miniBounds = readBounds(mini, true)
+  expect(mini.clawd).toContain(`translateX(${MINI_WALK_X}px)`)
+  expect(mini.clawd).not.toContain('class="glyph"')
+  for (const glyph of WORKING_GLYPH_LAYOUT) {
+    expect(glyph.x + glyph.width + WORKING_GLYPH_FLOAT_X).toBeLessThanOrEqual(miniBounds.availableRight)
+  }
+  for (const x of WORKING_CANDY_XS) {
+    expect(x + WORKING_CANDY_HALF_WIDTH + WORKING_GLYPH_FLOAT_X).toBeLessThanOrEqual(miniBounds.availableRight)
+  }
+  expect(availableRight).toBe((expanded.cut - CLAWD_X) / U)
+  expect(miniBounds.availableRight).toBe((mini.cut - MINI_X) / MINI_U - MINI_WALK_X)
 })
 
 test('展开和细条的 cut 固定保留工具图标空间', () => {
@@ -428,7 +513,7 @@ test('工具活动：展开图标替代浮动字形，细条仅在图标和首�
   expect(miniAtMinIcon).not.toBeNull()
   expect(miniAtMinFirstGauge).not.toBeNull()
   const miniIconRight =
-    Number(miniAtMinClawd?.[1]) + (10 + Number(miniAtMinIcon?.[1]) + 7 * Number(miniAtMinIcon?.[3])) * Number(miniAtMinClawd?.[2])
+    Number(miniAtMinClawd?.[1]) + (MINI_WALK_X + Number(miniAtMinIcon?.[1]) + 7 * Number(miniAtMinIcon?.[3])) * Number(miniAtMinClawd?.[2])
   expect(Number(miniAtMinFirstGauge?.[1])).toBeGreaterThanOrEqual(miniIconRight)
   expect(Number(mini.match(/<rect x="([\d.]+)" y="0" width="[\d.]+" height="30" fill="transparent"/)?.[1])).toBeGreaterThan(120)
   expect(narrowMini).not.toContain('class="activity-icon terminal"')
