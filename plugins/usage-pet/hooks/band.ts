@@ -3,6 +3,27 @@ import type { Mood } from './mood'
 import { type Lang, T, weekday } from './i18n'
 import { gearOf } from './pet'
 
+const FIVE_HOUR_MS = 5 * 60 * 60 * 1000
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000
+
+// 按当前消耗速度预测额度耗尽时间；窗口刚开始的 10% 不提醒，减少噪声。
+export function paceWarningAt(
+  window: { percent: number; resetsAt?: string } | undefined,
+  lengthMs: number,
+  now: number,
+): number | undefined {
+  if (!window || window.percent <= 0 || window.percent >= 100 || !window.resetsAt || lengthMs <= 0) return undefined
+  const resetsAt = Date.parse(window.resetsAt)
+  if (!Number.isFinite(resetsAt)) return undefined
+
+  const elapsed = lengthMs - (resetsAt - now)
+  if (elapsed < lengthMs * 0.1) return undefined
+  const rate = window.percent / elapsed
+  const exhaustedAt = now + (100 - window.percent) / rate
+
+  return exhaustedAt < resetsAt ? exhaustedAt : undefined
+}
+
 // 桌面端整条（Clawd + 三个圆环）画成一张 SVG。动画全部是 SVG 内的 CSS 动画，浏览器在合成线程上按刷新率播放。
 // 桌面端任何状态变化都会重画整条、动画从头播（anthropics/claude-code#99211），
 // 所以「一次性」动画（圆环扫过、数字滚动、+N% 提示、Clawd 跳一下）只在 from ≠ to 时才写进去。
@@ -270,9 +291,25 @@ function resetText(resetsAt: string | undefined, lang: Lang): string {
     return ''
   }
   const at = new Date(resetsAt)
-  const time = `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`
+  const time = clockText(at)
 
   return at.getTime() - Date.now() < 24 * 3600000 ? T[lang].reset(time) : T[lang].resetDay(weekday(lang, at.getDay()), time)
+}
+
+function clockText(at: Date): string {
+  return `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`
+}
+
+// 提醒时间沿用重置时间的本地时钟和星期格式。
+function paceText(window: { percent: number; resetsAt?: string } | undefined, lengthMs: number, weekly: boolean, lang: Lang): string | undefined {
+  const at = paceWarningAt(window, lengthMs, Date.now())
+  if (at === undefined) return undefined
+  const date = new Date(at)
+  const time = clockText(date)
+  const today = new Date().toDateString()
+  const when = weekly && date.toDateString() !== today ? `${weekday(lang, date.getDay())} ${time}` : time
+
+  return T[lang].paceWarning(when)
 }
 
 function leftText(resetsAt: string | undefined, lang: Lang): string {
@@ -399,6 +436,7 @@ type Gauge = {
   sub: string
   detail: string
   title: string
+  tickAt?: number
   from?: number
   to?: number
   // 缓存倒计时：离缓存过期还有多少毫秒（≤0 = 已过期，undefined = 不显示）
@@ -508,6 +546,10 @@ function gauge(g: Gauge, i: number, x: number, w: number, isChanged: boolean, is
   const arc = (cls: string) =>
     `<circle cx="${cx}" cy="${cy}" r="${R}" class="${cls} ${arcClass}" stroke="url(#grad-${t})" ` +
     `stroke-dasharray="${C.toFixed(2)}" style="stroke-dashoffset:${off(g.to)}" opacity="${visible ? 1 : 0}"/>`
+  const tick =
+    g.tickAt === undefined
+      ? ''
+      : `<line x1="${cx}" y1="${cy - R - 4}" x2="${cx}" y2="${cy - R + 4}" class="compact-tick" transform="rotate(${(g.tickAt * 360).toFixed(2)} ${cx} ${cy})"/>`
 
   return (
     `<g class="g${isFirst ? ' enter' : ''}"${isFirst ? ` style="animation-delay:${(i * 0.06).toFixed(2)}s"` : ''}>` +
@@ -516,6 +558,7 @@ function gauge(g: Gauge, i: number, x: number, w: number, isChanged: boolean, is
     `<g class="ring">` +
     `<circle cx="${cx}" cy="${cy}" r="${R}" class="track"/>` +
     `<g transform="rotate(-90 ${cx} ${cy})">${arc(`glow ${t}`)}${arc('arc')}</g>` +
+    tick +
     odometer(g, i, cx, cy, isChanged, css) +
     `</g>` +
     (layout === 'full'
@@ -949,6 +992,10 @@ const EXPANDED_STYLE =
   `.track{stroke:#E8E5DC}.sep{stroke:#E5E2D9}.glow{opacity:.3}.chip.ok{fill:#C2603F}.chip.warn{fill:#B26E12}.chip.danger{fill:#D2392B}.glyph{fill:#6B6862}` +
   `}`
 
+const COMPACT_TICK_STYLE =
+  `.compact-tick{stroke:#B4B1A8;stroke-width:1.5;stroke-linecap:round}` +
+  `@media (prefers-color-scheme:light){.compact-tick{stroke:#77746C}}`
+
 const COST_STYLE =
   `.cost-badge{fill:url(#grad-ok);stroke:#F3B18F;stroke-width:1.2}.cost-glyph{font-size:21px;font-weight:800;fill:#231511;text-anchor:middle}.cost-glyph.in-badge{font-size:15px}.cost-value{font-size:${SUB_SIZE}px;font-weight:700;fill:#ECEAE4;font-variant-numeric:tabular-nums}.cost-value.in-badge{font-size:8px}.cost-sub{font-size:10px;fill:#8C8A84}` +
   `@media (prefers-color-scheme:light){.cost-badge{stroke:#C2603F}.cost-glyph{fill:#231511}.cost-value{fill:#2D2C2A}.cost-sub{fill:#77746C}}`
@@ -1199,14 +1246,25 @@ export function bandSvg(bars: Bars, isWorking: boolean, width: number, mini = fa
   const t = T[lang]
   const pct = (v: number | undefined) => (v === undefined ? '—' : `${Math.round(v)}%`)
   const timer = isWorking ? undefined : cacheTimer
+  const sessionPace = paceText(to?.session, FIVE_HOUR_MS, false, lang)
+  const weeklyPace = paceText(to?.weekly, WEEK_MS, true, lang)
+  const fablePace = paceText(to?.fable, WEEK_MS, true, lang)
+  const compactText = to?.contextTokens === undefined || to.compactAt === undefined
+    ? undefined
+    : to.contextTokens >= to.compactAt
+      ? t.compactingSoon
+      : t.toCompact(grouped(to.compactAt - to.contextTokens))
   const gauges: Gauge[] = [
     {
       id: 'c',
       label: t.context,
       short: t.short.context,
       sub: to?.contextTokens !== undefined ? `${tokensText(to.contextTokens)} / ${tokensText(to.contextWindow)}` : t.waitingReply,
-      detail: to?.contextTokens !== undefined ? t.tokens(grouped(to.contextTokens)) : t.waitingReply,
-      title: to?.contextTokens !== undefined ? `${t.context} ${pct(to.contextPercent)} · ${grouped(to.contextTokens)} / ${grouped(to.contextWindow)} tokens` : `${t.context}: ${t.waitingReply}`,
+      detail: to?.contextTokens !== undefined ? compactText ?? t.tokens(grouped(to.contextTokens)) : t.waitingReply,
+      title: to?.contextTokens !== undefined
+        ? `${t.context} ${pct(to.contextPercent)} · ${grouped(to.contextTokens)} / ${grouped(to.contextWindow)} tokens${compactText === undefined ? '' : ` · ${compactText}`}`
+        : `${t.context}: ${t.waitingReply}`,
+      tickAt: to?.compactAt !== undefined && to.compactAt < to.contextWindow ? to.compactAt / to.contextWindow : undefined,
       from: from?.contextPercent,
       to: to?.contextPercent,
     },
@@ -1215,8 +1273,8 @@ export function bandSvg(bars: Bars, isWorking: boolean, width: number, mini = fa
       label: t.session,
       short: t.short.session,
       sub: resetText(to?.session?.resetsAt, lang) || t.noData,
-      detail: leftText(to?.session?.resetsAt, lang) || t.noData,
-      title: to?.session ? `${t.session} ${to.session.percent}% · ${resetText(to.session.resetsAt, lang)}` : `${t.session}: ${t.noData}`,
+      detail: sessionPace ?? (leftText(to?.session?.resetsAt, lang) || t.noData),
+      title: to?.session ? `${t.session} ${to.session.percent}% · ${resetText(to.session.resetsAt, lang)}${sessionPace ? ` · ${sessionPace}` : ''}` : `${t.session}: ${t.noData}`,
       from: from?.session?.percent,
       to: to?.session?.percent,
     },
@@ -1225,8 +1283,8 @@ export function bandSvg(bars: Bars, isWorking: boolean, width: number, mini = fa
       label: t.weekly,
       short: t.short.weekly,
       sub: resetText(to?.weekly?.resetsAt, lang) || t.noData,
-      detail: leftText(to?.weekly?.resetsAt, lang) || t.noData,
-      title: to?.weekly ? `${t.weekly} ${to.weekly.percent}% · ${resetText(to.weekly.resetsAt, lang)}` : `${t.weekly}: ${t.noData}`,
+      detail: weeklyPace ?? (leftText(to?.weekly?.resetsAt, lang) || t.noData),
+      title: to?.weekly ? `${t.weekly} ${to.weekly.percent}% · ${resetText(to.weekly.resetsAt, lang)}${weeklyPace ? ` · ${weeklyPace}` : ''}` : `${t.weekly}: ${t.noData}`,
       from: from?.weekly?.percent,
       to: to?.weekly?.percent,
     },
@@ -1237,8 +1295,8 @@ export function bandSvg(bars: Bars, isWorking: boolean, width: number, mini = fa
             label: t.fable,
             short: t.short.fable,
             sub: resetText(to.fable.resetsAt, lang) || t.noData,
-            detail: leftText(to.fable.resetsAt, lang) || t.noData,
-            title: `${t.fable} ${to.fable.percent}% · ${resetText(to.fable.resetsAt, lang) || t.noData}`,
+            detail: fablePace ?? (leftText(to.fable.resetsAt, lang) || t.noData),
+            title: `${t.fable} ${to.fable.percent}% · ${resetText(to.fable.resetsAt, lang) || t.noData}${fablePace ? ` · ${fablePace}` : ''}`,
             from: from?.fable?.percent,
             to: to.fable.percent,
           },
@@ -1279,6 +1337,7 @@ export function bandSvg(bars: Bars, isWorking: boolean, width: number, mini = fa
   if (mini) {
     return miniSvg(gauges, isWorking, isStressed, width, isChill, pet, lang, displayActivity)
   }
+  const hasCompactTick = gauges.some(g => g.tickAt !== undefined)
   const hasTimer = gauges.some(g => g.timerMs !== undefined)
 
   // 按内容实际宽度排：左右留白相等（都是 CLAWD_X），Clawd 与每块之间的间距相等
@@ -1303,7 +1362,7 @@ export function bandSvg(bars: Bars, isWorking: boolean, width: number, mini = fa
 
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${H}" width="${width}" height="${H}" style="color-scheme:light dark;background:transparent">` +
-    `<style>${STYLE}${EXPANDED_STYLE}${activityStyle(displayActivity)}${isStressed ? SWEAT_STYLE : ''}${mood ? MOOD_STYLE : ''}${pet?.halloween ? HALLOWEEN_STYLE : ''}${hasTimer ? TIMER_STYLE : ''}${hasCost ? COST_STYLE : ''}${css.join('')}${isWorking ? DITHER_STYLE : ''}</style>` +
+    `<style>${STYLE}${EXPANDED_STYLE}${hasCompactTick ? COMPACT_TICK_STYLE : ''}${activityStyle(displayActivity)}${isStressed ? SWEAT_STYLE : ''}${mood ? MOOD_STYLE : ''}${pet?.halloween ? HALLOWEEN_STYLE : ''}${hasTimer ? TIMER_STYLE : ''}${hasCost ? COST_STYLE : ''}${css.join('')}${isWorking ? DITHER_STYLE : ''}</style>` +
     DEFS +
     (isWorking ? ditherSvg(width, H) : '') +
     `<g class="gauges">${seps}${blocks}</g>` +

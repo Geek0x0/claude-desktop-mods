@@ -75,6 +75,7 @@ let sleepGeneration = 0
 let lastActivityAt = 0
 let mainTurnActive = false
 let tantrumTimes: number[] = [] // Keep timestamps only; submitted prompt text is never retained.
+let compactThresholdSnapshot: { window: number; threshold?: number } | undefined
 
 function debugError($: EngineInterface, label: string, error: unknown) {
   try {
@@ -89,6 +90,24 @@ async function safeBookkeeping($: EngineInterface, label: string, run: () => Pro
     await run()
   } catch (error) {
     debugError($, label, error)
+  }
+}
+
+async function compactThresholdForWindow($: EngineInterface, window: number): Promise<number | undefined> {
+  if (compactThresholdSnapshot?.window === window) return compactThresholdSnapshot.threshold
+
+  // 窗口变化时重读一次；把失败也记为当前窗口，避免每次测量都重复调用。
+  compactThresholdSnapshot = { window }
+  try {
+    const usage = await $.session.usage({ breakdown: 'summary' })
+    const threshold = usage.context.window === window ? usage.context.breakdown?.autoCompactThreshold : undefined
+    compactThresholdSnapshot = { window, threshold }
+
+    return threshold
+  } catch (error) {
+    debugError($, 'reading auto-compact threshold failed', error)
+
+    return undefined
   }
 }
 
@@ -942,6 +961,7 @@ export const register: Register = (on, options) => {
 
   on('session.start', async ($, e, next) => {
     const detectionGeneration = ++langDetectionGeneration
+    compactThresholdSnapshot = undefined
     mainTurnActive = false
     pendingPermission = undefined
     if (toolBurst) cancelToolRestore(toolBurst)
@@ -996,6 +1016,8 @@ export const register: Register = (on, options) => {
     await safeBookkeeping($, 'session.start usage seed failed', async () => {
       // summary：本地估算，不发请求；只用它的 apiUsage（上一次回复的用量）给还没读数的缓存垫底
       const u = await $.session.usage({ breakdown: 'summary' })
+      const compactAt = u.context.breakdown?.autoCompactThreshold
+      compactThresholdSnapshot = { window: u.context.window, threshold: compactAt }
       const last = u.context.breakdown?.apiUsage
       const totals = await read($, cacheAtom)
       if (last && totals.read + totals.write + totals.fresh === 0) {
@@ -1006,7 +1028,7 @@ export const register: Register = (on, options) => {
           turnRate: turnRate(last),
         }))
       }
-      await record($, { ...toSnap(u.context, u.rateLimits, u.cost), fable: fableState.value }, true)
+      await record($, { ...toSnap(u.context, u.rateLimits, u.cost), ...(compactAt === undefined ? {} : { compactAt }), fable: fableState.value }, true)
     })
 
     await safeBookkeeping($, '读近 7 天用量失败', async () => {
@@ -1286,7 +1308,8 @@ export const register: Register = (on, options) => {
 
   on('session.measure', async ($, e, next) => {
     await safeBookkeeping($, 'session.measure bookkeeping failed', async () => {
-      await record($, { ...toSnap(e.context, e.rateLimits, e.cost), fable: fableState.value })
+      const compactAt = await compactThresholdForWindow($, e.context.window)
+      await record($, { ...toSnap(e.context, e.rateLimits, e.cost), ...(compactAt === undefined ? {} : { compactAt }), fable: fableState.value })
     })
 
     return next(e)

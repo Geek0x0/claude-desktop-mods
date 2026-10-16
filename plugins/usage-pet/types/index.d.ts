@@ -8,6 +8,7 @@ export type Snap = {
   contextPercent?: number
   contextTokens?: number
   contextWindow: number
+  compactAt?: number
   session?: Window
   weekly?: Window
   fable?: Window

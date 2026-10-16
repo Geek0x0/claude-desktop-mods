@@ -6,6 +6,13 @@ export type Release = { version: string; notes: Record<Lang, string[]> }
 
 export const CHANGELOG: Release[] = [
   {
+    version: '1.14.0',
+    notes: {
+      zh: ['上下文环标出自动压缩位置，悬停可看剩余 tokens；5 小时、每周和 Fable 每周环会在额度可能先于重置用完时提示时间（窗口前 10% 不显示）'],
+      en: ['The context ring marks where auto-compaction kicks in; hover to see tokens left. Hover the 5-hour, weekly and Fable weekly rings to see when a limit may run out before reset (hidden in the first 10% of a window)'],
+    },
+  },
+  {
     version: '1.13.4',
     notes: {
       zh: ['修复：用量刷新出错不再影响插件；启动步骤各自独立，单步失败时信息栏和命令仍可正常显示'],

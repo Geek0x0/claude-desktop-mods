@@ -10,6 +10,7 @@ import {
   MIN_BAND_W_WITH_ACTIVITY,
   MIN_BAND_W_WITH_FABLE,
   MIN_BAND_W_WITH_FABLE_AND_ACTIVITY,
+  paceWarningAt,
 } from './band'
 
 // 原有用例都按中文界面断言：显式指定 /config 的 language = zh
@@ -35,6 +36,63 @@ const svgOf = async (ui: { findAll: (q: { type: 'Svg' }) => Promise<{ props?: Re
   (await ui.findAll({ type: 'Svg' }))[0]
 
 const EMPTY_BARS = { from: null, to: null }
+
+test('额度消耗快于剩余时间时：预测耗尽时间，过滤无效提醒', () => {
+  const now = new Date(2026, 0, 1, 12).getTime()
+  const fiveHours = 5 * 60 * 60 * 1000
+  const week = 7 * 24 * 60 * 60 * 1000
+  const resetsAt = (elapsed: number) => new Date(now + fiveHours - elapsed).toISOString()
+
+  expect(paceWarningAt({ percent: 50, resetsAt: resetsAt(60 * 60 * 1000) }, fiveHours, now)).toBe(now + 60 * 60 * 1000)
+  expect(paceWarningAt({ percent: 10, resetsAt: resetsAt(60 * 60 * 1000) }, fiveHours, now)).toBeUndefined()
+  expect(paceWarningAt({ percent: 50, resetsAt: resetsAt(10 * 60 * 1000) }, fiveHours, now)).toBeUndefined()
+  expect(paceWarningAt({ percent: 0, resetsAt: resetsAt(60 * 60 * 1000) }, fiveHours, now)).toBeUndefined()
+  expect(paceWarningAt({ percent: 100, resetsAt: resetsAt(60 * 60 * 1000) }, fiveHours, now)).toBeUndefined()
+  expect(paceWarningAt({ percent: 50 }, fiveHours, now)).toBeUndefined()
+  expect(paceWarningAt({ percent: 50, resetsAt: 'invalid' }, fiveHours, now)).toBeUndefined()
+  expect(paceWarningAt({ percent: 50, resetsAt: new Date(now + week - 2 * 86400000).toISOString() }, week, now))
+    .toBe(now + 2 * 86400000)
+})
+
+test('消耗过快时：中文和英文圆环详情与悬停提示都显示预测耗尽时间', ZH, (_, on) => {
+  mock.clock(on)
+  const now = Date.now()
+  const fiveHours = 5 * 60 * 60 * 1000
+  const week = 7 * 86400000
+  const elapsed5h = 60 * 60000
+  const elapsedWeek = 2 * 86400000
+  const fiveHourWindow = { percent: 50, resetsAt: new Date(now + fiveHours - elapsed5h).toISOString() }
+  const weeklyWindow = { percent: 50, resetsAt: new Date(now + week - elapsedWeek).toISOString() }
+  const bars = () => ({
+    from: null,
+    to: { contextWindow: 200000, session: fiveHourWindow, weekly: weeklyWindow, fable: weeklyWindow },
+  }) as unknown as Bars
+  const timeAt = (offset: number) => {
+    const date = new Date(now + offset)
+    const time = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+
+    return { time, day: date.getDay() }
+  }
+  const fiveHourAt = timeAt(elapsed5h)
+  const fiveHourResetAt = timeAt(fiveHours - elapsed5h)
+  const weeklyAt = timeAt(elapsedWeek)
+  const weeklyResetAt = timeAt(week - elapsedWeek)
+  const zhDay = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+  const enDay = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+  const zh = bandSvg(bars(), false, 1100, false, 'zh')
+  const en = bandSvg(bars(), false, 1100, false, 'en')
+
+  expect(zh).toContain(`>约 ${fiveHourAt.time} 用完</text>`)
+  expect(zh).toContain(`<title>5 小时额度 50% · ${fiveHourResetAt.time} 重置 · 约 ${fiveHourAt.time} 用完</title>`)
+  expect(zh).toContain(`>约 ${zhDay[weeklyAt.day]} ${weeklyAt.time} 用完</text>`)
+  expect(zh).toContain(`<title>每周额度 50% · ${zhDay[weeklyResetAt.day]} ${weeklyResetAt.time} 重置 · 约 ${zhDay[weeklyAt.day]} ${weeklyAt.time} 用完</title>`)
+  expect(zh).toContain(`<title>Fable 每周 50% · ${zhDay[weeklyResetAt.day]} ${weeklyResetAt.time} 重置 · 约 ${zhDay[weeklyAt.day]} ${weeklyAt.time} 用完</title>`)
+  expect(en).toContain(`>Out ~${fiveHourAt.time}</text>`)
+  expect(en).toContain(`<title>5-hour 50% · Resets ${fiveHourResetAt.time} · Out ~${fiveHourAt.time}</title>`)
+  expect(en).toContain(`>Out ~${enDay[weeklyAt.day]} ${weeklyAt.time}</text>`)
+  expect(en).toContain(`<title>Weekly 50% · Resets ${enDay[weeklyResetAt.day]} ${weeklyResetAt.time} · Out ~${enDay[weeklyAt.day]} ${weeklyAt.time}</title>`)
+  expect(en).toContain(`<title>Fable weekly 50% · Resets ${enDay[weeklyResetAt.day]} ${weeklyResetAt.time} · Out ~${enDay[weeklyAt.day]} ${weeklyAt.time}</title>`)
+})
 
 test('干活时：展开和细条都有紫色像素背景，且背景在读数和 Clawd 之前', ZH, async () => {
   for (const mini of [false, true]) {
@@ -104,6 +162,69 @@ test('圆环和细条：展开尺寸、描边、文字与进度条都按新比�
   expect(MIN_BAND_W_WITH_FABLE).toBe(436)
   expect(MIN_BAND_W_WITH_ACTIVITY).toBe(398)
   expect(MIN_BAND_W_WITH_FABLE_AND_ACTIVITY).toBe(462)
+})
+
+test('自动压缩：圆环标记阈值，悬停详情显示距压缩或即将压缩', () => {
+  const bars = (compactAt?: number, contextTokens = 10000) => ({
+    from: null,
+    to: {
+      contextPercent: 5,
+      contextTokens,
+      contextWindow: 200000,
+      ...(compactAt === undefined ? {} : { compactAt }),
+    },
+  }) as unknown as Bars
+  const marked = bandSvg(bars(50000), false, 1100)
+  const soon = bandSvg(bars(50000, 50000), false, 1100, false, 'en')
+  const withoutThreshold = bandSvg(bars(), false, 1100)
+  const outsideWindow = bandSvg(bars(200000), false, 1100)
+
+  expect(marked).toContain('class="compact-tick"')
+  expect(marked).toContain('transform="rotate(90.00 ')
+  expect(marked).toContain('>距压缩 40,000</text>')
+  expect(marked).toContain('tokens · 距压缩 40,000')
+  expect(soon).toContain('>compacting soon</text>')
+  expect(soon).toContain('tokens · compacting soon')
+  expect(withoutThreshold).not.toContain('class="compact-tick"')
+  expect(outsideWindow).not.toContain('class="compact-tick"')
+  expect(withoutThreshold).toContain('>10,000 tokens</text>')
+})
+
+test('模型窗口变化：summary 只为新窗口重读一次', ZH, async ($, on) => {
+  mock.store(on, {})
+  on('session.id', () => ({ value: 'compact-window' }))
+  on('session.start', ($, e) => ({ cwd: e.cwd }))
+  on('session.authorize', () => ({ value: null }))
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  let usageCalls = 0
+  on('session.usage', () => {
+    usageCalls++
+    const window = usageCalls === 1 ? 200000 : 1000000
+
+    return {
+      value: {
+        startedAt: 0,
+        context: {
+          window,
+          tokens: 80000,
+          percent: 8,
+          breakdown: { autoCompactThreshold: window / 2, isAutoCompactEnabled: true },
+        },
+        rateLimits: [],
+      },
+    }
+  })
+  on('session.measure', ($, e) => ({ changed: e.changed }))
+
+  await $.session.start(START as never)
+  const changedWindow = {
+    ...measure(8, 8, 63),
+    context: { window: 1000000, tokens: 80000, percent: 8 },
+  }
+  await $.session.measure(changedWindow as never)
+  await $.session.measure(changedWindow as never)
+
+  expect(usageCalls).toBe(2)
 })
 
 test('浅色外观：工作底纹隐藏，不叠加深色描边或标签颜色', ZH, async () => {

@@ -1,6 +1,6 @@
 # usage-pet
 
-A usage band above the prompt in the **Code tab of Claude Desktop**: context, 5-hour limit, weekly limit and cache hit rate, plus an optional Fable weekly ring, with Clawd, a pixel pet who keeps you company while Claude works. Current version: **1.13.4**.
+A usage band above the prompt in the **Code tab of Claude Desktop**: context, 5-hour limit, weekly limit and cache hit rate, plus an optional Fable weekly ring, with Clawd, a pixel pet who keeps you company while Claude works. Current version: **1.14.0**.
 
 ![Light mode shows the expanded band in chill mode with sunglasses and a crown, including a $ badge and “Cost $4.27 This session” after Cache hit, plus a collapsed editing strip showing “Cost $4.27”. Dark mode shows work with a terminal icon and purple dither, near-limit amber and red rings, and a collapsed idle Clawd wearing a nightcap; every band has the Cost block after Cache hit](https://raw.githubusercontent.com/Geek0x0/claude-desktop-mods/main/assets/usage-pet-preview.png)
 
@@ -10,7 +10,7 @@ A usage band above the prompt in the **Code tab of Claude Desktop**: context, 5-
 
 ## What it does
 
-- **Four base rings**: context, 5-hour limit, weekly limit and cache hit rate (cumulative for the main conversation this session; subagents excluded), plus an optional fifth Fable weekly ring. Rings, labels and percentages are larger than in earlier versions. Hover for exact numbers.
+- **Four base rings**: context, 5-hour limit, weekly limit and cache hit rate (cumulative for the main conversation this session; subagents excluded), plus an optional fifth Fable weekly ring. Rings, labels and percentages are larger than in earlier versions. Hover for exact numbers. The context ring marks where auto-compaction kicks in (hidden when auto-compact is off); hover to see tokens left, or "compacting soon" at or past the mark. If a 5-hour, weekly or Fable weekly limit may run out before reset, hover to see when (hidden in the first 10% of a window); otherwise it shows time left.
 - **Optional Fable weekly ring**: appears after Weekly when the account has that allowance, with percent used and reset time; it uses the same amber/red thresholds. Clawd sweats when any 5-hour, weekly or Fable limit reaches 90%. It appears only with an eligible first-party OAuth Claude subscription login. API keys, Bedrock/Vertex, gateways, no login or a failed request leave it hidden; a failed later refresh keeps the last good value.
 - **Cache countdown**: hidden while Claude works; appears next to Cache hit after the first reply (about 1 hour on a subscription, 5 minutes on an API key). It turns amber in the last 5 minutes and says "cold" once expired.
 - **Session cost**: shown after Cache hit as a $ badge and `Cost $… This session` when expanded, or `Cost $…` in the collapsed strip; also shown in the terminal and as a `/clawd-card` tile. It matches `/cost`'s API-equivalent total; subscription amounts are estimates, not bills. Hidden when the host reports no cost.

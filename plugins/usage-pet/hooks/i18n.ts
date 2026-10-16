@@ -35,6 +35,9 @@ export const T = {
     short: { context: '上下文', session: '5小时', weekly: '每周', fable: 'Fable', cache: '缓存', cost: '费用' },
     waitingReply: '等待第一次回复',
     noData: '暂无读数',
+    toCompact: (n: string) => `距压缩 ${n}`,
+    compactingSoon: '即将压缩',
+    paceWarning: (time: string) => `约 ${time} 用完`,
     reset: (time: string) => `${time} 重置`,
     resetDay: (day: string, time: string) => `${day} ${time} 重置`,
     left: (n: number, unit: 'm' | 'hm' | 'dh', n2 = 0) =>
@@ -103,6 +106,9 @@ export const T = {
     short: { context: 'Ctx', session: '5h', weekly: 'Week', fable: 'Fable', cache: 'Cache', cost: 'Cost' },
     waitingReply: 'Waiting for a reply',
     noData: 'No data yet',
+    toCompact: (n: string) => `${n} to compact`,
+    compactingSoon: 'compacting soon',
+    paceWarning: (time: string) => `Out ~${time}`,
     reset: (time: string) => `Resets ${time}`,
     resetDay: (day: string, time: string) => `Resets ${day} ${time}`,
     left: (n: number, unit: 'm' | 'hm' | 'dh', n2 = 0) =>
