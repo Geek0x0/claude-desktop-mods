@@ -1,5 +1,5 @@
 // 更新日志：最新的放最前面。每次发布改动，在这里加一条（中英各一份），只作版本记录，插件不再弹出提示。
-// version 是给人看的版本号（plugin.json 故意不写 version，安装版本按提交号算）。
+// version 要和 plugin.json 的 version 一致；每次发布两处一起改，否则用户收不到更新。
 import type { Lang } from './i18n'
 
 export type Release = { version: string; notes: Record<Lang, string[]> }

@@ -1,8 +1,8 @@
 # usage-pet
 
-A usage band above the prompt in the **Code tab of Claude Desktop**: context, 5-hour limit, weekly limit and cache hit rate, plus an optional Fable weekly ring, with Clawd, a pixel pet who keeps you company while Claude works. Current version: **1.13.0**.
+A usage band above the prompt in the **Code tab of Claude Desktop**: context, 5-hour limit, weekly limit and cache hit rate, plus an optional Fable weekly ring, with Clawd, a pixel pet who keeps you company while Claude works. Current version: **1.13.1**.
 
-![Light mode shows the expanded band in chill mode with sunglasses and a crown, plus a collapsed strip while editing with a pencil icon. Dark mode shows work with a terminal icon and purple dither, near-limit amber and red rings, and a collapsed idle Clawd wearing a nightcap](https://raw.githubusercontent.com/Geek0x0/claude-desktop-mods/main/assets/usage-pet-preview.png)
+![Light mode shows the expanded band in chill mode with sunglasses and a crown, including a $ badge and “Cost $4.27 This session” after Cache hit, plus a collapsed editing strip showing “Cost $4.27”. Dark mode shows work with a terminal icon and purple dither, near-limit amber and red rings, and a collapsed idle Clawd wearing a nightcap; every band has the Cost block after Cache hit](https://raw.githubusercontent.com/Geek0x0/claude-desktop-mods/main/assets/usage-pet-preview.png)
 
 ![A grid of Clawd's looks, each shown expanded and collapsed: idle, working with a terminal icon, needs you (!), question (?), done, sleep, compacting, tests pass, tests fail, oops, tantrum, morning coffee, night cap, autumn, winter, Christmas and New Year](https://raw.githubusercontent.com/Geek0x0/claude-desktop-mods/main/assets/usage-pet-looks.png)
 
@@ -13,16 +13,16 @@ A usage band above the prompt in the **Code tab of Claude Desktop**: context, 5-
 - **Four base rings**: context, 5-hour limit, weekly limit and cache hit rate (cumulative for the main conversation this session; subagents excluded), plus an optional fifth Fable weekly ring. Rings, labels and percentages are larger than in earlier versions. Hover for exact numbers.
 - **Optional Fable weekly ring**: appears after Weekly when the account has that allowance, with percent used and reset time; it uses the same amber/red thresholds. Clawd sweats when any 5-hour, weekly or Fable limit reaches 90%. It appears only with an eligible first-party OAuth Claude subscription login. API keys, Bedrock/Vertex, gateways, no login or a failed request leave it hidden; a failed later refresh keeps the last good value.
 - **Cache countdown**: hidden while Claude works; appears next to Cache hit after the first reply (about 1 hour on a subscription, 5 minutes on an API key). It turns amber in the last 5 minutes and says "cold" once expired.
-- **Session cost**: shows the API-equivalent cost total reported by `/cost`; subscription amounts are estimates, not bills.
+- **Session cost**: shown after Cache hit as a $ badge and `Cost $… This session` when expanded, or `Cost $…` in the collapsed strip; also shown in the terminal and as a `/clawd-card` tile. It matches `/cost`'s API-equivalent total; subscription amounts are estimates, not bills. Hidden when the host reports no cost.
 - **Clawd's activity and moods**: matching tool icons while Claude works, with a purple pixel dither across the band in dark mode; breathing, blinking and sleep after 10 idle minutes. Permission requests and plan approval (`ExitPlanMode`) show "!"; `AskUserQuestion` shows "?". He reacts to test pass/fail, tool errors and frustration (three frustrated composer prompts in 20 minutes trigger a tantrum; `tantrums: off` disables it). Sunglasses require cache hit ≥90% and no limit at 90%+; hover him for hearts, click for a flip.
 - **Tool icons**: Bash/PowerShell → terminal; Edit/Write/MultiEdit/NotebookEdit → pencil; Read/Grep/Glob → magnifier; WebFetch/WebSearch → globe; Agent/Task → bolt; MCP tools → mini icon; other tools → spinner.
 - **Seasonal moods**: northern-hemisphere seasons; coffee 06:00–10:00, nightcap 22:00–06:00, Christmas Dec 20–26, New Year Dec 31–Jan 1. `seasonal: off` disables time-of-day, seasonal and holiday looks.
 - **Last 7 days**: with the band expanded, hover Clawd for the tokens used in the last 7 days, all sessions together, subagents included; the report card shows it too. Counted by the plugin itself from 1.9.0 on.
 - **Growth**: Clawd earns XP for every reply and levels up (sprout, bow tie, cap, crown). Hover for level, XP and streak, plus the last-7-days line while expanded. Achievements appear only on `/clawd-card`, and only those newly unlocked this session; no pop-ups, progress persists across sessions.
-- **Report card**: `/clawd-card` draws a card of the session (duration, turns, tool calls, files edited, tokens, cache hit, level, achievements unlocked this session) and saves it as a PNG you can paste anywhere.
+- **Report card**: `/clawd-card` draws a card of the session (duration, turns, tool calls, files edited, tokens, cache hit, cost when available, level, achievements unlocked this session) and saves it as a PNG you can paste anywhere.
 - **Halloween** (Oct 25 to Nov 1): witch hat, pumpkin pail, ghost mode while Claude works, and trick-or-treat after each reply. Turn time-of-day, seasonal and holiday looks off by setting `seasonal` to `off` in `/config`.
 - **Collapses out of the way**: a 30px strip most of the time; expands for five seconds when the numbers change. `/clawd` or the ▲▼ button keeps it open.
-- English and Chinese, light and dark appearance, macOS and Windows. The terminal shows context, 5-hour, weekly and optional Fable bars plus session cost when available, with no cache hit or Clawd; Remote Control, mobile and web show nothing.
+- English and Chinese, light and dark appearance, macOS and Windows. The terminal shows context, 5-hour, weekly and optional Fable bars plus session cost when the host provides it, with no cache hit or Clawd; Remote Control, mobile and web show nothing.
 
 ## Install
 
