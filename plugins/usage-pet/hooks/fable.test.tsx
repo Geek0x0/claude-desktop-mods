@@ -75,7 +75,13 @@ const fableResponse = (percent: number) => ({
   }),
 })
 
-async function setup($: Harness[0], on: Harness[1], responses: UsageResponse[] = [], authorize: unknown = { handle: 'test-oauth-handle' }) {
+async function setup(
+  $: Harness[0],
+  on: Harness[1],
+  responses: UsageResponse[] = [],
+  authorize: unknown = { handle: 'test-oauth-handle' },
+  hangFirstFetch = false,
+) {
   const network = { fetches: 0 }
   mock.store(on, {})
   const clock = mock.clock(on, { now: Date.UTC(2026, 9, 15, 12) })
@@ -86,8 +92,12 @@ async function setup($: Harness[0], on: Harness[1], responses: UsageResponse[] =
   on('turn.complete', ($, e) => ({ text: '', usage: e.usage }))
   on('session.authorize', () => ({ value: authorize }))
   on('http.fetch', () => {
-    const response = responses[Math.min(network.fetches, responses.length - 1)] ?? { status: 200, text: '{"limits":[]}' }
+    const index = network.fetches
     network.fetches++
+    if (hangFirstFetch && index === 0) {
+      return new Promise<never>(() => {})
+    }
+    const response = responses[Math.min(index, responses.length - 1)] ?? { status: 200, text: '{"limits":[]}' }
 
     return { value: response }
   })
@@ -98,7 +108,7 @@ async function setup($: Harness[0], on: Harness[1], responses: UsageResponse[] =
 }
 
 test('session.start 读取大小写不敏感的 Fable 每周额度，后续用量更新仍保留它', { options: { language: 'en' } }, async ($, on) => {
-  const { network, clock } = await setup($, on, [fableResponse(31), { status: 200, text: '{"limits":[]}' }])
+  const { network, clock } = await setup($, on, [fableResponse(31), fableResponse(31)])
   await Promise.resolve()
   await $.session.measure(MEASURE)
   expect(network.fetches).toBe(1)
@@ -121,6 +131,42 @@ test('session.start 读取大小写不敏感的 Fable 每周额度，后续用�
 
   const narrow = await $.ui.mount(NARROW_BAND)
   expect((await narrow.findAll({ type: 'Svg' }))[0].props?.width).toBe(MIN_BAND_W_WITH_FABLE)
+})
+
+test('Fable 返回成功但没有匹配额度时，清除旧圆环', { options: { language: 'en' } }, async ($, on) => {
+  const { network, clock } = await setup($, on, [fableResponse(31), { status: 200, text: '{"limits":[]}' }])
+  await Promise.resolve()
+  await clock.advance(0)
+  await $.session.measure(MEASURE)
+  const before = await $.ui.mount(BAND)
+  expect(String((await before.findAll({ type: 'Svg' }))[0].props?.source)).toContain('<title>Fable weekly 31%')
+
+  await clock.advance(5 * 60000)
+  await $.turn.complete({ answer: 'ok', durationMs: 1000, isAborted: false, turnId: 'refresh', reason: 'answer', usage: { model: 'claude-opus-5-5', input_tokens: 50, output_tokens: 40, cache_read_input_tokens: 900, cache_creation_input_tokens: 50 } } as never)
+  await Promise.resolve()
+  await clock.advance(0)
+  await $.session.measure(MEASURE)
+  const after = await $.ui.mount(BAND)
+  const svg = String((await after.findAll({ type: 'Svg' }))[0].props?.source)
+  expect(network.fetches).toBe(2)
+  expect(gaugeCount(svg)).toBe(4)
+  expect(String((await after.findAll({ type: 'Svg' }))[0].props?.alt)).not.toContain('Fable')
+})
+
+test('Fable 请求超时后可再次刷新，不会一直处于 refreshing', { options: { language: 'en' } }, async ($, on) => {
+  const { network, clock } = await setup($, on, [fableResponse(28)], { handle: 'test-oauth-handle' }, true)
+  await Promise.resolve()
+  await clock.advance(0)
+  expect(network.fetches).toBe(1)
+
+  await clock.advance(10_000)
+  await Promise.resolve()
+  await clock.advance(0)
+  await clock.advance(5 * 60000)
+  await $.session.start(START as never)
+  await Promise.resolve()
+  await clock.advance(0)
+  expect(network.fetches).toBe(2)
 })
 
 test('没有第一方授权时跳过 Fable 请求，普通信息栏仍正常显示', { options: { language: 'en' } }, async ($, on) => {
@@ -152,4 +198,20 @@ test('Fable 用量 JSON 格式错误时不影响普通信息栏', { options: { l
   expect(network.fetches).toBe(1)
   expect(gaugeCount(String(svg.props?.source))).toBe(4)
   expect(String(svg.props?.alt)).not.toContain('Fable')
+})
+
+test('终端重置时间：无法解析的日期显示为空，不出现 NaN:NaN', { options: { language: 'en' } }, async ($, on) => {
+  await setup($, on, [], null)
+  await $.session.measure({
+    context: { window: 200000, tokens: 84000, percent: 42 },
+    rateLimits: [
+      { kind: 'five_hour', percentUsed: 8, resetsAt: 'not-a-date' },
+      { kind: 'seven_day', percentUsed: 63, resetsAt: 'also-not-a-date' },
+    ],
+    changed: ['context', 'rateLimits'],
+  } as never)
+  const terminal = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  const labels = (await terminal.findAll({ type: 'Text' })).map(node => String(node.props?.children ?? '')).join(' ')
+  expect(labels.includes('NaN:NaN')).toBe(false)
+  expect(labels.includes('undefined')).toBe(false)
 })

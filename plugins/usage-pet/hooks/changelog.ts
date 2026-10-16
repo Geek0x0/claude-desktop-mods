@@ -6,6 +6,13 @@ export type Release = { version: string; notes: Record<Lang, string[]> }
 
 export const CHANGELOG: Release[] = [
   {
+    version: '1.12.1',
+    notes: {
+      zh: ['修复：Clawd 不再卡在“等你”或停不下来不睡觉；插件出错也不会挡住消息、权限和工具；浅色模式下的小图标看得清；测试、报错和烦躁反应少了误报'],
+      en: ["Fixes: Clawd no longer gets stuck on needs-you or stays awake forever; plugin errors never block prompts, permissions or tools; small icons are visible in light mode; fewer false test, error and tantrum reactions"],
+    },
+  },
+  {
     version: '1.12.0',
     notes: {
       zh: [

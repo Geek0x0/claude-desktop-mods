@@ -77,6 +77,20 @@ export function normalize(raw: unknown): Pet {
   }
 }
 
+export function mergePetProgress(updated: Pet, latest: Pet): Pet {
+  const updatedDay = updated.lastDay ?? ''
+  const latestDay = latest.lastDay ?? ''
+  const dateSource = latestDay > updatedDay ? latest : updated
+
+  return {
+    xp: Math.max(updated.xp, latest.xp),
+    turns: Math.max(updated.turns, latest.turns),
+    streak: latestDay === updatedDay ? Math.max(updated.streak, latest.streak) : dateSource.streak,
+    lastDay: dateSource.lastDay,
+    achievements: [...new Set([...updated.achievements, ...latest.achievements])],
+  }
+}
+
 export function onTurn(before: Pet, facts: TurnFacts): { pet: Pet; events: PetEvent[] } {
   const today = dayKey(facts.now)
   const yesterday = dayKey(new Date(facts.now.getFullYear(), facts.now.getMonth(), facts.now.getDate() - 1))

@@ -15,11 +15,11 @@ import {
   type PetView,
   tokensText,
 } from './band'
-import { canReplaceActivity, iconForTool, isFrustrated, reactionForToolResult } from './activity'
+import { canReplaceActivity, iconForTool, isFrustratedPrompt, reactionForToolResult, restoreActivity as pruneActivity, updateTantrumWindow } from './activity'
 import { CARD_H, CARD_W, type CardData, cardAlt, cardSvg } from './card'
 import { type Lang, type LangChoice, langFromTags, parseAppleLanguages, T, weekday } from './i18n'
 import { moodAt } from './mood'
-import { type Achievement, isHalloween, levelOf, NEW_PET, normalize, onTurn, threshold } from './pet'
+import { mergePetProgress, type Achievement, isHalloween, levelOf, NEW_PET, normalize, onTurn, threshold } from './pet'
 import { addTurn, isStale, LEDGER_PREFIX, mergeLedgers, partialSince, SINCE_KEY, sumWeek, toLedger } from './weekly'
 
 const barsAtom = atom({ plugin: 'usage-pet', key: 'bars' } as const, { from: null, to: null } as Bars)
@@ -50,21 +50,31 @@ let mainTurnActive = false
 let tantrumTimes: number[] = [] // Keep timestamps only; submitted prompt text is never retained.
 
 function restoreActivity(activity: Activity | undefined): Activity {
-  if (!activity) {
-    return { kind: 'idle' }
-  }
-  if (activity.kind === 'needs-you') {
-    return restoreActivity(activity.previous)
-  }
-  if (activity.owner !== undefined && !activeActivityOwners.has(activity.owner)) {
-    return restoreActivity(activity.previous)
-  }
+  return pruneActivity(activity, owner => activeActivityOwners.has(owner))
+}
 
-  return activity
+function debugError($: EngineInterface, label: string, error: unknown) {
+  try {
+    $.ui.log(`usage-pet: ${label}: ${String(error)}`, { to: 'debug' })
+  } catch {
+    // Logging must never change the result of an observed event.
+  }
+}
+
+async function safeBookkeeping($: EngineInterface, label: string, run: () => Promise<void> | void) {
+  try {
+    await run()
+  } catch (error) {
+    debugError($, label, error)
+  }
+}
+
+function isPromptDropped(result: unknown): boolean {
+  return typeof result === 'object' && result !== null && 'drop' in result
 }
 
 function previousActivity(current: Activity): Activity {
-  return current.kind === 'needs-you' || current.kind === 'done' || current.kind === 'sleep' ? restoreActivity(current.previous) : current
+  return restoreActivity(current.kind === 'needs-you' || current.kind === 'done' || current.kind === 'sleep' ? current.previous : current)
 }
 
 async function armSleepTimer($: EngineInterface, since = lastActivityAt) {
@@ -84,11 +94,14 @@ async function armSleepTimer($: EngineInterface, since = lastActivityAt) {
       if (mainTurnActive) {
         return
       }
-      void update($, activityAtom, current =>
-        generation === sleepGeneration && !mainTurnActive && canReplaceActivity(current, 'sleep')
-          ? { kind: 'sleep', previous: current }
-          : current,
-      )
+      void update($, activityAtom, current => {
+        const currentActivity = current.kind === 'needs-you' ? current : restoreActivity(current)
+        if (generation !== sleepGeneration || mainTurnActive || !canReplaceActivity(currentActivity, 'sleep')) {
+          return currentActivity
+        }
+
+        return { kind: 'sleep', previous: previousActivity(currentActivity) }
+      })
     })
   } catch {
     sleepTimer = undefined
@@ -100,32 +113,42 @@ async function noteActivity($: EngineInterface) {
   await armSleepTimer($, lastActivityAt)
 }
 
-async function needsYou($: EngineInterface, icon: 'bang' | 'question') {
+async function needsYou($: EngineInterface, icon: 'bang' | 'question'): Promise<number | undefined> {
+  const owner = ++activityOwner
+  let applied = false
   await update($, activityAtom, current => {
     const previous = previousActivity(current)
     if (!canReplaceActivity(previous, 'needs-you')) {
       return previous
     }
+    applied = true
 
-    return { kind: 'needs-you', icon, previous }
+    return { kind: 'needs-you', icon, owner, previous: restoreActivity(previous) }
   })
+
+  return applied ? owner : undefined
 }
 
-async function noteFrustration($: EngineInterface, text: string): Promise<boolean> {
+async function clearNeedsYou($: EngineInterface, owner: number): Promise<boolean> {
+  let cleared = false
+  await update($, activityAtom, current => {
+    if (current.kind !== 'needs-you' || current.owner !== owner) {
+      return current
+    }
+    cleared = true
+
+    return restoreActivity(current.previous)
+  })
+
+  return cleared
+}
+
+async function noteFrustration($: EngineInterface): Promise<boolean> {
   const now = await clockNow($)
-  tantrumTimes = tantrumTimes.filter(at => now - at < TANTRUM_WINDOW_MS)
-  if (!isFrustrated(text)) {
-    return false
-  }
+  const result = updateTantrumWindow(tantrumTimes, now, true, TANTRUM_WINDOW_MS)
+  tantrumTimes = result.timestamps
 
-  tantrumTimes.push(now)
-  if (tantrumTimes.length < 3) {
-    return false
-  }
-
-  tantrumTimes = []
-
-  return true
+  return result.trigger
 }
 
 async function showReaction($: EngineInterface, reaction: ReactionKind) {
@@ -140,7 +163,7 @@ async function showReaction($: EngineInterface, reaction: ReactionKind) {
       if (!canReplaceActivity(current, 'reaction')) {
         return current
       }
-      const previous = current.kind === 'reaction' ? restoreActivity(current.previous) : current
+      const previous = restoreActivity(current.kind === 'reaction' ? current.previous : current)
       applied = true
 
       return { kind: 'reaction', reaction, icon, owner, previous }
@@ -187,7 +210,7 @@ async function completeActivity($: EngineInterface, aborted: boolean) {
       }
       applied = true
 
-      return { kind: 'done', owner, previous }
+      return { kind: 'done', owner, previous: restoreActivity(previous) }
     })
   } finally {
     if (!applied) {
@@ -224,6 +247,7 @@ let ledgerQueue: Promise<unknown> = Promise.resolve()
 const TTL_SUBSCRIPTION_MS = 60 * 60000
 const TTL_API_MS = 5 * 60000
 const FABLE_REFRESH_MS = 5 * 60000
+const FABLE_FETCH_TIMEOUT_MS = 10_000
 const ASK_DELAY_MS = EXPAND_MS + 1000
 const ASK_WINDOW_MS = 10 * 60000
 const PET_KEY = 'pet'
@@ -241,7 +265,7 @@ const ICON_EXPAND = '▲'
 const ICON_COLLAPSE = '▼'
 
 const sameSnap = (a: Snap | null, b: Snap | null) => JSON.stringify(a) === JSON.stringify(b)
-type FableSession = { lastFetchAt?: number; value?: Window; refreshing?: boolean }
+type FableSession = { lastFetchAt?: number; value?: Window | null; refreshing?: boolean }
 
 function toSnap(context: SessionContextUsage, rateLimits: SessionRateLimit[]): Snap {
   const pick = (kind: string) => {
@@ -258,16 +282,58 @@ function toSnap(context: SessionContextUsage, rateLimits: SessionRateLimit[]): S
   }
 }
 
-async function fetchFable($: EngineInterface): Promise<Window | undefined> {
+function withClockTimeout<T>($: EngineInterface, start: () => Promise<T>, timeoutMs: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    let settled = false
+    let clockTimer: Timer | undefined
+    let systemTimer: ReturnType<typeof setTimeout> | undefined
+    const finish = (kind: 'resolve' | 'reject', value: unknown) => {
+      if (settled) return
+      settled = true
+      try {
+        clockTimer?.cancel()
+      } catch {
+        // Clearing a timer must not keep the request promise pending.
+      }
+      if (systemTimer !== undefined) clearTimeout(systemTimer)
+      if (kind === 'resolve') resolve(value as T)
+      else reject(value)
+    }
+    const expire = () => finish('reject', new Error('Fable request timed out'))
+
+    try {
+      clockTimer = $.clock.after(timeoutMs, expire)
+      if (!clockTimer) systemTimer = setTimeout(expire, timeoutMs)
+    } catch {
+      systemTimer = setTimeout(expire, timeoutMs)
+    }
+
+    let request: Promise<T>
+    try {
+      request = start()
+    } catch (error) {
+      finish('reject', error)
+      return
+    }
+    request.then(value => finish('resolve', value), error => finish('reject', error))
+  })
+}
+
+async function fetchFable($: EngineInterface): Promise<Window | null | undefined> {
   const auth = await $.session.authorize()
   if (!auth) {
     return undefined
   }
 
-  const response = await $.http.fetch('https://api.anthropic.com/api/oauth/usage', {
-    auth: auth.handle,
-    headers: { 'anthropic-beta': 'oauth-2025-04-20' },
-  })
+  const response = await withClockTimeout(
+    $,
+    () =>
+      $.http.fetch('https://api.anthropic.com/api/oauth/usage', {
+        auth: auth.handle,
+        headers: { 'anthropic-beta': 'oauth-2025-04-20' },
+      }),
+    FABLE_FETCH_TIMEOUT_MS,
+  )
   if (typeof response.status !== 'number' || response.status < 200 || response.status >= 300) {
     return undefined
   }
@@ -286,6 +352,9 @@ async function fetchFable($: EngineInterface): Promise<Window | undefined> {
 
     return row.kind === 'weekly_scoped' && typeof name === 'string' && name.toLowerCase().startsWith('fable')
   }) as { percent?: unknown; resets_at?: unknown } | undefined
+  if (!limit) {
+    return null
+  }
   if (typeof limit?.percent !== 'number' || !Number.isFinite(limit.percent) || typeof limit.resets_at !== 'string') {
     return undefined
   }
@@ -377,15 +446,42 @@ async function expandForAWhile($: EngineInterface) {
   })
 }
 
-async function record($: EngineInterface, snap: Snap) {
+async function record($: EngineInterface, snap: Omit<Snap, 'fable'> & { fable?: Window | null }) {
   const previous = await read($, barsAtom)
-  const full: Snap = { ...snap, fable: snap.fable ?? previous.to?.fable, cache: cacheStat(await read($, cacheAtom)) }
+  const fable = snap.fable === null ? undefined : snap.fable ?? previous.to?.fable
+  const full: Snap = { ...snap, fable, cache: cacheStat(await read($, cacheAtom)) }
   const isChanged = !sameSnap(previous.to, full)
   await update($, barsAtom, bars => (sameSnap(bars.to, full) ? bars : { from: bars.to, to: full }))
   if (isChanged) {
     await expandForAWhile($)
   }
   $.clock.after(1300, () => void update($, barsAtom, bars => (sameSnap(bars.from, bars.to) ? bars : { from: bars.to, to: bars.to })))
+}
+
+async function updateFableOnLatestBars($: EngineInterface, fable: Window | null) {
+  let changed = false
+  await update($, barsAtom, bars => {
+    if (!bars.to) {
+      return bars
+    }
+    const to = { ...bars.to }
+    if (fable === null) delete to.fable
+    else to.fable = fable
+    if (sameSnap(bars.to, to)) {
+      return bars
+    }
+    changed = true
+
+    return { from: bars.to, to }
+  })
+  if (!changed) return
+
+  await expandForAWhile($)
+  try {
+    $.clock.after(1300, () => void update($, barsAtom, bars => (sameSnap(bars.from, bars.to) ? bars : { from: bars.to, to: bars.to })))
+  } catch {
+    // The current Fable value is already on bars; the settle animation timer is optional.
+  }
 }
 
 function refreshFable($: EngineInterface, state: FableSession) {
@@ -403,14 +499,11 @@ function refreshFable($: EngineInterface, state: FableSession) {
       state.lastFetchAt = now
 
       const fable = await fetchFable($)
-      if (!fable) {
+      if (fable === undefined) {
         return
       }
       state.value = fable
-      const bars = await read($, barsAtom)
-      if (bars.to) {
-        await record($, { ...bars.to, fable })
-      }
+      await updateFableOnLatestBars($, fable)
     } catch {
       // Fable 是可选额度；授权、网络或响应出错时保留上次读数。
     } finally {
@@ -496,6 +589,9 @@ function termReset(resetsAt: string | undefined, lang: Lang): string {
     return ''
   }
   const at = Date.parse(resetsAt)
+  if (!Number.isFinite(at)) {
+    return ''
+  }
   const minutes = Math.max(0, Math.round((at - Date.now()) / 60000))
   if (minutes < 24 * 60) {
     return T[lang].left(minutes < 60 ? minutes : Math.floor(minutes / 60), minutes < 60 ? 'm' : 'hm', minutes % 60)
@@ -531,11 +627,13 @@ function petView(pet: Pet, lang: Lang, halloween = false, askSince = 0, now = 0,
 async function growPet($: EngineInterface, rate: number | undefined) {
   const bars = await read($, barsAtom)
   const maxLimit = Math.max(bars.to?.session?.percent ?? 0, bars.to?.weekly?.percent ?? 0)
-  const { pet, events } = onTurn(normalize(await $.store.get(PET_KEY)), { now: new Date(), turnRate: rate, maxLimit })
+  const { pet: updated, events } = onTurn(normalize(await $.store.get(PET_KEY)), { now: new Date(), turnRate: rate, maxLimit })
+  const latest = normalize(await $.store.get(PET_KEY))
+  const pet = mergePetProgress(updated, latest)
   await $.store.set(PET_KEY, pet)
   await update($, petAtom, () => pet)
   for (const ev of events) {
-    if (ev.kind === 'achievement') {
+    if (ev.kind === 'achievement' && !latest.achievements.includes(ev.id)) {
       await update($, reportAtom, r => ({ ...r, earned: [...r.earned, ev.id] }))
     }
   }
@@ -627,55 +725,59 @@ export const register: Register = (on, options) => {
   const seasonal = String(options?.seasonal ?? 'auto').trim().toLowerCase() !== 'off'
   const tantrumsEnabled = String(options?.tantrums ?? 'on').trim().toLowerCase() !== 'off'
   const fableState: FableSession = {}
+  let pendingPermission: { tool: string; owner: number } | undefined
 
   on('session.start', async ($, e, next) => {
-    refreshFable($, fableState)
-    // 先定语言；读不出来就英文
-    let lang: Lang = 'en'
-    try {
-      lang = choice === 'zh' || choice === 'en' ? choice : await detectLang($)
-    } catch (err) {
-      $.ui.log(`usage-pet: language detection failed: ${String(err)}`, { to: 'debug' })
-    }
-    await update($, langAtom, () => lang)
-    // 养成数据从 store 读进来；战报从这个会话第一次加载开始计时（重载插件不重置）
-    try {
-      const pet = normalize(await $.store.get(PET_KEY))
-      await update($, petAtom, () => pet)
-    } catch (err) {
-      $.ui.log(`usage-pet: 读养成数据失败：${String(err)}`, { to: 'debug' })
-    }
-    await update($, reportAtom, r => (r.startedAt ? r : { ...r, startedAt: Date.now() }))
-    await $.command.register({
-      name: 'clawd',
-      description: 'Clawd band: toggle always-expanded / auto-collapse · 在「一直展开」和「自动收起」之间切换',
-      immediate: true,
-    })
-    await $.command.register({ name: 'clawd-card', description: `${T.en.cardCommand} · ${T.zh.cardCommand}` })
-    // summary：本地估算，不发请求；只用它的 apiUsage（上一次回复的用量）给还没读数的缓存垫底
-    const u = await $.session.usage({ breakdown: 'summary' })
-    const last = u.context.breakdown?.apiUsage
-    const totals = await read($, cacheAtom)
-    if (last && totals.read + totals.write + totals.fresh === 0) {
-      await update($, cacheAtom, () => ({
-        read: last.cache_read_input_tokens,
-        write: last.cache_creation_input_tokens,
-        fresh: last.input_tokens,
-        turnRate: turnRate(last),
-      }))
-    }
-    await record($, { ...toSnap(u.context, u.rateLimits), fable: fableState.value })
-    try {
-      await refreshWeek($, await clockNow($))
-    } catch (err) {
-      $.ui.log(`usage-pet: 读近 7 天用量失败：${String(err)}`, { to: 'debug' })
-    }
-
-    activeActivityOwners.clear()
     mainTurnActive = false
-    tantrumTimes = []
-    await update($, activityAtom, () => ({ kind: 'idle' }))
-    await noteActivity($)
+    pendingPermission = undefined
+    activeActivityOwners.clear()
+    await safeBookkeeping($, 'session.start bookkeeping failed', async () => {
+      refreshFable($, fableState)
+      // 先定语言；读不出来就英文
+      let lang: Lang = 'en'
+      try {
+        lang = choice === 'zh' || choice === 'en' ? choice : await detectLang($)
+      } catch (err) {
+        $.ui.log(`usage-pet: language detection failed: ${String(err)}`, { to: 'debug' })
+      }
+      await update($, langAtom, () => lang)
+      // 养成数据从 store 读进来；战报从这个会话第一次加载开始计时（重载插件不重置）
+      try {
+        const pet = normalize(await $.store.get(PET_KEY))
+        await update($, petAtom, () => pet)
+      } catch (err) {
+        $.ui.log(`usage-pet: 读养成数据失败：${String(err)}`, { to: 'debug' })
+      }
+      await update($, reportAtom, r => (r.startedAt ? r : { ...r, startedAt: Date.now() }))
+      await $.command.register({
+        name: 'clawd',
+        description: 'Clawd band: toggle always-expanded / auto-collapse · 在「一直展开」和「自动收起」之间切换',
+        immediate: true,
+      })
+      await $.command.register({ name: 'clawd-card', description: `${T.en.cardCommand} · ${T.zh.cardCommand}` })
+      // summary：本地估算，不发请求；只用它的 apiUsage（上一次回复的用量）给还没读数的缓存垫底
+      const u = await $.session.usage({ breakdown: 'summary' })
+      const last = u.context.breakdown?.apiUsage
+      const totals = await read($, cacheAtom)
+      if (last && totals.read + totals.write + totals.fresh === 0) {
+        await update($, cacheAtom, () => ({
+          read: last.cache_read_input_tokens,
+          write: last.cache_creation_input_tokens,
+          fresh: last.input_tokens,
+          turnRate: turnRate(last),
+        }))
+      }
+      await record($, { ...toSnap(u.context, u.rateLimits), fable: fableState.value })
+      try {
+        await refreshWeek($, await clockNow($))
+      } catch (err) {
+        $.ui.log(`usage-pet: 读近 7 天用量失败：${String(err)}`, { to: 'debug' })
+      }
+
+      tantrumTimes = []
+      await update($, activityAtom, () => ({ kind: 'idle' }))
+      await noteActivity($)
+    })
 
     return next(e)
   })
@@ -683,70 +785,110 @@ export const register: Register = (on, options) => {
   on('prompt.submit', async ($, e, next) => {
     const isMainPrompt = !e.text.trim().startsWith('/')
     mainTurnActive = isMainPrompt
-    await noteActivity($)
-    await update($, activityAtom, previousActivity)
-    if (isMainPrompt && tantrumsEnabled && (await noteFrustration($, e.text))) {
-      await showReaction($, 'tantrum')
-    }
+    pendingPermission = undefined
+    await safeBookkeeping($, 'prompt.submit bookkeeping failed', async () => {
+      await noteActivity($)
+      await update($, activityAtom, previousActivity)
+      if (isMainPrompt && tantrumsEnabled && isFrustratedPrompt(e.text, e.origin.kind) && (await noteFrustration($))) {
+        await showReaction($, 'tantrum')
+      }
+    })
+    let result!: Awaited<ReturnType<typeof next>>
+    let resolved = false
     try {
-      return await next(e)
+      result = await next(e)
+      resolved = true
     } finally {
-      await armSleepTimer($, lastActivityAt)
+      await safeBookkeeping($, 'prompt.submit cleanup failed', async () => {
+        if (isMainPrompt && (!resolved || isPromptDropped(result))) {
+          mainTurnActive = false
+        }
+        await armSleepTimer($, lastActivityAt)
+      })
     }
+
+    return result
   })
 
   on('classic.PermissionRequest', async ($, e, next) => {
-    await noteActivity($)
-    await needsYou($, 'bang')
+    let owner: number | undefined
+    const tool = String((e as unknown as { tool_name?: unknown }).tool_name ?? '')
+    await safeBookkeeping($, 'PermissionRequest bookkeeping failed', async () => {
+      await noteActivity($)
+      owner = await needsYou($, 'bang')
+      if (owner !== undefined && tool) {
+        pendingPermission = { tool, owner }
+      }
+    })
+    let resolved = false
     try {
-      return await next(e)
+      const result = await next(e)
+      resolved = true
+
+      return result
     } finally {
-      await armSleepTimer($, lastActivityAt)
+      await safeBookkeeping($, 'PermissionRequest cleanup failed', async () => {
+        if (!resolved && owner !== undefined) {
+          if (pendingPermission?.owner === owner) pendingPermission = undefined
+          await clearNeedsYou($, owner)
+        }
+        await armSleepTimer($, lastActivityAt)
+      })
     }
   })
 
   // 每轮结束累计缓存 token（只算主循环，子代理有自己的缓存）
   on('turn.complete', async ($, e, next) => {
-    refreshFable($, fableState)
-    const u = e.usage
-    // 近 7 天用量：主对话和子代理的每一轮都记（这里不分缓存归属，只算花了多少）
-    try {
-      const now = await clockNow($)
-      if (u) {
-        await logTurn($, u, now)
-      }
-      await refreshWeek($, now)
-    } catch (err) {
-      $.ui.log(`usage-pet: 记近 7 天用量失败：${String(err)}`, { to: 'debug' })
-    }
-    if (e.agentId === undefined && u) {
-      await update($, cacheAtom, c => ({
-        read: c.read + u.cache_read_input_tokens,
-        write: c.write + u.cache_creation_input_tokens,
-        fresh: c.fresh + u.input_tokens,
-        turnRate: turnRate(u) ?? c.turnRate,
-      }))
-      const bars = await read($, barsAtom)
-      if (bars.to) {
-        await record($, { ...bars.to, fable: fableState.value ?? bars.to.fable })
-      }
-    }
     if (e.agentId === undefined) {
-      const doneAt = await clockNow($)
-      await update($, warmAtom, () => doneAt)
-      await update($, reportAtom, r => ({ ...r, turns: r.turns + 1, output: r.output + (u?.output_tokens ?? 0) }))
-      const now = await clockNow($)
-      if (seasonal && isHalloween(new Date(now)) && !e.isAborted) {
-        await update($, askAtom, () => now)
-      }
-      try {
-        await growPet($, u ? turnRate(u) : undefined)
-      } catch (err) {
-        $.ui.log(`usage-pet: 养成更新失败：${String(err)}`, { to: 'debug' })
-      }
       mainTurnActive = false
-      await completeActivity($, e.isAborted || e.reason === 'aborted')
-      await noteActivity($)
+      pendingPermission = undefined
+    }
+    let sleepTimerArmed = false
+    await safeBookkeeping($, 'turn.complete bookkeeping failed', async () => {
+      refreshFable($, fableState)
+      const u = e.usage
+      // 近 7 天用量：主对话和子代理的每一轮都记（这里不分缓存归属，只算花了多少）
+      try {
+        const now = await clockNow($)
+        if (u) {
+          await logTurn($, u, now)
+        }
+        await refreshWeek($, now)
+      } catch (err) {
+        $.ui.log(`usage-pet: 记近 7 天用量失败：${String(err)}`, { to: 'debug' })
+      }
+      if (e.agentId === undefined && u) {
+        await update($, cacheAtom, c => ({
+          read: c.read + u.cache_read_input_tokens,
+          write: c.write + u.cache_creation_input_tokens,
+          fresh: c.fresh + u.input_tokens,
+          turnRate: turnRate(u) ?? c.turnRate,
+        }))
+        const bars = await read($, barsAtom)
+        if (bars.to) {
+          await record($, { ...bars.to, fable: fableState.value === undefined ? bars.to.fable : fableState.value })
+        }
+      }
+      if (e.agentId === undefined) {
+        const doneAt = await clockNow($)
+        await update($, warmAtom, () => doneAt)
+        await update($, reportAtom, r => ({ ...r, turns: r.turns + 1, output: r.output + (u?.output_tokens ?? 0) }))
+        const now = await clockNow($)
+        if (seasonal && isHalloween(new Date(now)) && !e.isAborted) {
+          await update($, askAtom, () => now)
+        }
+        try {
+          await growPet($, u ? turnRate(u) : undefined)
+        } catch (err) {
+          $.ui.log(`usage-pet: 养成更新失败：${String(err)}`, { to: 'debug' })
+        }
+        await completeActivity($, e.isAborted || e.reason === 'aborted')
+        await noteActivity($)
+        sleepTimerArmed = true
+      }
+    })
+    if (e.agentId === undefined && !sleepTimerArmed) {
+      await safeBookkeeping($, 'turn.complete sleep timer recovery failed', async () => armSleepTimer($, lastActivityAt))
     }
 
     return next(e)
@@ -754,79 +896,100 @@ export const register: Register = (on, options) => {
 
   // 战报：工具调用次数（含子代理），改过的文件按路径去重；被拦下的不算
   on('tool.call', async ($, e, next) => {
-    await noteActivity($)
     const needsIcon =
       e.agentId === undefined ? (e.tool === 'AskUserQuestion' ? 'question' : e.tool === 'ExitPlanMode' ? 'bang' : undefined) : undefined
-    if (needsIcon) {
-      await needsYou($, needsIcon)
-    }
     const owner = ++activityOwner
-    if (!needsIcon) {
-      activeActivityOwners.add(owner)
-    }
+    let needsOwner: number | undefined
     let applied = false
     let ran!: Awaited<ReturnType<typeof next>>
-    try {
-      if (!needsIcon) {
-        await update($, activityAtom, current => {
-          const previous =
-            e.agentId === undefined
-              ? previousActivity(current)
-              : current.kind === 'sleep' || current.kind === 'done'
-                ? restoreActivity(current.previous)
-                : current
-          if (!canReplaceActivity(previous, 'working')) {
-            return previous
-          }
-          applied = true
-
-          return { kind: 'working', icon: iconForTool(e.tool), owner, previous }
-        })
+    await safeBookkeeping($, 'tool.call bookkeeping failed', async () => {
+      await noteActivity($)
+      const permission = pendingPermission
+      if (permission?.tool === e.tool && (await clearNeedsYou($, permission.owner)) && pendingPermission === permission) {
+        pendingPermission = undefined
       }
+      if (needsIcon) {
+        const current = await read($, activityAtom)
+        if (!(pendingPermission && current.kind === 'needs-you' && current.owner === pendingPermission.owner)) {
+          needsOwner = await needsYou($, needsIcon)
+        }
+        return
+      }
+
+      activeActivityOwners.add(owner)
+      await update($, activityAtom, current => {
+        if (pendingPermission && current.kind === 'needs-you' && current.owner === pendingPermission.owner && pendingPermission.tool !== e.tool) {
+          return current
+        }
+        const previous =
+          e.agentId === undefined
+            ? previousActivity(current)
+            : current.kind === 'sleep' || current.kind === 'done'
+              ? restoreActivity(current.previous)
+              : restoreActivity(current)
+        const normalizedPrevious = restoreActivity(previous)
+        if (!canReplaceActivity(normalizedPrevious, 'working')) {
+          return normalizedPrevious
+        }
+        applied = true
+
+        return { kind: 'working', icon: iconForTool(e.tool), owner, previous: normalizedPrevious }
+      })
+    })
+    try {
       ran = await next(e)
     } finally {
-      if (!needsIcon) {
+      await safeBookkeeping($, 'tool.call cleanup failed', async () => {
         activeActivityOwners.delete(owner)
-      }
-      if (applied) {
-        await update($, activityAtom, current =>
-          current.kind === 'working' && current.owner === owner ? restoreActivity(current.previous) : current,
-        )
-      }
-      await armSleepTimer($, lastActivityAt)
-    }
-    if (!('deny' in ran && ran.deny !== undefined)) {
-      const input = e as unknown as { command?: unknown; file_path?: unknown; notebook_path?: unknown }
-      const path = EDIT_TOOLS.has(e.tool) ? (input.file_path ?? input.notebook_path) : undefined
-      await update($, reportAtom, r => ({
-        ...r,
-        toolCalls: r.toolCalls + 1,
-        files: typeof path === 'string' && !r.files.includes(path) && r.files.length < MAX_FILES ? [...r.files, path] : r.files,
-      }))
+        if (applied) {
+          await update($, activityAtom, current =>
+            current.kind === 'working' && current.owner === owner ? restoreActivity(current.previous) : current,
+          )
+        }
+        if (needsOwner !== undefined) {
+          await clearNeedsYou($, needsOwner)
+        }
+        await armSleepTimer($, lastActivityAt)
+      })
     }
 
-    const input = e as unknown as { command?: unknown }
-    const reaction = reactionForToolResult(e.tool, String(input.command ?? ''), ran)
-    if (reaction) {
-      await showReaction($, reaction)
-    }
+    await safeBookkeeping($, 'tool.call result bookkeeping failed', async () => {
+      if (!('deny' in ran && ran.deny !== undefined)) {
+        const input = e as unknown as { command?: unknown; file_path?: unknown; notebook_path?: unknown }
+        const path = EDIT_TOOLS.has(e.tool) ? (input.file_path ?? input.notebook_path) : undefined
+        await update($, reportAtom, r => ({
+          ...r,
+          toolCalls: r.toolCalls + 1,
+          files: typeof path === 'string' && !r.files.includes(path) && r.files.length < MAX_FILES ? [...r.files, path] : r.files,
+        }))
+      }
+
+      const input = e as unknown as { command?: unknown }
+      const reaction = reactionForToolResult(e.tool, String(input.command ?? ''), ran, e.agentId)
+      if (reaction) {
+        await showReaction($, reaction)
+      }
+    })
 
     return ran
   })
 
   on('session.compact', async ($, e, next) => {
-    if (e.agentId !== undefined) {
+    if (e.agentId !== undefined || (e as unknown as { trigger?: unknown }).trigger === 'precompute') {
       return next(e)
     }
 
-    await noteActivity($)
     const owner = ++activityOwner
-    activeActivityOwners.add(owner)
     let applied = false
     let result!: Awaited<ReturnType<typeof next>>
-    try {
+    await safeBookkeeping($, 'session.compact bookkeeping failed', async () => {
+      await noteActivity($)
+      activeActivityOwners.add(owner)
       await update($, activityAtom, current => {
-        const previous = current.kind === 'done' || current.kind === 'sleep' ? restoreActivity(current.previous) : current
+        const previous =
+          current.kind === 'needs-you'
+            ? current
+            : restoreActivity(current.kind === 'done' || current.kind === 'sleep' ? current.previous : current)
         if (!canReplaceActivity(previous, 'compacting')) {
           return previous
         }
@@ -834,15 +997,19 @@ export const register: Register = (on, options) => {
 
         return { kind: 'compacting', owner, previous }
       })
+    })
+    try {
       result = await next(e)
     } finally {
-      activeActivityOwners.delete(owner)
-      if (applied) {
-        await update($, activityAtom, current =>
-          current.kind === 'compacting' && current.owner === owner ? restoreActivity(current.previous) : current,
-        )
-      }
-      await armSleepTimer($, lastActivityAt)
+      await safeBookkeeping($, 'session.compact cleanup failed', async () => {
+        activeActivityOwners.delete(owner)
+        if (applied) {
+          await update($, activityAtom, current =>
+            current.kind === 'compacting' && current.owner === owner ? restoreActivity(current.previous) : current,
+          )
+        }
+        await armSleepTimer($, lastActivityAt)
+      })
     }
 
     return result
@@ -887,60 +1054,68 @@ export const register: Register = (on, options) => {
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    if (e.props.hasSurvey) {
+    let passthrough = false
+    try {
+      passthrough = e.props.hasSurvey || (e.surface !== 'desktop' && e.surface !== 'terminal')
+    } catch (error) {
+      debugError($, 'AbovePrompt render failed', error)
+
+      return next(e)
+    }
+    if (passthrough) {
       return next(e)
     }
 
-    const bars = await read($, barsAtom)
-    const lang = await langOf($, choice)
-    const now = await clockNow($)
-    const pet = petView(await read($, petAtom), lang, seasonal && isHalloween(new Date(now)), await read($, askAtom), now, seasonal)
+    try {
+      const bars = await read($, barsAtom)
+      const lang = await langOf($, choice)
+      const now = await clockNow($)
+      const pet = petView(await read($, petAtom), lang, seasonal && isHalloween(new Date(now)), await read($, askAtom), now, seasonal)
 
-    // 桌面端的 Client 在 2.1.286 上一律 10 秒超时（缺 CSP nonce，同见 #99211），所以桌面只用 Svg
-    if (e.surface === 'desktop') {
-      const { Box, Button, Svg } = $.ui.resolve(e)
-      const activity = await read($, activityAtom)
-      const hasActivityIcon = activity.icon !== undefined
-      // 不设大下限：以前最少 560px，窗口窄时信息栏比可用宽度还宽，按钮就被挤到下一行。
-      // 窄了由 bandSvg 自己逐级收（去副标题 → 只剩圆环），按钮始终在同一行右侧
-      // 工具图标伸出 Clawd 本体的排布框，活动时给它单独留位
-      const minimumWidth = bars.to?.fable
-        ? hasActivityIcon
-          ? MIN_BAND_W_WITH_FABLE_AND_ACTIVITY
-          : MIN_BAND_W_WITH_FABLE
-        : hasActivityIcon
-          ? MIN_BAND_W_WITH_ACTIVITY
-          : MIN_BAND_W
-      const width = Math.max(minimumWidth, e.props.bodyColumns * PX_PER_COLUMN - 8 - BUTTON_W)
-      const pinned = await read($, pinnedAtom)
-      const isMini = !pinned && !(await read($, expandedAtom))
-      // 近 7 天用量只在展开时写进 Clawd 的悬停提示：收起时是一条细条，不放
-      const week = isMini ? undefined : weekLine(await read($, weekAtom), lang, now)
-      const shown = week ? { ...pet, title: `${pet.title} · ${week}` } : pet
-      // 收起时按「展开」= 一直展开；展开时按「收起」= 立刻收起并回到自动模式
-      // 按的那一刻再读状态，不用画的时候记下的 isMini（中间可能已经重画过）
-      const toggle = async () => {
-        expandToken++
-        const nowMini = !(await read($, pinnedAtom)) && !(await read($, expandedAtom))
-        await update($, pinnedAtom, () => nowMini)
-        await update($, expandedAtom, () => nowMini)
+      if (e.surface === 'desktop') {
+        // 桌面端的 Client 在 2.1.286 上一律 10 秒超时（缺 CSP nonce，同见 #99211），所以桌面只用 Svg
+        const { Box, Button, Svg } = $.ui.resolve(e)
+        const activity = await read($, activityAtom)
+        const hasActivityIcon = activity.icon !== undefined
+        // 不设大下限：以前最少 560px，窗口窄时信息栏比可用宽度还宽，按钮就被挤到下一行。
+        // 窄了由 bandSvg 自己逐级收（去副标题 → 只剩圆环），按钮始终在同一行右侧
+        // 工具图标伸出 Clawd 本体的排布框，活动时给它单独留位
+        const minimumWidth = bars.to?.fable
+          ? hasActivityIcon
+            ? MIN_BAND_W_WITH_FABLE_AND_ACTIVITY
+            : MIN_BAND_W_WITH_FABLE
+          : hasActivityIcon
+            ? MIN_BAND_W_WITH_ACTIVITY
+            : MIN_BAND_W
+        const width = Math.max(minimumWidth, e.props.bodyColumns * PX_PER_COLUMN - 8 - BUTTON_W)
+        const pinned = await read($, pinnedAtom)
+        const isMini = !pinned && !(await read($, expandedAtom))
+        // 近 7 天用量只在展开时写进 Clawd 的悬停提示：收起时是一条细条，不放
+        const week = isMini ? undefined : weekLine(await read($, weekAtom), lang, now)
+        const shown = week ? { ...pet, title: `${pet.title} · ${week}` } : pet
+        // 收起时按「展开」= 一直展开；展开时按「收起」= 立刻收起并回到自动模式
+        // 按的那一刻再读状态，不用画的时候记下的 isMini（中间可能已经重画过）
+        const toggle = async () => {
+          expandToken++
+          const nowMini = !(await read($, pinnedAtom)) && !(await read($, expandedAtom))
+          await update($, pinnedAtom, () => nowMini)
+          await update($, expandedAtom, () => nowMini)
+        }
+
+        return (
+          <Box flexDirection="row" alignItems="center" flexWrap="nowrap">
+            <Svg
+              source={bandSvg(bars, e.props.isWorking, width, isMini, lang, shown, cacheTimer(await read($, warmAtom), bars, now), activity)}
+              alt={bandAlt(bars.to, e.props.isWorking, lang)}
+              width={width}
+              height={isMini ? H_MINI : H}
+              isInteractive
+            />
+            <Button key="toggle" label={isMini ? ICON_EXPAND : ICON_COLLAPSE} plain onPress={() => void toggle()} />
+          </Box>
+        )
       }
 
-      return (
-        <Box flexDirection="row" alignItems="center" flexWrap="nowrap">
-          <Svg
-            source={bandSvg(bars, e.props.isWorking, width, isMini, lang, shown, cacheTimer(await read($, warmAtom), bars, now), activity)}
-            alt={bandAlt(bars.to, e.props.isWorking, lang)}
-            width={width}
-            height={isMini ? H_MINI : H}
-            isInteractive
-          />
-          <Button key="toggle" label={isMini ? ICON_EXPAND : ICON_COLLAPSE} plain onPress={() => void toggle()} />
-        </Box>
-      )
-    }
-
-    if (e.surface === 'terminal') {
       const { Box, Text } = $.ui.resolve(e)
       const snap = bars.to
       const t = T[lang]
@@ -976,8 +1151,10 @@ export const register: Register = (on, options) => {
           {snap?.fable ? meter('fable', t.fable, snap.fable.percent, termReset(snap.fable.resetsAt, lang)) : null}
         </Box>
       )
-    }
+    } catch (error) {
+      debugError($, 'AbovePrompt render failed', error)
 
-    return next(e)
+      return next(e)
+    }
   })
 }

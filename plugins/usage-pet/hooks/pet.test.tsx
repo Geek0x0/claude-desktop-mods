@@ -1,7 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { PromptSubmitInput, SessionCompactInput } from 'claude-code'
 
-import { NEW_PET, levelOf, normalize, onTurn, threshold } from './pet'
+import { mergePetProgress, NEW_PET, levelOf, normalize, onTurn, threshold } from './pet'
 
 const ZH = { options: { language: 'zh' } }
 const START = { cwd: '/tmp', surface: 'desktop' as const, isInteractive: true }
@@ -65,6 +65,15 @@ test('store 里读出来的脏数据补齐成完整的 Pet', () => {
   expect(normalize({ xp: -5, turns: 'x', streak: 3, achievements: ['a', 1] })).toEqual({ xp: 0, turns: 0, streak: 3, lastDay: undefined, achievements: ['a'] })
 })
 
+test('跨会话合并养成：经验和回合取较大值，成就合并并保留较新的日期', () => {
+  expect(
+    mergePetProgress(
+      { xp: 130, turns: 12, streak: 3, lastDay: '2026-10-14', achievements: ['cache-99'] },
+      { xp: 125, turns: 13, streak: 4, lastDay: '2026-10-15', achievements: ['close-call'] },
+    ),
+  ).toEqual({ xp: 130, turns: 13, streak: 4, lastDay: '2026-10-15', achievements: ['cache-99', 'close-call'] })
+})
+
 // ───────── 接进插件：store、等级、信息栏、战报 ─────────
 
 type Harness = Parameters<Parameters<typeof test>[1]>
@@ -75,6 +84,7 @@ async function start(
   stored: Record<string, unknown>,
   beneath?: (on: Harness[1]) => void,
   capturePrompt?: (event: PromptSubmitInput) => void,
+  dropPrompt = false,
 ) {
   mock.store(on, stored)
   const clock = mock.clock(on)
@@ -83,7 +93,7 @@ async function start(
   on('prompt.submit', ($, e) => {
     capturePrompt?.(e)
 
-    return { text: e.text, origin: e.origin }
+    return dropPrompt ? { drop: 'discarded by test stand-in' } : { text: e.text, origin: e.origin }
   })
   on('session.usage', () => ({ value: { startedAt: 0, context: { window: 200000 }, rateLimits: [] } }))
   on('command.register', ($, e) => ({ value: { command: e.name } }))
@@ -94,9 +104,9 @@ async function start(
     return { value: undefined }
   })
   beneath?.(on)
-  await $.session.start(START as never)
+  const sessionResult = await $.session.start(START as never)
 
-  return { toasts, clock }
+  return { toasts, clock, sessionResult }
 }
 
 const turn = (read: number, write: number, fresh: number) => ({
@@ -133,6 +143,106 @@ test('子代理的回合不涨经验', ZH, async ($, on) => {
   await $.turn.complete({ ...turn(50, 0, 50), agentId: 'sub-1' })
   const ui = await $.ui.mount(BAND)
   expect(String((await ui.findAll({ type: 'Svg' }))[0].props?.source)).toContain('<title>Clawd Lv.1 · 经验 95 / 100')
+})
+
+test('主提示被后续钩子丢弃后：十分钟后仍进入睡眠', ZH, async ($, on) => {
+  const { clock } = await start($, on, {}, undefined, undefined, true)
+  expect(await $.prompt.submit({ text: 'discard this', asUser: true } as never)).toEqual({ drop: 'discarded by test stand-in' })
+
+  await clock.advance(600_000)
+  const ui = await $.ui.mount(BAND)
+  expect(String((await ui.findAll({ type: 'Svg' }))[0].props?.source)).toMatch(/class="clawd[^\"]* sleep"/)
+})
+
+test('会话启动记账失败：仍只调用后续一次并原样透传结果', ZH, async ($, on) => {
+  mock.store(on, {})
+  mock.clock(on)
+  on('session.usage', () => {
+    throw new Error('usage stand-in failed')
+  })
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  let nextCalls = 0
+  on('session.start', ($, e) => {
+    nextCalls++
+
+    return { cwd: e.cwd }
+  })
+
+  const result = await $.session.start(START as never)
+  expect(result).toEqual({ cwd: START.cwd })
+  expect(nextCalls).toBe(1)
+})
+
+test('观察钩子：atom 读写失败时仍原样透传提示、权限、工具、压缩和回合结果', ZH, async ($, on) => {
+  const permissionResult = { additionalContext: ['permission unchanged'] }
+  const toolResult = { result: { marker: 'tool unchanged' } as never }
+  const compactResult = { messages: [{ role: 'user', text: 'summary', toolUses: [] }], tokensBefore: 100, tokensAfter: 50 }
+  const { sessionResult } = await start($, on, {}, on => {
+    on('state.get', () => {
+      throw new Error('state read failed')
+    })
+    on('state.set', () => {
+      throw new Error('state write failed')
+    })
+    on('classic.PermissionRequest', () => ({ value: permissionResult }))
+    on('tool.call', () => toolResult)
+    on('session.compact', () => compactResult as never)
+  })
+  expect(sessionResult).toEqual({ cwd: START.cwd })
+
+  const prompt = await $.prompt.submit({ text: 'continue', asUser: true } as never)
+  expect(prompt).toMatchObject({ text: 'continue' })
+  expect(await $.classic.PermissionRequest({ tool_name: 'Bash', tool_input: { command: 'true' } } as never)).toEqual({ value: permissionResult })
+  expect(await $.tool.call({ tool: 'Bash', command: 'true' } as never)).toEqual(toolResult)
+  expect(await $.session.compact({
+    trigger: 'plugin',
+    instructions: 'keep this summary',
+    messages: [{ role: 'user', text: 'hello', toolUses: [] }],
+  } as never)).toEqual(compactResult)
+  const turnInput = turn(1, 0, 1)
+  const turnResult = await $.turn.complete(turnInput)
+  expect(turnResult).toEqual({ text: '', usage: turnInput.usage })
+})
+
+test('并行会话升级：写入前重读并合并另一会话刚写入的进度', ZH, async ($, on) => {
+  const before = { xp: 95, turns: 9, streak: 1, lastDay: '2000-01-01', achievements: [] }
+  const concurrent = { xp: 200, turns: 50, streak: 6, lastDay: '2999-01-01', achievements: ['close-call'] }
+  const data = new Map<string, unknown>([['pet', before]])
+  let petReads = 0
+  let writtenPet: unknown
+  mock.clock(on)
+  on('store.get', ($, e) => {
+    if (e.key === 'pet') {
+      petReads++
+
+      return { value: petReads >= 3 ? concurrent : before }
+    }
+
+    return { value: data.get(e.key) }
+  })
+  on('store.set', ($, e) => {
+    data.set(e.key, e.value)
+    if (e.key === 'pet') writtenPet = e.value
+
+    return { value: undefined }
+  })
+  on('store.keys', () => ({ value: [...data.keys()] }))
+  on('session.authorize', () => ({ value: null }))
+  on('session.start', ($, e) => ({ cwd: e.cwd }))
+  on('session.usage', () => ({ value: { startedAt: 0, context: { window: 200000 }, rateLimits: [] } }))
+  on('session.measure', ($, e) => ({ changed: e.changed }))
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  on('turn.complete', ($, e) => ({ text: '', usage: e.usage }))
+  await $.session.start(START as never)
+  await $.turn.complete(turn(9900, 0, 100))
+
+  const saved = writtenPet as { xp: number; turns: number; streak: number; lastDay?: string; achievements: string[] }
+  expect(saved.xp).toBe(200)
+  expect(saved.turns).toBe(50)
+  expect(saved.streak).toBe(6)
+  expect(saved.lastDay).toBe('2999-01-01')
+  expect(saved.achievements.includes('cache-99')).toBe(true)
+  expect(saved.achievements.includes('close-call')).toBe(true)
 })
 
 test('工具调用期间显示工具图标，完成后恢复工作字形并透传工具结果', ZH, async ($, on) => {
@@ -225,12 +335,12 @@ test('权限请求：只观察并透传结果，悬而未决时不会被在途�
       }
       return { result: { tool: e.tool } as never }
     })
-    on('classic.PermissionRequest', () => permissionResult)
+    on('classic.PermissionRequest', () => ({ value: permissionResult }))
   })
 
   const bash = $.tool.call({ tool: 'Bash', command: 'sleep 1' } as never)
   await started
-  expect(await $.classic.PermissionRequest({ tool_name: 'Bash', tool_input: { command: 'sleep 1' } } as never)).toEqual(permissionResult)
+  expect(await $.classic.PermissionRequest({ tool_name: 'Bash', tool_input: { command: 'sleep 1' } } as never)).toEqual({ value: permissionResult })
 
   const waiting = await $.ui.mount(BAND)
   const waitingSvg = String((await waiting.findAll({ type: 'Svg' }))[0].props?.source)
@@ -245,33 +355,87 @@ test('权限请求：只观察并透传结果，悬而未决时不会被在途�
   await $.tool.call({ tool: 'Read', file_path: '/tmp/a' } as never)
   const afterRead = await $.ui.mount(BAND)
   const afterReadSvg = String((await afterRead.findAll({ type: 'Svg' }))[0].props?.source)
-  expect(afterReadSvg).not.toContain('class="activity-icon bang"')
+  expect(afterReadSvg).toContain('class="activity-icon bang"')
   expect(afterReadSvg).not.toContain('class="activity-icon magnifier"')
+
+  await $.tool.call({ tool: 'Bash', command: 'pwd' } as never)
+  const afterPermission = await $.ui.mount(BAND)
+  const afterPermissionSvg = String((await afterPermission.findAll({ type: 'Svg' }))[0].props?.source)
+  expect(afterPermissionSvg).not.toContain('class="activity-icon bang"')
 })
 
-test('问题和计划：工具调用显示问号或感叹号，提示提交和主回合结束时清除', ZH, async ($, on) => {
-  await start($, on, {}, on => on('tool.call', ($, e) => ({ result: { tool: e.tool } as never })))
+test('问题和计划：工具调用显示问号或感叹号，调用结束时清除', ZH, async ($, on) => {
+  let releaseQuestion!: () => void
+  let releasePlan!: () => void
+  let markQuestionStarted!: () => void
+  let markPlanStarted!: () => void
+  const questionGate = new Promise<void>(resolve => (releaseQuestion = resolve))
+  const planGate = new Promise<void>(resolve => (releasePlan = resolve))
+  const questionStarted = new Promise<void>(resolve => (markQuestionStarted = resolve))
+  const planStarted = new Promise<void>(resolve => (markPlanStarted = resolve))
+  await start($, on, {}, on =>
+    on('tool.call', async ($, e) => {
+      if (e.tool === 'AskUserQuestion') {
+        markQuestionStarted()
+        await questionGate
+      }
+      if (e.tool === 'ExitPlanMode') {
+        markPlanStarted()
+        await planGate
+      }
 
-  await $.tool.call({ tool: 'AskUserQuestion', questions: [] } as never)
+      return { result: { tool: e.tool } as never }
+    }),
+  )
+
+  const question = $.tool.call({ tool: 'AskUserQuestion', questions: [] } as never)
+  await questionStarted
   let ui = await $.ui.mount(BAND)
   let src = String((await ui.findAll({ type: 'Svg' }))[0].props?.source)
   expect(src).toContain('class="activity-icon question"')
+  releaseQuestion()
+  await question
+  ui = await $.ui.mount(BAND)
+  src = String((await ui.findAll({ type: 'Svg' }))[0].props?.source)
+  expect(src).not.toContain('class="activity-icon question"')
 
   await $.prompt.submit({ text: 'please continue', asUser: true } as never)
   ui = await $.ui.mount(BAND)
   src = String((await ui.findAll({ type: 'Svg' }))[0].props?.source)
   expect(src).not.toContain('class="activity-icon question"')
 
-  await $.tool.call({ tool: 'ExitPlanMode', plan: 'ready' } as never)
+  const plan = $.tool.call({ tool: 'ExitPlanMode', plan: 'ready' } as never)
+  await planStarted
   ui = await $.ui.mount(BAND)
   src = String((await ui.findAll({ type: 'Svg' }))[0].props?.source)
   expect(src).toContain('class="activity-icon bang"')
+  releasePlan()
+  await plan
+  ui = await $.ui.mount(BAND)
+  src = String((await ui.findAll({ type: 'Svg' }))[0].props?.source)
+  expect(src).not.toContain('class="activity-icon bang"')
 
   await $.turn.complete(turn(0, 0, 0))
   ui = await $.ui.mount(BAND)
   src = String((await ui.findAll({ type: 'Svg' }))[0].props?.source)
   expect(src).not.toContain('class="activity-icon bang"')
   expect(src).toContain('class="clawd done')
+})
+
+test('上下文预计算：压缩事件原样透传，不唤醒睡眠状态', ZH, async ($, on) => {
+  const compactResult = { messages: [{ role: 'user', text: 'summary', toolUses: [] }], tokensBefore: 100, tokensAfter: 50 }
+  const { clock } = await start($, on, {}, on => on('session.compact', () => compactResult as never))
+  await clock.advance(600_000)
+
+  const compact = await $.session.compact({
+    trigger: 'precompute',
+    instructions: 'keep this summary',
+    messages: [{ role: 'user', text: 'hello', toolUses: [] }],
+  } as never)
+  expect(compact).toEqual(compactResult)
+
+  const ui = await $.ui.mount(BAND)
+  expect(String((await ui.findAll({ type: 'Svg' }))[0].props?.source)).toMatch(/class="clawd[^\"]* sleep"/)
 })
 
 test('主回合完成：完成姿势停留六秒，中断和子代理不显示完成状态', ZH, async ($, on) => {
@@ -390,7 +554,7 @@ test('测试工具结果：通过和失败显示六秒反应，安装命令不�
   expect(String((await ui.findAll({ type: 'Svg' }))[0].props?.source)).not.toMatch(/class="clawd[^\"]*\breaction\b/)
 })
 
-test('失误反应：工具错误显示叉叉，拒绝调用不显示失误', ZH, async ($, on) => {
+test('失误反应：工具错误显示叉叉，拒绝与子代理调用不显示失误', ZH, async ($, on) => {
   const { clock } = await start($, on, {}, on => {
     on('tool.call', ($, e) =>
       e.tool === 'Read' ? { result: 'read failed' as never, isError: true } : { deny: 'blocked' },
@@ -411,43 +575,30 @@ test('失误反应：工具错误显示叉叉，拒绝调用不显示失误', ZH
   await ui.redraw()
   src = String((await ui.findAll({ type: 'Svg' }))[0].props?.source)
   expect(src).not.toMatch(/class="clawd[^\"]*\breaction\b/)
+
+  await $.tool.call({ tool: 'Read', file_path: '/tmp/subagent-missing', agentId: 'sub-agent-1' } as never)
+  await ui.redraw()
+  src = String((await ui.findAll({ type: 'Svg' }))[0].props?.source)
+  expect(src).not.toMatch(/class="clawd[^\"]*\breaction oops\b/)
 })
 
-test('烦躁提示：二十分钟内第三次触发跺脚，八秒后恢复并原样透传提示词', ZH, async ($, on) => {
-  let forwarded: PromptSubmitInput | undefined
-  const { clock } = await start($, on, {}, undefined, e => (forwarded = e))
+test('烦躁提示：插件代发的强烈文字原样透传但不计数', ZH, async ($, on) => {
+  const forwarded: PromptSubmitInput[] = []
+  await start($, on, {}, undefined, e => forwarded.push(e))
   const ui = await $.ui.mount(BAND)
   const prompts = ['为什么又坏了？', '还是不行，继续试', '搞什么，还是不行']
+  const attachments = [{ type: 'document' as const, filename: 'feedback.txt' }]
 
-  const firstAttachments = [{ type: 'document' as const, filename: 'feedback.txt' }]
-  const first = await $.prompt.submit({ text: prompts[0], asUser: true, attachments: firstAttachments } as never)
-  expect(first).toMatchObject({ text: prompts[0] })
-  expect(forwarded).toMatchObject({
-    text: prompts[0],
-    attachments: firstAttachments,
-  })
-  await clock.advance(10 * 60_000)
-  const second = await $.prompt.submit({ text: prompts[1], asUser: true } as never)
-  expect(second).toMatchObject({ text: prompts[1] })
+  for (const [index, text] of prompts.entries()) {
+    const result = await $.prompt.submit({ text, asUser: true, ...(index === 0 ? { attachments } : {}) } as never)
+    expect(result).toMatchObject({ text })
+  }
+  expect(forwarded[0].text).toBe(prompts[0])
+  expect(forwarded[0].attachments).toEqual(attachments)
+  expect(forwarded[2].text).toBe(prompts[2])
   await ui.redraw()
-  expect(String((await ui.findAll({ type: 'Svg' }))[0].props?.source)).not.toMatch(/class="clawd[^\"]*\breaction tantrum\b/)
-
-  await clock.advance(9 * 60_000)
-  const third = await $.prompt.submit({ text: prompts[2], asUser: true } as never)
-  expect(third).toMatchObject({ text: prompts[2] })
-  await ui.redraw()
-  let src = String((await ui.findAll({ type: 'Svg' }))[0].props?.source)
-  expect(src).toMatch(/class="clawd[^\"]*\breaction tantrum\b/)
-  expect(src).toContain('class="angry-eyes"')
-  expect(src).toContain('class="tantrum-steam"')
-
-  await clock.advance(8000)
-  await ui.redraw()
-  expect(String((await ui.findAll({ type: 'Svg' }))[0].props?.source)).not.toMatch(/class="clawd[^\"]*\breaction tantrum\b/)
-  await $.prompt.submit({ text: 'still not working', asUser: true } as never)
-  await $.prompt.submit({ text: '气死了', asUser: true } as never)
-  await ui.redraw()
-  expect(String((await ui.findAll({ type: 'Svg' }))[0].props?.source)).not.toMatch(/class="clawd[^\"]*\breaction tantrum\b/)
+  const src = String((await ui.findAll({ type: 'Svg' }))[0].props?.source)
+  expect(src).not.toMatch(/class="clawd[^\"]*\breaction tantrum\b/)
 })
 
 test('烦躁识别关闭：tantrums=off 时仍透传提示词但不触发跺脚', { options: { language: 'zh', tantrums: ' OFF ' } }, async ($, on) => {
@@ -476,7 +627,7 @@ test('反应优先级：测试失败反应不会覆盖待处理的权限请求',
   const gate = new Promise<void>(resolve => (release = resolve))
   const started = new Promise<void>(resolve => (markStarted = resolve))
   await start($, on, {}, on => {
-    on('classic.PermissionRequest', () => permissionResult)
+    on('classic.PermissionRequest', () => ({ value: permissionResult }))
     on('tool.call', async () => {
       markStarted()
       await gate
@@ -487,7 +638,7 @@ test('反应优先级：测试失败反应不会覆盖待处理的权限请求',
 
   const tool = $.tool.call({ tool: 'Bash', command: 'npm test' } as never)
   await started
-  expect(await $.classic.PermissionRequest({ tool_name: 'Bash', tool_input: { command: 'npm test' } } as never)).toEqual(permissionResult)
+  expect(await $.classic.PermissionRequest({ tool_name: 'Bash', tool_input: { command: 'npm test' } } as never)).toEqual({ value: permissionResult })
   release()
   await tool
   const ui = await $.ui.mount(BAND)

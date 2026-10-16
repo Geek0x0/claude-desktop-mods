@@ -90,7 +90,11 @@ function activityIconSvg(icon: ToolIcon, mini: boolean): string {
   const pixels = ACTIVITY_PIXELS[icon]
     .map((row, y) =>
       [...row]
-        .map((color, x) => (color === '.' ? '' : `<rect x="${x}" y="${y}" width=".92" height=".92" fill="${ACTIVITY_COLORS[color]}"/>`))
+        .map((color, x) =>
+          color === '.'
+            ? ''
+            : `<rect x="${x}" y="${y}" width=".92" height=".92" class="activity-pixel pixel-${color.toLowerCase()}"/>`,
+        )
         .join(''),
     )
     .join('')
@@ -101,7 +105,7 @@ function activityIconSvg(icon: ToolIcon, mini: boolean): string {
 
 function sleepZSvg(mini: boolean): string {
   const pixels = SLEEP_Z_PIXELS.map((row, y) =>
-    [...row].map((cell, x) => (cell === 'Z' ? `<rect x="${x}" y="${y}" width=".9" height=".9" fill="#F0EEE6"/>` : '')).join(''),
+    [...row].map((cell, x) => (cell === 'Z' ? `<rect x="${x}" y="${y}" width=".9" height=".9" class="sleep-z-pixel"/>` : '')).join(''),
   ).join('')
   const positions: [number, number][] = mini ? [[13.4, 0.25], [15.7, 1.25]] : [[13.4, -2.2], [15.7, -3.5]]
 
@@ -114,7 +118,7 @@ function sleepZSvg(mini: boolean): string {
 }
 
 function doneSparklesSvg(mini: boolean): string {
-  const sparkle = `<rect x="1" y="0" width="1" height="3" fill="#F2C14E"/><rect x="0" y="1" width="3" height="1" fill="#F2C14E"/>`
+  const sparkle = `<rect x="1" y="0" width="1" height="3" class="done-sparkle-pixel"/><rect x="0" y="1" width="3" height="1" class="done-sparkle-pixel"/>`
   const positions: [number, number, number][] = mini
     ? [
         [1.2, 0.2, 0.45],
@@ -149,16 +153,22 @@ function reactionFaceSvg(reaction?: ReactionKind): string {
 function reactionEffectsSvg(reaction: ReactionKind | undefined): string {
   if (reaction === 'test-pass') {
     const pieces: [number, number, string][] = [[0.3, 4.8, '#E5484D'], [1.1, 1.2, '#69A9D0'], [14.5, 2.8, '#F2C14E'], [15.3, 6.2, '#91BDA2'], [7.7, 0.6, '#9B6BDF']]
+    const reactionColor = (color: string) =>
+      color === '#69A9D0' ? 'class="reaction-pixel-blue"' :
+        color === '#F2C14E' ? 'class="reaction-pixel-gold"' :
+          color === '#91BDA2' ? 'class="reaction-pixel-green"' : `fill="${color}"`
 
     return `<g class="reaction-confetti">${pieces
       .map(
         ([x, y, color], i) =>
-          `<g class="confetti-piece" style="animation-delay:${i * 0.12}s"><rect x="${x}" y="${y}" width=".8" height="1.2" fill="${color}"/></g>`,
+          `<g class="confetti-piece" style="animation-delay:${i * 0.12}s"><rect x="${x}" y="${y}" width=".8" height="1.2" ${reactionColor(color)}/></g>`,
       )
       .join('')}</g>`
   }
   if (reaction === 'tantrum') {
-    const puff = `<rect x="1" y="1" width="2" height="1" fill="#B4B1A8"/><rect x=".5" y="2" width="3" height="1" fill="#8C8A84"/><rect x="1.5" y="0" width="1" height="1" fill="#D4D1C9"/>`
+    const puff =
+      `<rect x="1" y="1" width="2" height="1" class="steam-pixel-mid"/><rect x=".5" y="2" width="3" height="1" class="steam-pixel-dark"/>` +
+      `<rect x="1.5" y="0" width="1" height="1" class="steam-pixel-light"/>`
 
     return `<g class="tantrum-steam"><g transform="translate(.1 .1) scale(.65)">${puff}</g><g transform="translate(13.9 .1) scale(.65)">${puff}</g></g>`
   }
@@ -176,8 +186,23 @@ function moodForClawd(isWorking: boolean, activity: Activity | undefined, pet?: 
 function moodEffectsSvg(mood: Mood | undefined, mini: boolean): string {
   if (!mood) return ''
 
+  const moodColorAttr = (color: string) => {
+    const colorClasses: Record<string, string> = {
+      '#F7909F': 'mood-petal-pink',
+      '#F2C14E': 'mood-gold',
+      '#D97757': 'mood-autumn-coral',
+      '#E7A44C': 'mood-autumn-amber',
+      '#C2603F': 'mood-autumn-russet',
+      '#69A9D0': 'mood-blue',
+      '#E98D6E': 'mood-coral',
+    }
+    const className = colorClasses[color]
+
+    return className ? `class="${className}"` : `fill="${color}"`
+  }
+
   const coffee = mood.timeOfDay === 'morning'
-    ? `<g class="mood-coffee" transform="translate(14.2 4.5)"><rect x="0" y=".7" width="2.4" height="2.2" fill="#E7DDD0"/><rect x=".3" y="1" width="1.8" height=".5" fill="#6B4226"/><path d="M2.4 1.1h.6v1.2h-.6" fill="none" stroke="#E7DDD0" stroke-width=".35"/><path class="mood-steam" d="M.6.4Q0-.2.6-.7M1.6.4Q1-.2 1.6-.7" fill="none" stroke="#D4D1C9" stroke-width=".28"/></g>`
+    ? `<g class="mood-coffee" transform="translate(14.2 4.5)"><rect x="0" y=".7" width="2.4" height="2.2" class="mood-coffee-cup"/><rect x=".3" y="1" width="1.8" height=".5" fill="#6B4226"/><path d="M2.4 1.1h.6v1.2h-.6" class="mood-coffee-handle" fill="none" stroke-width=".35"/><path class="mood-steam" d="M.6.4Q0-.2.6-.7M1.6.4Q1-.2 1.6-.7" fill="none" stroke-width=".28"/></g>`
     : ''
   if (mini) return coffee
 
@@ -195,18 +220,18 @@ function moodEffectsSvg(mood: Mood | undefined, mini: boolean): string {
         ([x, y, color], i) =>
           `<g transform="translate(${x} ${y})"><g class="mood-particle" style="animation-delay:${i * 2.1}s">${
             mood.season === 'winter'
-              ? `<rect x=".3" y="0" width=".25" height="1" fill="${color}"/><rect x="0" y=".3" width=".85" height=".25" fill="${color}"/>`
+              ? `<rect x=".3" y="0" width=".25" height="1" class="mood-snow-${color === '#F4F2EC' ? 'bright' : 'cool'}"/><rect x="0" y=".3" width=".85" height=".25" class="mood-snow-${color === '#F4F2EC' ? 'bright' : 'cool'}"/>`
               : mood.season === 'spring'
-                ? `<path d="M.45 0Q1 .4.45.9Q-.1.4.45 0Z" fill="${color}"/>`
-                : `<path d="M.05.55Q.3-.1.95.08.82.75.22.95Z" fill="${color}"/><path d="M.18.82.78.2" stroke="#754A34" stroke-width=".1"/>`
+                ? `<path d="M.45 0Q1 .4.45.9Q-.1.4.45 0Z" ${moodColorAttr(color)}/>`
+                : `<path d="M.05.55Q.3-.1.95.08.82.75.22.95Z" ${moodColorAttr(color)}/><path d="M.18.82.78.2" stroke="#754A34" stroke-width=".1"/>`
           }</g></g>`,
       )
       .join('')}</g>`
     : mood.season === 'summer'
-      ? `<g class="mood-sun" transform="translate(14.1 .4)"><rect x="1" y="0" width="1" height="3" fill="#F2C14E"/><rect x="0" y="1" width="3" height="1" fill="#F2C14E"/><rect x=".7" y=".7" width="1.6" height="1.6" fill="#FFD86A"/></g>`
+      ? `<g class="mood-sun" transform="translate(14.1 .4)"><rect x="1" y="0" width="1" height="3" class="mood-gold"/><rect x="0" y="1" width="3" height="1" class="mood-gold"/><rect x=".7" y=".7" width="1.6" height="1.6" class="mood-sun-highlight"/></g>`
       : ''
   const fireworks = mood.holiday === 'new-year'
-    ? `<g class="mood-fireworks"><g transform="translate(1 1.2)"><g class="mood-firework"><rect x=".8" y="0" width=".5" height="2.2" fill="#F2C14E"/><rect x="0" y=".8" width="2.2" height=".5" fill="#69A9D0"/><rect x=".3" y=".3" width=".5" height=".5" fill="#E5484D"/></g></g><g transform="translate(14 3.2) scale(.8)"><g class="mood-firework"><rect x=".8" y="0" width=".5" height="2.2" fill="#E98D6E"/><rect x="0" y=".8" width="2.2" height=".5" fill="#9B6BDF"/><rect x="1.7" y=".2" width=".5" height=".5" fill="#F2C14E"/></g></g></g>`
+    ? `<g class="mood-fireworks"><g transform="translate(1 1.2)"><g class="mood-firework"><rect x=".8" y="0" width=".5" height="2.2" class="mood-gold"/><rect x="0" y=".8" width="2.2" height=".5" class="mood-blue"/><rect x=".3" y=".3" width=".5" height=".5" fill="#E5484D"/></g></g><g transform="translate(14 3.2) scale(.8)"><g class="mood-firework"><rect x=".8" y="0" width=".5" height="2.2" class="mood-coral"/><rect x="0" y=".8" width="2.2" height=".5" fill="#9B6BDF"/><rect x="1.7" y=".2" width=".5" height=".5" class="mood-gold"/></g></g></g>`
     : ''
 
   return coffee + seasonParticles + fireworks
@@ -493,39 +518,39 @@ const WITCH_HAT =
   `<path d="M5.4-.6 10.6-.6 9.5-3 11.3-3.8 8.7-3.4Z" fill="#3B2A55"/>` +
   `<path d="M8.7-3.4 9.5-3 9.1-2.6Z" fill="#2A1E3D"/>` +
   px(2.6, -0.8, 10.8, 0.8, '#2A1E3D') +
-  px(5.7, -1.45, 4.6, 0.55, '#F28C28') +
-  px(7.6, -1.5, 0.9, 0.65, '#F2C14E')
+  `<rect x="5.7" y="-1.45" width="4.6" height=".55" class="halloween-orange"/>` +
+  `<rect x="7.6" y="-1.5" width=".9" height=".65" class="halloween-gold"/>`
 const SANTA_HAT =
   `<g class="mood-hat santa"><path d="M4.4-.25H12L10.5-2.1Q8.5-3.1 6.5-1.55Z" fill="#D94343"/>` +
-  px(3.7, -0.65, 9.2, 0.75, '#F4F2EC') +
-  `<circle cx="10.8" cy="-2.45" r=".62" fill="#F4F2EC"/></g>`
+  `<rect x="3.7" y="-.65" width="9.2" height=".75" class="mood-paper-white"/>` +
+  `<circle cx="10.8" cy="-2.45" r=".62" class="mood-paper-white"/></g>`
 const PARTY_HAT =
   `<g class="mood-hat party"><path d="M4.8-.2 8-4 11.4-.2Z" fill="#8F63CE"/>` +
-  px(5.5, -1.35, 4.8, 0.4, '#F2C14E') +
-  px(6.8, -2.4, 0.55, 0.55, '#69A9D0') +
+  `<rect x="5.5" y="-1.35" width="4.8" height=".4" class="mood-gold"/>` +
+  `<rect x="6.8" y="-2.4" width=".55" height=".55" class="mood-blue"/>` +
   px(8.8, -3.25, 0.55, 0.55, '#E5484D') +
-  `<circle cx="8" cy="-4.1" r=".45" fill="#F2C14E"/></g>`
+  `<circle cx="8" cy="-4.1" r=".45" class="mood-gold"/></g>`
 const NIGHTCAP =
   `<g class="mood-hat nightcap"><path d="M3.8-.2Q4.2-2.65 7.5-3.1 10.8-3.45 12-.2Z" fill="#4766B2"/>` +
   `<path d="M9.2-2.7Q11.5-3.55 13.1-2.65L11.9-1.25Z" fill="#354F91"/>` +
   px(3.6, -0.65, 8.8, 0.6, '#293F79') +
-  `<circle cx="13.2" cy="-2.65" r=".55" fill="#F4F2EC"/></g>`
+  `<circle cx="13.2" cy="-2.65" r=".55" class="mood-paper-white"/></g>`
 const MINI_SANTA_HAT =
-  `<g class="mood-hat santa"><path d="M5 1.2 8 .15 11 1.2Z" fill="#D94343"/>${px(4.4, 1.05, 7.2, 0.5, '#F4F2EC')}<circle cx="8" cy=".1" r=".35" fill="#F4F2EC"/></g>`
+  `<g class="mood-hat santa"><path d="M5 1.2 8 .15 11 1.2Z" fill="#D94343"/><rect x="4.4" y="1.05" width="7.2" height=".5" class="mood-paper-white"/><circle cx="8" cy=".1" r=".35" class="mood-paper-white"/></g>`
 const MINI_PARTY_HAT =
-  `<g class="mood-hat party"><path d="M5 1.3 8 .1 11 1.3Z" fill="#8F63CE"/>${px(6.3, .8, 3.4, .35, '#F2C14E')}<circle cx="8" cy=".05" r=".35" fill="#F2C14E"/></g>`
+  `<g class="mood-hat party"><path d="M5 1.3 8 .1 11 1.3Z" fill="#8F63CE"/><rect x="6.3" y=".8" width="3.4" height=".35" class="mood-gold"/><circle cx="8" cy=".05" r=".35" class="mood-gold"/></g>`
 const MINI_NIGHTCAP =
-  `<g class="mood-hat nightcap"><path d="M4.5 1.25Q5 .15 8 .15 10.8 .15 11.5 1.25L12.5 1.55 11.6 1.8Z" fill="#4766B2"/>${px(4.5, 1.05, 7.2, .35, '#293F79')}<circle cx="12.55" cy="1.55" r=".35" fill="#F4F2EC"/></g>`
+  `<g class="mood-hat nightcap"><path d="M4.5 1.25Q5 .15 8 .15 10.8 .15 11.5 1.25L12.5 1.55 11.6 1.8Z" fill="#4766B2"/>${px(4.5, 1.05, 7.2, .35, '#293F79')}<circle cx="12.55" cy="1.55" r=".35" class="mood-paper-white"/></g>`
 
 // 讨糖南瓜桶（以桶左上角为原点，3×2.4 格）
 const PAIL =
   `<path d="M.4.3Q1.5-1.1 2.6.3" stroke="#55534D" stroke-width=".28" fill="none"/>` +
-  `<rect y=".2" width="3" height="2.4" rx=".9" fill="#F28C28"/>` +
+  `<rect y=".2" width="3" height="2.4" rx=".9" class="halloween-orange"/>` +
   px(1.3, 0.2, 0.4, 2.4, '#D96F12') +
   `<path d="M.5.9 1 .9 .75 1.35Z" fill="#3A2208"/><path d="M2 .9 2.5 .9 2.25 1.35Z" fill="#3A2208"/>` +
   px(0.6, 1.8, 1.8, 0.28, '#3A2208') +
   px(0.5, -0.15, 0.6, 0.45, '#E5484D') +
-  px(1.9, -0.2, 0.6, 0.5, '#5FB0F0')
+  `<rect x="1.9" y="-.2" width=".6" height=".5" class="halloween-blue"/>`
 
 function gearSvg(level: number, halloween = false, pailExtra = '', mood?: Mood, mini = false): string {
   const { head, bowtie } = gearOf(level)
@@ -607,17 +632,17 @@ export function clawdBody(isStressed: boolean, level = 1, halloween = false, pai
 
 // 干活时飘的糖果（代替 { } </> ✓）：以糖果中心为原点，约 2 格宽
 const CANDIES = [
-  `<rect x="-.55" y="-.4" width="1.1" height=".8" rx=".35" fill="#E5484D"/><path d="M-.55 0-1.1-.42-1.1.42Z" fill="#F7909F"/><path d="M.55 0 1.1-.42 1.1.42Z" fill="#F7909F"/>`,
-  `<rect x="-.09" y=".1" width=".18" height="1.1" fill="#C9C6BE"/><circle r=".6" fill="#9B6BDF"/><circle r=".26" fill="#F2C14E"/>`,
-  `<path d="M0-.75.6.6-.6.6Z" fill="#F2C14E"/><path d="M-.38.15.38.15.6.6-.6.6Z" fill="#F4F2EC"/><path d="M-.21-.27.21-.27.35.05-.35.05Z" fill="#F28C28"/>`,
+  `<rect x="-.55" y="-.4" width="1.1" height=".8" rx=".35" fill="#E5484D"/><path d="M-.55 0-1.1-.42-1.1.42Z" class="halloween-pink"/><path d="M.55 0 1.1-.42 1.1.42Z" class="halloween-pink"/>`,
+  `<rect x="-.09" y=".1" width=".18" height="1.1" class="halloween-neutral"/><circle r=".6" fill="#9B6BDF"/><circle r=".26" class="halloween-gold"/>`,
+  `<path d="M0-.75.6.6-.6.6Z" class="halloween-gold"/><path d="M-.38.15.38.15.6.6-.6.6Z" class="halloween-paper"/><path d="M-.21-.27.21-.27.35.05-.35.05Z" class="halloween-orange"/>`,
 ]
 
 // Claude 干活时披上白床单当幽灵（帽子照戴）
 const GHOST =
-  `<path d="M2.6-.9Q8-2.4 13.4-.9L14.6 6.6 15.6 8.6 13.6 8 12.2 8.9 10.6 8 9 8.9 7.4 8 5.8 8.9 4.2 8 2.6 8.9 1.4 8 .4 8.6 1.4 6.6Z" fill="#F4F2EC"/>` +
+  `<path d="M2.6-.9Q8-2.4 13.4-.9L14.6 6.6 15.6 8.6 13.6 8 12.2 8.9 10.6 8 9 8.9 7.4 8 5.8 8.9 4.2 8 2.6 8.9 1.4 8 .4 8.6 1.4 6.6Z" class="halloween-paper"/>` +
   `<ellipse cx="4.6" cy="3" rx=".75" ry="1.05" fill="#231511"/><ellipse cx="11.4" cy="3" rx=".75" ry="1.05" fill="#231511"/>` +
-  px(2.8, 4.4, 1.4, 0.5, '#F7909F', ' opacity=".55"') +
-  px(11.8, 4.4, 1.4, 0.5, '#F7909F', ' opacity=".55"')
+  `<rect x="2.8" y="4.4" width="1.4" height=".5" class="halloween-pink" opacity=".55"/>` +
+  `<rect x="11.8" y="4.4" width="1.4" height=".5" class="halloween-pink" opacity=".55"/>`
 
 // 讨糖：答完一轮后 Clawd 举起南瓜桶要糖。ANGRY_AFTER 秒没人点他就生气；
 // 点一下 = 给糖（开心 3 秒），CLICK_WINDOW 内连点第二下空翻、第三下跳起来撒糖。
@@ -659,8 +684,8 @@ function candyTimeline(askAgo: number) {
       px(3, 1.8, 3, 2.4, '#D97757') +
       px(10, 1.8, 3, 2.4, '#D97757') +
       `<g fill="none" stroke="#231511" stroke-width=".55" stroke-linecap="round" stroke-linejoin="round"><path d="M3.6 3.3 4.5 2.4 5.4 3.3"/><path d="M10.6 3.3 11.5 2.4 12.4 3.3"/></g>` +
-      px(2.6, 4.1, 1.7, 0.7, '#F7909F') +
-      px(11.7, 4.1, 1.7, 0.7, '#F7909F') +
+      `<rect x="2.6" y="4.1" width="1.7" height=".7" class="halloween-pink"/>` +
+      `<rect x="11.7" y="4.1" width="1.7" height=".7" class="halloween-pink"/>` +
       `</g>`,
     // 生气时原地跺脚
     stomp: `<animateTransform attributeName="transform" type="translate" values="0 0;.35 0;0 0;-.35 0;0 0" dur=".3s" repeatCount="indefinite" begin="${angry}" end="hit.click"/>`,
@@ -674,7 +699,7 @@ function candyTimeline(askAgo: number) {
       `<g><set attributeName="opacity" to="0" begin="${angry}"/><text x="14.6" y="-.4" class="hw-q">?</text></g>` +
       `<g opacity="0">${showWhenAngry}` +
       `<g class="hw-vein" transform="translate(15 -2.2)"><path d="M-.9-.3-.3-.3-.3-.9M.3-.9.3-.3.9-.3M.9.3.3.3.3.9M-.3.9-.3.3-.9.3" stroke="#E5484D" stroke-width=".38" fill="none" stroke-linecap="round"/></g>` +
-      `<circle class="hw-steam" cx="1.2" cy="-1.2" r=".7" fill="#C9C6BE"/><circle class="hw-steam" cx="14.6" cy="-.6" r=".6" fill="#C9C6BE" style="animation-delay:.5s"/>` +
+      `<circle class="hw-steam halloween-neutral" cx="1.2" cy="-1.2" r=".7"/><circle class="hw-steam halloween-neutral" cx="14.6" cy="-.6" r=".6" style="animation-delay:.5s"/>` +
       `</g></g>` +
       // 给糖：一颗糖掉进桶里
       `<g opacity="0"><set attributeName="opacity" to="1" begin="hit.click" dur=".7s"/>` +
@@ -742,7 +767,7 @@ function clawd(
     : ''
 
   const sweat = (isStressed || reaction === 'test-fail') && !isSleeping
-    ? `<path class="sweat" d="M14.9-.4q.75 1.05.75 1.6a.75.75 0 0 1-1.5 0q0-.55.75-1.6z" fill="#8FD0FF"/>`
+    ? `<path class="sweat" d="M14.9-.4q.75 1.05.75 1.6a.75.75 0 0 1-1.5 0q0-.55.75-1.6z"/>`
     : ''
   const moodEffects = moodEffectsSvg(mood, mini)
 
@@ -899,18 +924,23 @@ const STYLE =
   `.glyph{fill:#6B6862}.sweat{fill:#3D9BE0}.hw-q{fill:#C2603F}.tm{fill:#C2603F}.tm.warn{fill:#B26E12}.tm.cold{fill:#B4B1A8}` +
   `#grad-ok stop+stop{stop-color:#EC9A78}#grad-warn stop+stop{stop-color:#F2B04E}#grad-danger stop+stop{stop-color:#F2705C}}`
 
-const ACTIVITY_STYLE = `.activity-icon{shape-rendering:crispEdges}.activity-spinner{transform-box:fill-box;transform-origin:center;animation:activity-spin .9s steps(8) infinite}@keyframes activity-spin{to{transform:rotate(360deg)}}`
+const ACTIVITY_STYLE =
+  `.activity-icon{shape-rendering:crispEdges}` +
+  Object.entries(ACTIVITY_COLORS).map(([code, color]) => `.activity-pixel.pixel-${code.toLowerCase()}{fill:${color}}`).join('') +
+  `@media (prefers-color-scheme:light){.activity-pixel.pixel-w,.activity-pixel.pixel-s{fill:#4D4A43}.activity-pixel.pixel-t{fill:#377C60}.activity-pixel.pixel-p{fill:#A84F35}.activity-pixel.pixel-y,.activity-pixel.pixel-a{fill:#8A5B00}.activity-pixel.pixel-g{fill:#4B765D}.activity-pixel.pixel-b{fill:#3C6F92}}` +
+  `.activity-spinner{transform-box:fill-box;transform-origin:center;animation:activity-spin .9s steps(8) infinite}@keyframes activity-spin{to{transform:rotate(360deg)}}`
 const NEEDS_STYLE =
   `.needs-you .eyes{transform:scale(1.25);transform-origin:center}.needs-you .hop{animation:needs-hop .85s ease-in-out infinite}.needs-you .activity-icon{animation:needs-blink .7s steps(2,end) infinite}` +
   `@keyframes needs-hop{0%,100%{transform:none}50%{transform:translateY(-1.4px)}}@keyframes needs-blink{0%,49%{opacity:1}50%,100%{opacity:0}}`
 const DONE_STYLE =
-  `.done .eyes{opacity:0}.done .happy{opacity:1}.done .shades{opacity:0;animation:none}.done-sparkle{opacity:.75;animation:done-sparkle 1.1s ease-in-out infinite}` +
+  `.done .eyes{opacity:0}.done .happy{opacity:1}.done .shades{opacity:0;animation:none}.done-sparkle{opacity:.75;animation:done-sparkle 1.1s ease-in-out infinite}.done-sparkle-pixel{fill:#F2C14E}@media (prefers-color-scheme:light){.done-sparkle-pixel{fill:#8A5B00}}` +
   `@keyframes done-sparkle{0%,100%{opacity:.4}50%{opacity:1;transform:scale(1.15)}}`
 const COMPACTING_STYLE =
   `.compacting .hop{transform:scale(1.18,.76);transform-origin:50% 100%;animation:compacting-squish .36s ease-in-out infinite alternate}` +
   `@keyframes compacting-squish{from{transform:scale(1.12,.82)}to{transform:scale(1.24,.7)}}`
 const SLEEP_STYLE =
   `.clawd.sleep{opacity:.5}.sleep .eyes{opacity:0}.sleep .shades{opacity:0;animation:none}.sleep-eyes{display:block}.sleep .hop,.sleep .pace{animation:none!important;transform:none}.sleep-z{opacity:.8;animation:sleep-z 1.8s ease-out infinite}` +
+  `.sleep-z-pixel{fill:#F0EEE6}@media (prefers-color-scheme:light){.sleep-z-pixel{fill:#4D4A43}}` +
   `@keyframes sleep-z{0%{opacity:0;transform:translateY(1px)}20%{opacity:.8}100%{opacity:0;transform:translateY(-2.5px)}}`
 const REACTION_STYLE =
   `.reaction .eyes,.reaction .shades{opacity:0;animation:none}.reaction .happy{opacity:0}` +
@@ -920,13 +950,23 @@ const REACTION_STYLE =
   `.reaction.oops .hop{animation:oops-shake .32s ease-in-out infinite}.reaction.tantrum .hop{animation:tantrum-stomp .42s steps(2,end) infinite}` +
   `.reaction.tantrum .legA,.reaction.tantrum .legB{transform-origin:50% 0;animation:stomp-leg .42s steps(2,end) infinite}.reaction.tantrum .legB{animation-delay:.21s}` +
   `.reaction-confetti{shape-rendering:crispEdges}.confetti-piece{transform-origin:center;animation:confetti-float 1.2s ease-in-out infinite alternate}.tantrum-steam{opacity:.95}.tantrum-steam g{transform-origin:center;animation:steam-puff 1s ease-out infinite alternate}` +
+  `.tantrum-steam .steam-pixel-mid{fill:#B4B1A8}.tantrum-steam .steam-pixel-dark{fill:#8C8A84}.tantrum-steam .steam-pixel-light{fill:#D4D1C9}` +
+  `.reaction-pixel-blue{fill:#69A9D0}.reaction-pixel-gold{fill:#F2C14E}.reaction-pixel-green{fill:#91BDA2}` +
+  `@media (prefers-color-scheme:light){.tantrum-steam .steam-pixel-mid{fill:#6C6962}.tantrum-steam .steam-pixel-dark{fill:#77746C}.tantrum-steam .steam-pixel-light{fill:#5E5B54}.reaction-pixel-blue{fill:#3C6F92}.reaction-pixel-gold{fill:#8A5B00}.reaction-pixel-green{fill:#4B765D}}` +
   `@keyframes reaction-hop{0%,100%{transform:none}50%{transform:translateY(-1.5px)}}@keyframes oops-shake{0%,100%{transform:none}25%{transform:translateX(-.55px)}75%{transform:translateX(.55px)}}` +
   `@keyframes tantrum-stomp{0%,100%{transform:translateY(0)}50%{transform:translateY(-.45px)}}@keyframes stomp-leg{from{transform:rotate(-12deg)}to{transform:rotate(12deg)}}` +
   `@keyframes confetti-float{from{transform:translateY(0) rotate(0)}to{transform:translateY(-1px) rotate(18deg)}}@keyframes steam-puff{from{opacity:.5;transform:translateY(0)}to{opacity:1;transform:translateY(-1px)}}`
 const MOOD_STYLE =
   `.mood-coffee{shape-rendering:crispEdges}.mood-steam{transform-origin:center;animation:mood-steam 2.6s ease-in-out infinite}` +
+  `.mood-gold{fill:#F2C14E}.mood-sun-highlight{fill:#FFD86A}.mood-petal-pink{fill:#F7909F}.mood-autumn-coral{fill:#D97757}.mood-autumn-amber{fill:#E7A44C}.mood-autumn-russet{fill:#C2603F}.mood-blue{fill:#69A9D0}.mood-coral{fill:#E98D6E}` +
+  `.mood-paper-white{fill:#F4F2EC}.mood-snow-bright{fill:#F4F2EC}.mood-snow-cool{fill:#DDE8F2}.mood-coffee-cup{fill:#E7DDD0}.mood-coffee-handle{stroke:#E7DDD0}.mood-steam{stroke:#D4D1C9}` +
+  `@media (prefers-color-scheme:light){.mood-gold,.mood-sun-highlight{fill:#8A5B00}.mood-petal-pink{fill:#A74254}.mood-autumn-coral{fill:#A84F35}.mood-autumn-amber{fill:#8A4F0A}.mood-autumn-russet{fill:#C2603F}.mood-blue{fill:#3C6F92}.mood-coral{fill:#A84F35}.mood-paper-white{fill:#514E47}.mood-snow-bright{fill:#5B6B79}.mood-snow-cool{fill:#647B8E}.mood-coffee-cup{fill:#5A4638}.mood-coffee-handle{stroke:#5A4638}.mood-steam{stroke:#6B6862}}` +
   `.mood-particles,.mood-sun,.mood-fireworks{shape-rendering:crispEdges}.mood-particle{transform-origin:center;animation:mood-fall 8s ease-in-out infinite}.mood-firework{transform-origin:center;animation:mood-firework 3.6s ease-in-out infinite alternate}` +
   `@keyframes mood-fall{from{opacity:.25;transform:translateY(-1px)}20%{opacity:1}to{opacity:.35;transform:translateY(2.5px)}}@keyframes mood-firework{0%,100%{opacity:.45;transform:scale(.8)}50%{opacity:1;transform:scale(1.1)}}@keyframes mood-steam{0%,100%{opacity:.35;transform:translateY(0)}50%{opacity:.8;transform:translateY(-.7px)}}`
+const HALLOWEEN_PIXEL_STYLE =
+  `.halloween-paper{fill:#F4F2EC}.halloween-neutral{fill:#C9C6BE}.halloween-pink{fill:#F7909F}.halloween-gold{fill:#F2C14E}.halloween-orange{fill:#F28C28}.halloween-blue{fill:#5FB0F0}` +
+  `@media (prefers-color-scheme:light){.halloween-paper{fill:#514E47}.halloween-neutral{fill:#77746C}.halloween-pink{fill:#A74254}.halloween-pink[opacity=".55"]{opacity:1}.halloween-gold{fill:#8A5B00}.halloween-orange{fill:#B65B00}.halloween-blue{fill:#276F9F}}`
+const SWEAT_STYLE = `.sweat{fill:#8FD0FF}@media (prefers-color-scheme:light){.sweat{fill:#2D7FB8}}`
 
 function activityStyle(activity?: Activity, showIcon = true): string {
   if (!activity || activity.kind === 'idle') return ''
@@ -936,7 +976,8 @@ function activityStyle(activity?: Activity, showIcon = true): string {
     (activity.kind === 'done' ? DONE_STYLE : '') +
     (activity.kind === 'compacting' ? COMPACTING_STYLE : '') +
     (activity.kind === 'sleep' ? SLEEP_STYLE : '') +
-    (activity.kind === 'reaction' ? REACTION_STYLE : '')
+    (activity.kind === 'reaction' ? REACTION_STYLE : '') +
+    (activity.kind === 'reaction' && activity.reaction === 'test-fail' ? SWEAT_STYLE : '')
   )
 }
 
@@ -1066,7 +1107,7 @@ function miniSvg(gauges: Gauge[], isWorking: boolean, isStressed: boolean, width
 
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${H_MINI}" width="${width}" height="${H_MINI}" style="color-scheme:light dark;background:transparent">` +
-    `<style>${STYLE}${activityStyle(activity, showActivityIcon)}${mood ? MOOD_STYLE : ''}${isWorking ? DITHER_STYLE : ''}</style>` +
+    `<style>${STYLE}${activityStyle(activity, showActivityIcon)}${isStressed ? SWEAT_STYLE : ''}${mood ? MOOD_STYLE : ''}${pet?.halloween ? HALLOWEEN_PIXEL_STYLE : ''}${isWorking ? DITHER_STYLE : ''}</style>` +
     DEFS +
     (isWorking ? ditherSvg(width, H_MINI) : '') +
     `<g class="gauges">${parts.join('')}</g>` +
@@ -1184,7 +1225,7 @@ export function bandSvg(bars: Bars, isWorking: boolean, width: number, mini = fa
 
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${H}" width="${width}" height="${H}" style="color-scheme:light dark;background:transparent">` +
-    `<style>${STYLE}${activityStyle(displayActivity)}${mood ? MOOD_STYLE : ''}${css.join('')}${isWorking ? DITHER_STYLE : ''}</style>` +
+    `<style>${STYLE}${activityStyle(displayActivity)}${isStressed ? SWEAT_STYLE : ''}${mood ? MOOD_STYLE : ''}${pet?.halloween ? HALLOWEEN_PIXEL_STYLE : ''}${css.join('')}${isWorking ? DITHER_STYLE : ''}</style>` +
     DEFS +
     (isWorking ? ditherSvg(width, H) : '') +
     `<g class="gauges">${seps}${blocks}</g>` +

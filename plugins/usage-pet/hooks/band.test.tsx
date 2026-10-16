@@ -257,6 +257,87 @@ test('时段和节日装扮：帽子优先级正确，细条保留帽子与咖�
   expect(morningMini).not.toContain('class="mood-particles')
 })
 
+test('浅色像素装饰：近白图块保留深色填色并提供浅色对比类', () => {
+  const spinner = bandSvg(EMPTY_BARS, false, 1100, false, 'zh', undefined, undefined, { kind: 'working', icon: 'spinner', owner: 1 })
+  expect(spinner).toContain('class="activity-pixel pixel-w"')
+  expect(spinner).toContain('.activity-pixel.pixel-w{fill:#F0EEE6}')
+  expect(spinner).toContain('.activity-pixel.pixel-w,.activity-pixel.pixel-s{fill:#4D4A43}')
+  expect(spinner).toContain('.activity-pixel.pixel-t{fill:#377C60}')
+  expect(spinner).not.toContain('fill="#F0EEE6"')
+  const miniSpinner = bandSvg(EMPTY_BARS, false, 1100, true, 'zh', undefined, undefined, { kind: 'working', icon: 'spinner', owner: 1 })
+  expect(miniSpinner).toContain('class="activity-pixel pixel-w"')
+
+  const sleeping = bandSvg(EMPTY_BARS, false, 1100, false, 'zh', undefined, undefined, { kind: 'sleep' })
+  expect(sleeping).toContain('class="sleep-z-pixel"')
+  expect(sleeping).toContain('.sleep-z-pixel{fill:#F0EEE6}')
+  expect(sleeping).toContain('.sleep-z-pixel{fill:#4D4A43}')
+  expect(sleeping).not.toContain('fill="#F0EEE6"')
+
+  const tantrum = bandSvg(EMPTY_BARS, false, 1100, false, 'zh', undefined, undefined, { kind: 'reaction', reaction: 'tantrum' })
+  expect(tantrum).toContain('class="steam-pixel-light"')
+  expect(tantrum).toContain('.tantrum-steam .steam-pixel-light{fill:#D4D1C9}')
+  expect(tantrum).toContain('.tantrum-steam .steam-pixel-light{fill:#5E5B54}')
+
+  const testFail = bandSvg(EMPTY_BARS, false, 1100, false, 'zh', undefined, undefined, { kind: 'reaction', reaction: 'test-fail', icon: 'cross' })
+  expect(testFail).toContain('class="sweat"')
+  expect(testFail).toContain('.sweat{fill:#8FD0FF}')
+  expect(testFail).toContain('.sweat{fill:#2D7FB8}')
+  const testPass = bandSvg(EMPTY_BARS, false, 1100, false, 'zh', undefined, undefined, { kind: 'reaction', reaction: 'test-pass', icon: 'check' })
+  expect(testPass).toContain('class="reaction-pixel-blue"')
+  expect(testPass).toContain('.reaction-pixel-green{fill:#4B765D}')
+  const done = bandSvg(EMPTY_BARS, false, 1100, false, 'zh', undefined, undefined, { kind: 'done' })
+  expect(done).toContain('class="done-sparkle-pixel"')
+  expect(done).toContain('.done-sparkle-pixel{fill:#8A5B00}')
+
+  const winterMorning = { level: 1, title: 'Clawd Lv.1', mood: moodAt(new Date(2026, 0, 15, 8))! }
+  const winter = bandSvg(EMPTY_BARS, false, 1100, false, 'zh', winterMorning)
+  expect(winter).toContain('class="mood-snow-bright"')
+  expect(winter).toContain('class="mood-snow-cool"')
+  expect(winter).toContain('.mood-snow-bright{fill:#F4F2EC}')
+  expect(winter).toContain('.mood-snow-bright{fill:#5B6B79}')
+  expect(winter).toContain('class="mood-coffee-cup"')
+  expect(winter).toContain('class="mood-coffee-handle"')
+  expect(winter).toContain('.mood-coffee-cup{fill:#E7DDD0}')
+  expect(winter).toContain('.mood-coffee-cup{fill:#5A4638}')
+  expect(winter).toContain('.mood-steam{stroke:#6B6862}')
+  expect(winter).not.toContain('fill="#F4F2EC"')
+  expect(winter).not.toContain('fill="#DDE8F2"')
+  const winterMini = bandSvg(EMPTY_BARS, false, 1100, true, 'zh', winterMorning)
+  expect(winterMini).toContain('class="mood-coffee-cup"')
+  expect(winterMini).not.toContain('fill="#E7DDD0"')
+
+  const spring = bandSvg(EMPTY_BARS, false, 1100, false, 'zh', { level: 1, title: 'Clawd Lv.1', mood: moodAt(new Date(2026, 3, 15, 12))! })
+  expect(spring).toContain('class="mood-petal-pink"')
+  expect(spring).toContain('.mood-petal-pink{fill:#A74254}')
+  const autumn = bandSvg(EMPTY_BARS, false, 1100, false, 'zh', { level: 1, title: 'Clawd Lv.1', mood: moodAt(new Date(2026, 9, 15, 12))! })
+  expect(autumn).toContain('class="mood-autumn-amber"')
+  expect(autumn).toContain('.mood-autumn-amber{fill:#8A4F0A}')
+  const summer = bandSvg(EMPTY_BARS, false, 1100, false, 'zh', { level: 1, title: 'Clawd Lv.1', mood: moodAt(new Date(2026, 6, 15, 12))! })
+  expect(summer).toContain('class="mood-sun-highlight"')
+  expect(summer).toContain('.mood-sun-highlight{fill:#8A5B00}')
+  const newYear = bandSvg(EMPTY_BARS, false, 1100, false, 'zh', { level: 1, title: 'Clawd Lv.1', mood: moodAt(new Date(2026, 11, 31, 12))! })
+  expect(newYear).toContain('class="mood-fireworks"')
+  expect(newYear).toContain('.mood-blue{fill:#3C6F92}')
+
+  const christmas = bandSvg(EMPTY_BARS, false, 1100, false, 'zh', { level: 1, title: 'Clawd Lv.1', mood: moodAt(new Date(2026, 11, 25, 12))! })
+  expect(christmas).toContain('class="mood-paper-white"')
+  expect(christmas).toContain('.mood-paper-white{fill:#F4F2EC}')
+  expect(christmas).toContain('.mood-paper-white{fill:#514E47}')
+  expect(christmas).not.toContain('fill="#F4F2EC"')
+
+  const halloween = bandSvg(EMPTY_BARS, false, 1100, false, 'zh', { level: 1, title: 'Clawd Lv.1', halloween: true, askAgo: 0 } as never)
+  expect(halloween).toContain('class="halloween-paper"')
+  expect(halloween).toContain('class="halloween-neutral"')
+  expect(halloween).toContain('class="halloween-gold"')
+  expect(halloween).toContain('class="halloween-pink"')
+  expect(halloween).toContain('class="halloween-orange"')
+  expect(halloween).toContain('class="halloween-blue"')
+  expect(halloween).toContain('.halloween-paper{fill:#514E47}')
+  expect(halloween).toContain('.halloween-neutral{fill:#77746C}')
+  expect(halloween).toContain('.halloween-pink[opacity=".55"]{opacity:1}')
+  expect(halloween).toContain('.halloween-orange{fill:#B65B00}')
+})
+
 test('活动和反应覆盖时段、季节与节日装扮，睡眠仍可显示', () => {
   const pet = { level: 10, title: 'Clawd Lv.10', mood: moodAt(new Date(2026, 11, 25, 8))! }
   const active: { isWorking: boolean; activity: Activity }[] = [
@@ -569,6 +650,23 @@ test('英文界面：四块仍然左右留白相等、间距相等', EN, async (
   const gaps = [blocks[0][0] - (22 + 16 * 4.5), ...[1, 2, 3].map(i => blocks[i][0] - (blocks[i - 1][0] + blocks[i - 1][1]))]
   for (const g of gaps) expect(near(g, gaps[0])).toBe(true)
   expect(near(1068 - (blocks[3][0] + blocks[3][1]), 22)).toBe(true)
+})
+
+test('信息栏渲染出错：回退到后续渲染器', ZH, async ($, on) => {
+  mock.store(on, {})
+  mock.clock(on)
+  on('state.get', () => ({ deny: 'state read failed' }))
+  let fallbackCalls = 0
+  on('ui.render', { component: 'AbovePrompt' }, ($, e) => {
+    fallbackCalls++
+    const { Text } = $.ui.resolve(e)
+
+    return <Text>fallback</Text>
+  })
+
+  const ui = await $.ui.mount({ ...BAND(false), surface: 'desktop' })
+  expect(fallbackCalls).toBe(1)
+  expect(await ui.find({ type: 'Text', text: 'fallback' })).toBeDefined()
 })
 
 test('跟随系统：环境变量是中文 → 中文，不去问 macOS', AUTO, async ($, on) => {
