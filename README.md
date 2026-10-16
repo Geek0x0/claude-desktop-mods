@@ -34,8 +34,6 @@ Forked from [manson341349-beep/claude-desktop-mods](https://github.com/manson341
 
 ![A grid of Clawd's looks, each shown expanded and collapsed: idle, working with a terminal icon, needs you (!), question (?), done, sleep, compacting, tests pass, tests fail, oops, tantrum, morning coffee, night cap, autumn, winter, Christmas and New Year](assets/usage-pet-looks.png)
 
-🎬 宣传片 / Promo video（English · 中文）: [x.com/Superboy4949](https://x.com/Superboy4949/status/2106760680837890311)
-
 ---
 
 ## 中文
