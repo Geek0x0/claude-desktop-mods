@@ -261,6 +261,8 @@ export function tokensText(n: number): string {
   return n >= 1000 ? `${Math.round(n / 1000)}k` : `${n}`
 }
 
+export const formatCost = (usd: number): string => `$${usd.toFixed(2)}`
+
 const grouped = (n: number) => String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
 
 function resetText(resetsAt: string | undefined, lang: Lang): string {
@@ -363,7 +365,7 @@ const blockWidth = (g: Gauge, layout: Layout) =>
   layout === 'full'
     ? contentWidth(g)
     : layout === 'compact'
-      ? RING_W + RING_LABEL_GAP + textWidth(g.label, LAB_SIZE) + timerWidth(g, TIMER_SIZE)
+      ? RING_W + RING_LABEL_GAP + (g.kind === 'cost' ? Math.max(textWidth(g.label, LAB_SIZE), textWidth(g.sub, SUB_SIZE)) : textWidth(g.label, LAB_SIZE)) + timerWidth(g, TIMER_SIZE)
       : layout === 'stacked'
         ? Math.max(RING_W, textWidth(g.label, STACKED_LABEL))
         : RING_W
@@ -373,8 +375,12 @@ const MIN_GAP: Record<Layout, number> = { full: 14, compact: 14, stacked: 10, ri
 // 最窄排法只留圆环；Clawd 按本体的 16 格计宽，笔记本和动效伸进间距
 export const MIN_BAND_W = Math.ceil(2 * CLAWD_X + CLAWD_W + 4 * RING_W + 4 * MIN_GAP.rings)
 export const MIN_BAND_W_WITH_FABLE = Math.ceil(2 * CLAWD_X + CLAWD_W + 5 * RING_W + 5 * MIN_GAP.rings)
+export const MIN_BAND_W_WITH_COST = MIN_BAND_W + RING_W + MIN_GAP.rings
+export const MIN_BAND_W_WITH_FABLE_AND_COST = MIN_BAND_W_WITH_FABLE + RING_W + MIN_GAP.rings
 export const MIN_BAND_W_WITH_ACTIVITY = MIN_BAND_W + ACTIVITY_LAYOUT_RESERVE
 export const MIN_BAND_W_WITH_FABLE_AND_ACTIVITY = MIN_BAND_W_WITH_FABLE + ACTIVITY_LAYOUT_RESERVE
+export const MIN_BAND_W_WITH_COST_AND_ACTIVITY = MIN_BAND_W_WITH_COST + ACTIVITY_LAYOUT_RESERVE
+export const MIN_BAND_W_WITH_FABLE_AND_COST_AND_ACTIVITY = MIN_BAND_W_WITH_FABLE_AND_COST + ACTIVITY_LAYOUT_RESERVE
 
 export function pickLayout(gauges: { label: string; sub: string; detail: string }[], width: number, clawdWidth = CLAWD_W): Layout {
   const need = (layout: Layout) =>
@@ -384,6 +390,7 @@ export function pickLayout(gauges: { label: string; sub: string; detail: string 
 }
 
 type Gauge = {
+  kind?: 'cost'
   tier?: Tier
   id: string
   label: string
@@ -442,7 +449,36 @@ function odometer(g: Gauge, i: number, cx: number, cy: number, isChanged: boolea
   return digits + (isWide ? '' : `<text x="${(left + s.length * dig + 0.5).toFixed(1)}" y="${cy + NUM_BASELINE}" class="pct">%</text>`)
 }
 
+function costGauge(g: Gauge, i: number, x: number, w: number, isFirst: boolean, layout: Layout): string {
+  const cx = layout === 'stacked' ? x + w / 2 : x + RING_CX_OFFSET
+  const cy = layout === 'stacked' ? STACKED_RING_CY : RING_CY
+  const badgeText = layout === 'stacked' || layout === 'rings'
+    ? `<text x="${cx}" y="${cy + 2}" class="cost-glyph in-badge">$</text><text x="${cx}" y="${cy + 16}" class="cost-value in-badge">${g.sub.slice(1)}</text>`
+    : `<text x="${cx}" y="${cy + 8}" class="cost-glyph">$</text>`
+  const textX = cx + R + 10
+  const details = layout === 'full'
+    ? `<text x="${textX}" y="${cy - 3}" class="lab">${g.label}</text><text x="${textX}" y="${cy + 11}" class="cost-value">${g.sub}</text><text x="${textX}" y="${cy + 25}" class="cost-sub">${g.detail}</text>`
+    : layout === 'compact'
+      ? `<text x="${textX}" y="${cy - 3}" class="lab">${g.label}</text><text x="${textX}" y="${cy + 11}" class="cost-value">${g.sub}</text>`
+      : layout === 'stacked'
+        ? `<text x="${cx}" y="${H - 7}" text-anchor="middle" class="lab stk">${g.label}</text>`
+        : ''
+
+  return (
+    `<g class="g${isFirst ? ' enter' : ''}"${isFirst ? ` style="animation-delay:${(i * 0.06).toFixed(2)}s"` : ''}>` +
+    `<title>${g.title}</title>` +
+    `<rect x="${x}" y="0" width="${w.toFixed(1)}" height="${H}" fill="transparent"/>` +
+    `<g class="ring"><circle cx="${cx}" cy="${cy}" r="${R}" class="cost-badge"/>${badgeText}</g>` +
+    details +
+    `</g>`
+  )
+}
+
 function gauge(g: Gauge, i: number, x: number, w: number, isChanged: boolean, isFirst: boolean, css: string[], layout: Layout = 'full', lang: Lang = 'zh'): string {
+  if (g.kind === 'cost') {
+    return costGauge(g, i, x, w, isFirst, layout)
+  }
+
   // stacked：圆环在这一块里居中、往上挪，给下面的小字标题让位
   const cx = layout === 'stacked' ? x + w / 2 : x + RING_CX_OFFSET
   const cy = layout === 'stacked' ? STACKED_RING_CY : RING_CY
@@ -913,6 +949,10 @@ const EXPANDED_STYLE =
   `.track{stroke:#E8E5DC}.sep{stroke:#E5E2D9}.glow{opacity:.3}.chip.ok{fill:#C2603F}.chip.warn{fill:#B26E12}.chip.danger{fill:#D2392B}.glyph{fill:#6B6862}` +
   `}`
 
+const COST_STYLE =
+  `.cost-badge{fill:url(#grad-ok);stroke:#F3B18F;stroke-width:1.2}.cost-glyph{font-size:21px;font-weight:800;fill:#231511;text-anchor:middle}.cost-glyph.in-badge{font-size:15px}.cost-value{font-size:${SUB_SIZE}px;font-weight:700;fill:#ECEAE4;font-variant-numeric:tabular-nums}.cost-value.in-badge{font-size:8px}.cost-sub{font-size:10px;fill:#8C8A84}` +
+  `@media (prefers-color-scheme:light){.cost-badge{stroke:#C2603F}.cost-glyph{fill:#231511}.cost-value{fill:#2D2C2A}.cost-sub{fill:#77746C}}`
+
 const MINI_STYLE =
   `.pace{transform-origin:center}.mini.working .pace{animation:pace 3.2s ease-in-out infinite}` +
   `.mini.working .legA,.mini.working .legB{opacity:1}.mini.working .legA{animation:step .3s ease-in-out infinite alternate}.mini.working .legB{animation:step .3s ease-in-out .15s infinite alternate}` +
@@ -1081,12 +1121,13 @@ function miniSvg(gauges: Gauge[], isWorking: boolean, isStressed: boolean, width
   // 窄窗口同样逐级收：标签 + 细条 + 百分比 → 标签 + 百分比 → 短标签 + 百分比 → 只剩百分比（完整标签在悬停提示里）
   const measure = (showBar: boolean, showLabel: boolean, isShort = false) =>
     gauges.map(g => {
-      const value = g.to === undefined ? '—' : `${Math.round(g.to)}%`
+      const value = g.kind === 'cost' ? g.sub : g.to === undefined ? '—' : `${Math.round(g.to)}%`
       const label = isShort ? (g.short ?? g.label) : g.label
       const labelW = showLabel ? textWidth(label, MINI_LABEL_SIZE) : 0
       const valueW = textWidth(value, MINI_VALUE_SIZE) * 1.05
+      const showProgress = showBar && g.kind !== 'cost'
 
-      return { g, value, label, labelW, valueW, showBar, showLabel, w: (showLabel ? labelW + 8 : 0) + (showBar ? MINI_BAR + 8 : 0) + valueW + timerWidth(g, TIMER_SIZE) }
+      return { g, value, label, labelW, valueW, showBar: showProgress, showLabel, w: (showLabel ? labelW + 8 : 0) + (showProgress ? MINI_BAR + 8 : 0) + valueW + timerWidth(g, TIMER_SIZE) }
     })
   // 间距至少 24px：Clawd 干活时会往右跑 20px，不能撞上第一项
   const fits = (list: { w: number }[], activityReserve = 0) =>
@@ -1214,7 +1255,23 @@ export function bandSvg(bars: Bars, isWorking: boolean, width: number, mini = fa
       to: to?.cache?.rate,
       timerMs: timer?.remainMs,
     },
+    ...(to?.cost
+      ? [
+          {
+            kind: 'cost' as const,
+            id: 'cost',
+            label: t.cost,
+            short: t.short.cost,
+            sub: formatCost(to.cost.usd),
+            detail: t.thisSession,
+            title: `${t.cost} ${formatCost(to.cost.usd)} · ${t.thisSession}`,
+            from: from?.cost?.usd,
+            to: to.cost.usd,
+          },
+        ]
+      : []),
   ]
+  const hasCost = gauges.some(g => g.kind === 'cost')
   if (mini) {
     return miniSvg(gauges, isWorking, isStressed, width, isChill, pet, lang, displayActivity)
   }
@@ -1242,7 +1299,7 @@ export function bandSvg(bars: Bars, isWorking: boolean, width: number, mini = fa
 
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${H}" width="${width}" height="${H}" style="color-scheme:light dark;background:transparent">` +
-    `<style>${STYLE}${EXPANDED_STYLE}${activityStyle(displayActivity)}${isStressed ? SWEAT_STYLE : ''}${mood ? MOOD_STYLE : ''}${pet?.halloween ? HALLOWEEN_STYLE : ''}${hasTimer ? TIMER_STYLE : ''}${css.join('')}${isWorking ? DITHER_STYLE : ''}</style>` +
+    `<style>${STYLE}${EXPANDED_STYLE}${activityStyle(displayActivity)}${isStressed ? SWEAT_STYLE : ''}${mood ? MOOD_STYLE : ''}${pet?.halloween ? HALLOWEEN_STYLE : ''}${hasTimer ? TIMER_STYLE : ''}${hasCost ? COST_STYLE : ''}${css.join('')}${isWorking ? DITHER_STYLE : ''}</style>` +
     DEFS +
     (isWorking ? ditherSvg(width, H) : '') +
     `<g class="gauges">${seps}${blocks}</g>` +
@@ -1263,6 +1320,7 @@ export function bandAlt(to: Snap | null, isWorking: boolean, lang: Lang = 'zh'):
       `${t.weekly} ${pct(to?.weekly?.percent)}`,
       ...(to?.fable ? [`${t.fable} ${pct(to.fable.percent)}`] : []),
       `${t.cache} ${pct(to?.cache?.rate)}`,
+      ...(to?.cost ? [`${t.cost} ${formatCost(to.cost.usd)}`] : []),
     ].join(sep) +
     (lang === 'zh' ? '；' : '; ') +
     (isWorking ? t.working : t.resting)

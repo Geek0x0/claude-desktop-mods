@@ -1,6 +1,6 @@
 // Clawd 战报卡：一张 640×360（16:9）的 SVG，面板里直接画，也导出成 PNG 发 X。
 // 固定深色：它是一张「图片」，不是界面的一部分，浅色外观下也是同一张卡。
-import { clawdBody, tokensText } from './band'
+import { clawdBody, formatCost, tokensText } from './band'
 import { type Lang, T } from './i18n'
 import { type Achievement, levelOf, type Pet, threshold } from './pet'
 
@@ -16,6 +16,7 @@ export type CardData = {
   files: number
   tokens: number
   cacheRate?: number
+  cost?: number
   pet: Pet
   // 这个会话里新解锁的成就
   earned: Achievement[]
@@ -65,6 +66,7 @@ export function cardSvg(data: CardData, lang: Lang, canvas: CardCanvas = 'pane')
   // 时长写成「2h 14m」，单位用小一号的字：中文「2 小时 14 分」放大字号会挤进隔壁一格
   const h = Math.floor(minutes / 60)
   const duration = h > 0 ? `${h}<tspan class="u">h</tspan> ${minutes % 60}<tspan class="u">m</tspan>` : `${minutes}<tspan class="u">m</tspan>`
+  const hasCost = data.cost !== undefined
   const stats: [string, string][] = [
     [duration, t.duration],
     [String(data.turns), t.turns],
@@ -72,11 +74,12 @@ export function cardSvg(data: CardData, lang: Lang, canvas: CardCanvas = 'pane')
     [String(data.files), t.files],
     [tokensText(data.tokens), t.tokens],
     [data.cacheRate === undefined ? '—' : `${Math.round(data.cacheRate)}%`, t.cache],
+    ...(data.cost === undefined ? [] : [[formatCost(data.cost), t.cost] as [string, string]]),
   ]
   const grid = stats
     .map(([value, label], i) => {
-      const x = 268 + (i % 3) * 120
-      const y = 128 + Math.floor(i / 3) * 78
+      const x = hasCost && i === 6 ? 388 : 268 + (i % 3) * 120
+      const y = hasCost ? 110 + Math.floor(i / 3) * 54 : 128 + Math.floor(i / 3) * 78
 
       return `<text x="${x}" y="${y}" class="v">${i === 0 ? value : esc(value)}</text><text x="${x}" y="${y + 20}" class="l">${esc(label)}</text>`
     })
@@ -131,6 +134,7 @@ export function cardAlt(data: CardData, lang: Lang): string {
     `${t.files} ${data.files}`,
     `${t.tokens} ${tokensText(data.tokens)}`,
     `${t.cache} ${data.cacheRate === undefined ? '—' : `${Math.round(data.cacheRate)}%`}`,
+    ...(data.cost === undefined ? [] : [`${t.cost} ${formatCost(data.cost)}`]),
     ...(data.week ? [`${t.week(data.week.since)} ${tokensText(data.week.total)} tokens`] : []),
   ].join(' · ')
 }

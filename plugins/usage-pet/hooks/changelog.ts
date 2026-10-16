@@ -6,6 +6,13 @@ export type Release = { version: string; notes: Record<Lang, string[]> }
 
 export const CHANGELOG: Release[] = [
   {
+    version: '1.13.0',
+    notes: {
+      zh: ['新增本会话费用读数：与 /cost 显示的 API 等价费用一致；订阅用户看到的是估算，不是账单。'],
+      en: ['Added session cost from the API-equivalent total shown by /cost; subscription amounts are estimates, not bills.'],
+    },
+  },
+  {
     version: '1.12.2',
     notes: {
       zh: ['更流畅：每轮对话的重画从约 11 次减到约 8 次，动画不再被反复打断；信息栏图形体积减小约 30%，外观不变'],

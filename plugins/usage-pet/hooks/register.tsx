@@ -1,7 +1,7 @@
 import { atom, read } from 'claude-code'
 import type { Atom, EngineInterface, ModelUsage, PluginState, Register, SessionContextUsage, SessionRateLimit, StateRef, Timer } from 'claude-code'
 
-import type { Activity, Bars, CacheStat, CacheTotals, Pet, ReactionKind, Report, Snap, Week, Window } from '../types'
+import type { Activity, Bars, CacheStat, CacheTotals, Pet, ReactionKind, Report, SessionCost, Snap, Week, Window } from '../types'
 import {
   bandAlt,
   bandSvg,
@@ -9,9 +9,14 @@ import {
   H,
   H_MINI,
   MIN_BAND_W,
+  MIN_BAND_W_WITH_COST,
+  MIN_BAND_W_WITH_COST_AND_ACTIVITY,
   MIN_BAND_W_WITH_ACTIVITY,
   MIN_BAND_W_WITH_FABLE,
+  MIN_BAND_W_WITH_FABLE_AND_COST,
+  MIN_BAND_W_WITH_FABLE_AND_COST_AND_ACTIVITY,
   MIN_BAND_W_WITH_FABLE_AND_ACTIVITY,
+  formatCost,
   type PetView,
   tokensText,
 } from './band'
@@ -346,7 +351,7 @@ const ICON_COLLAPSE = '▼'
 const sameSnap = (a: Snap | null, b: Snap | null) => JSON.stringify(a) === JSON.stringify(b)
 type FableSession = { lastFetchAt?: number; value?: Window | null; refreshing?: boolean }
 
-function toSnap(context: SessionContextUsage, rateLimits: SessionRateLimit[]): Snap {
+function toSnap(context: SessionContextUsage, rateLimits: SessionRateLimit[], cost?: SessionCost): Snap {
   const pick = (kind: string) => {
     const w = rateLimits.find(r => r.kind === kind)
     return w ? { percent: w.percentUsed, resetsAt: w.resetsAt } : undefined
@@ -358,6 +363,7 @@ function toSnap(context: SessionContextUsage, rateLimits: SessionRateLimit[]): S
     contextWindow: context.window,
     session: pick('five_hour'),
     weekly: pick('seven_day'),
+    ...(cost ? { cost } : {}),
   }
 }
 
@@ -525,10 +531,11 @@ async function expandForAWhile($: EngineInterface) {
   })
 }
 
-async function record($: EngineInterface, snap: Omit<Snap, 'fable'> & { fable?: Window | null }) {
+async function record($: EngineInterface, snap: Omit<Snap, 'fable'> & { fable?: Window | null }, newSession = false) {
   const previous = await read($, barsAtom)
   const fable = snap.fable === null ? undefined : snap.fable ?? previous.to?.fable
-  const full: Snap = { ...snap, fable, cache: cacheStat(await read($, cacheAtom)) }
+  const cost = snap.cost ?? (newSession ? undefined : previous.to?.cost)
+  const full: Snap = { ...snap, ...(cost ? { cost } : {}), fable, cache: cacheStat(await read($, cacheAtom)) }
   let changed = false
   await updateIfChanged($, barsAtom, bars => {
     changed = !sameSnap(bars.to, full)
@@ -733,6 +740,7 @@ async function growPet($: EngineInterface, rate: number | undefined) {
 async function cardData($: EngineInterface, seasonal: boolean, lang: Lang): Promise<CardData> {
   const r = await read($, reportAtom)
   const c = await read($, cacheAtom)
+  const bars = await read($, barsAtom)
 
   return {
     startedAt: r.startedAt || Date.now(),
@@ -742,6 +750,7 @@ async function cardData($: EngineInterface, seasonal: boolean, lang: Lang): Prom
     files: r.files.length,
     tokens: c.read + c.write + c.fresh + r.output,
     cacheRate: cacheStat(c)?.rate,
+    cost: bars.to?.cost?.usd,
     pet: await read($, petAtom),
     earned: r.earned as Achievement[],
     halloween: seasonal && isHalloween(new Date(await clockNow($))),
@@ -858,7 +867,7 @@ export const register: Register = (on, options) => {
           turnRate: turnRate(last),
         }))
       }
-      await record($, { ...toSnap(u.context, u.rateLimits), fable: fableState.value })
+      await record($, { ...toSnap(u.context, u.rateLimits, u.cost), fable: fableState.value }, true)
       try {
         await refreshWeek($, await clockNow($))
       } catch (err) {
@@ -1149,7 +1158,7 @@ export const register: Register = (on, options) => {
   })
 
   on('session.measure', async ($, e, next) => {
-    await record($, { ...toSnap(e.context, e.rateLimits), fable: fableState.value })
+    await record($, { ...toSnap(e.context, e.rateLimits, e.cost), fable: fableState.value })
 
     return next(e)
   })
@@ -1181,13 +1190,15 @@ export const register: Register = (on, options) => {
         // 不设大下限：以前最少 560px，窗口窄时信息栏比可用宽度还宽，按钮就被挤到下一行。
         // 窄了由 bandSvg 自己逐级收（去副标题 → 只剩圆环），按钮始终在同一行右侧
         // 工具图标伸出 Clawd 本体的排布框，活动时给它单独留位
-        const minimumWidth = bars.to?.fable
-          ? hasActivityIcon
-            ? MIN_BAND_W_WITH_FABLE_AND_ACTIVITY
-            : MIN_BAND_W_WITH_FABLE
-          : hasActivityIcon
-            ? MIN_BAND_W_WITH_ACTIVITY
-            : MIN_BAND_W
+        const hasFable = bars.to?.fable !== undefined
+        const hasCost = bars.to?.cost !== undefined
+        const minimumWithoutActivity = hasFable
+          ? hasCost ? MIN_BAND_W_WITH_FABLE_AND_COST : MIN_BAND_W_WITH_FABLE
+          : hasCost ? MIN_BAND_W_WITH_COST : MIN_BAND_W
+        const minimumWithActivity = hasFable
+          ? hasCost ? MIN_BAND_W_WITH_FABLE_AND_COST_AND_ACTIVITY : MIN_BAND_W_WITH_FABLE_AND_ACTIVITY
+          : hasCost ? MIN_BAND_W_WITH_COST_AND_ACTIVITY : MIN_BAND_W_WITH_ACTIVITY
+        const minimumWidth = hasActivityIcon ? minimumWithActivity : minimumWithoutActivity
         const width = Math.max(minimumWidth, e.props.bodyColumns * PX_PER_COLUMN - 8 - BUTTON_W)
         const pinned = await read($, pinnedAtom)
         const isMini = !pinned && !(await read($, expandedAtom))
@@ -1250,6 +1261,17 @@ export const register: Register = (on, options) => {
           {meter('session', t.session, snap?.session?.percent, termReset(snap?.session?.resetsAt, lang))}
           {meter('weekly', t.weekly, snap?.weekly?.percent, termReset(snap?.weekly?.resetsAt, lang))}
           {snap?.fable ? meter('fable', t.fable, snap.fable.percent, termReset(snap.fable.resetsAt, lang)) : null}
+          {snap?.cost ? (
+            <Box key="cost" flexDirection="column" flexGrow={1} flexShrink={1} minWidth={18}>
+              <Box flexDirection="row" justifyContent="space-between" columnGap={1}>
+                <Text wrap="truncate">{t.cost}</Text>
+                <Text>{formatCost(snap.cost.usd)}</Text>
+              </Box>
+              <Text dimColor wrap="truncate">
+                {t.thisSession}
+              </Text>
+            </Box>
+          ) : null}
         </Box>
       )
     } catch (error) {
