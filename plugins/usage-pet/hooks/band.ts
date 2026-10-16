@@ -492,7 +492,7 @@ function costGauge(g: Gauge, i: number, x: number, w: number, isFirst: boolean, 
   const cx = layout === 'stacked' ? x + w / 2 : x + RING_CX_OFFSET
   const cy = layout === 'stacked' ? STACKED_RING_CY : RING_CY
   const badgeText = layout === 'stacked' || layout === 'rings'
-    ? `<text x="${cx}" y="${cy + 2}" class="cost-glyph in-badge">$</text><text x="${cx}" y="${cy + 16}" class="cost-value in-badge">${g.sub.slice(1)}</text>`
+    ? `<text x="${cx}" y="${cy - 2.2}" class="cost-glyph in-badge">$</text><text x="${cx}" y="${cy + 11}" text-anchor="middle" class="cost-value in-badge">${g.sub.slice(1)}</text>`
     : `<text x="${cx}" y="${cy + 8}" class="cost-glyph">$</text>`
   const textX = cx + R + 10
   const details = layout === 'full'
@@ -1008,7 +1008,7 @@ const COMPACT_TICK_STYLE =
   `@media (prefers-color-scheme:light){.compact-tick{stroke:#77746C}}`
 
 const COST_STYLE =
-  `.cost-badge{fill:url(#grad-ok);stroke:#F3B18F;stroke-width:1.2}.cost-glyph{font-size:21px;font-weight:800;fill:#231511;text-anchor:middle}.cost-glyph.in-badge{font-size:15px}.cost-value{font-size:${SUB_SIZE}px;font-weight:700;fill:#ECEAE4;font-variant-numeric:tabular-nums}.cost-value.in-badge{font-size:8px}.cost-sub{font-size:10px;fill:#8C8A84}` +
+  `.cost-badge{fill:url(#grad-ok);stroke:#F3B18F;stroke-width:1.2}.cost-glyph{font-size:21px;font-weight:800;fill:#231511;text-anchor:middle}.cost-glyph.in-badge{font-size:15px}.cost-value{font-size:${SUB_SIZE}px;font-weight:700;fill:#ECEAE4;font-variant-numeric:tabular-nums}.cost-value.in-badge{font-size:10px}.cost-sub{font-size:10px;fill:#8C8A84}` +
   `@media (prefers-color-scheme:light){.cost-badge{stroke:#C2603F}.cost-glyph{fill:#231511}.cost-value{fill:#2D2C2A}.cost-sub{fill:#77746C}}`
 
 const MINI_CLAWD_STYLE =

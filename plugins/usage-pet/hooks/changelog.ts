@@ -6,6 +6,13 @@ export type Release = { version: string; notes: Record<Lang, string[]> }
 
 export const CHANGELOG: Release[] = [
   {
+    version: '1.15.2',
+    notes: {
+      zh: ['修复：窗口较窄时，圆形 $ 费用徽章中的金额现在居中对齐；字号略微增大，$ 与金额也会垂直居中排列'],
+      en: ['Fix: in narrow windows, the session cost is now centred under the $ in its round badge; the amount is slightly larger, and the $ and amount sit vertically centred together'],
+    },
+  },
+  {
     version: '1.15.1',
     notes: {
       zh: ['修复：用量数字变化时信息栏不再自动展开；点击 ▲ 或运行 /clawd 展开，点击 ▼ 或再次运行 /clawd 收起，并保留上次的展开选择'],

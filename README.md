@@ -40,7 +40,7 @@ Forked from [manson341349-beep/claude-desktop-mods](https://github.com/manson341
 
 ## 中文
 
-### usage-pet：Clawd 信息栏（v1.15.1）
+### usage-pet：Clawd 信息栏（v1.15.2）
 
 - **四个基础用量环**：上下文、5 小时额度、每周额度、缓存命中率（仅主对话本会话，排除子代理）；圆环、标签和百分比比早期版本更大。80% 变琥珀色，95% 变红，缓存命中低于 50% 才提醒。上下文环标出自动压缩位置（关闭自动压缩时不显示），悬停可看距压缩还剩多少 tokens，已到位置时显示「即将压缩」；5 小时、每周和 Fable 每周额度若可能在重置前用完，悬停显示预计用完时间（窗口前 10% 不显示），否则显示剩余时间
 - **Fable 每周（可选第五环）**：有额度时显示在每周之后，沿用额度环的琥珀色 / 红色阈值。仅当符合条件的 Claude 订阅 OAuth 登录有 Fable 每周额度时显示；API 密钥、Bedrock/Vertex、网关、未登录或请求失败时不显示，刷新失败保留上次读数。插件在会话开始和回复后自行 GET Anthropic 用量接口（`https://api.anthropic.com/api/oauth/usage`），最多每 5 分钟一次；宿主添加凭据，插件看不到令牌，也不发送提示词、回复或遥测。策略 `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` 或组织网页请求限制可能会阻止获取
@@ -107,7 +107,7 @@ claude plugin uninstall usage-pet@claude-desktop-mods
 
 ## English
 
-### usage-pet (v1.15.1)
+### usage-pet (v1.15.2)
 
 - **Four base rings**: context, 5-hour limit, weekly limit and cache hit rate (cumulative for the main conversation this session, excluding subagents), plus an optional fifth Fable weekly ring. Rings, labels and percentages are larger than in earlier versions. Amber at 80%, red at 95%; cache hit warns below 50%. The context ring marks where auto-compaction kicks in (hidden when auto-compact is off); hover to see tokens left, or "compacting soon" at or past the mark. If a 5-hour, weekly or Fable weekly limit may run out before reset, hover to see when (hidden in the first 10% of a window); otherwise it shows time left
 - **Fable weekly**: when available, this separate allowance appears after Weekly with percent used and reset time, using the same amber/red thresholds. It appears only for an eligible first-party OAuth Claude subscription; API keys, Bedrock/Vertex, gateways, no login or a failed request leave it hidden, and refresh failures keep the last good value. The plugin fetches it at session start and after replies, at most every 5 minutes, using host-side authorization; no token, prompts, replies or telemetry are sent. `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` or an organization policy can block the GET.
