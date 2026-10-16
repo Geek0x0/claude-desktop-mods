@@ -3,7 +3,7 @@
 为 **Claude 桌面 App 的 Code 页** 做的 mod（Claude Code 插件）。
 Mods for the **Code tab of the Claude Desktop app**.
 
-![Clawd types while Claude works; after the reply the rings count up, the cache countdown starts, and Clawd shows hearts on hover and flips when clicked](assets/usage-pet-demo.gif)
+![Working with the terminal tool icon and purple pixel dither, editing with a pencil icon, Claude asks a question with a blinking “?”, then after the reply Clawd is happy as the rings count up with +N% chips, followed by idle with the “60m” cache countdown next to Cache hit](assets/usage-pet-demo.gif)
 
 > **让 AI 代理帮你装？/ Installing with an AI agent?** 让它在终端运行下面两行 · Have it run these two commands in a shell:
 >
@@ -30,7 +30,9 @@ Forked from [manson341349-beep/claude-desktop-mods](https://github.com/manson341
 | --- | --- |
 | [`usage-pet`](plugins/usage-pet) | 输入框上方的用量信息栏 + Clawd 像素桌宠 · A usage band above the prompt with Clawd, an animated pixel pet |
 
-![usage-pet preview](assets/usage-pet-preview.png)
+![Light mode shows the expanded band in chill mode with sunglasses and a crown, plus a collapsed strip while editing with a pencil icon. Dark mode shows work with a terminal icon and purple dither, near-limit amber and red rings, and a collapsed idle Clawd wearing a nightcap](assets/usage-pet-preview.png)
+
+![A grid of Clawd's looks, each shown expanded and collapsed: idle, working with a terminal icon, needs you (!), question (?), done, sleep, compacting, tests pass, tests fail, oops, tantrum, morning coffee, night cap, autumn, winter, Christmas and New Year](assets/usage-pet-looks.png)
 
 🎬 宣传片 / Promo video（English · 中文）: [x.com/Superboy4949](https://x.com/Superboy4949/status/2106760680837890311)
 
@@ -38,24 +40,26 @@ Forked from [manson341349-beep/claude-desktop-mods](https://github.com/manson341
 
 ## 中文
 
-### usage-pet：Clawd 信息栏
+### usage-pet：Clawd 信息栏（v1.12.2）
 
-- **四项用量**：上下文、5 小时额度、每周额度、缓存命中率（本会话累计）。80% 变琥珀色，95% 变红；缓存命中低于 50% 才提醒
-- **Fable 每周（可选第五环）**：排在每周额度后，显示 Fable 模型独立的每周额度使用百分比和重置时间；沿用额度环的琥珀色 / 红色阈值，达到 90% Clawd 会冒汗。仅当 Claude 订阅的第一方 OAuth 登录有 Fable 每周额度时显示；API 密钥、Bedrock/Vertex、网关、未登录或请求失败时不显示，信息栏保持四环；刷新失败会保留上次成功的读数。Claude Code 插件 API 只提供 5 小时和每周窗口，因此插件在会话开始和每轮回复后自行 GET Anthropic 用量接口（`https://api.anthropic.com/api/oauth/usage`），最多每 5 分钟一次。插件通过 `$.session.authorize()` 和 `$.http.fetch` 发起请求，由宿主添加凭据，插件看不到令牌；只发送这个 GET，不发送提示词、回复或遥测。设置 `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` 或组织的网页请求策略可能会阻止获取。
-- **自动折叠**：平时是一条 30px 的细条；每次 Claude 回答完、数据刷新时自动展开 5 秒，播完动画再收起
+- **四个基础用量环**：上下文、5 小时额度、每周额度、缓存命中率（仅主对话本会话，排除子代理）；圆环、标签和百分比比早期版本更大。80% 变琥珀色，95% 变红，缓存命中低于 50% 才提醒
+- **Fable 每周（可选第五环）**：有额度时显示在每周之后，沿用额度环的琥珀色 / 红色阈值。仅当符合条件的 Claude 订阅 OAuth 登录有 Fable 每周额度时显示；API 密钥、Bedrock/Vertex、网关、未登录或请求失败时不显示，刷新失败保留上次读数。插件在会话开始和回复后自行 GET Anthropic 用量接口（`https://api.anthropic.com/api/oauth/usage`），最多每 5 分钟一次；宿主添加凭据，插件看不到令牌，也不发送提示词、回复或遥测。策略 `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` 或组织网页请求限制可能会阻止获取
+- **自动折叠**：平时是一条 30px 的细条；数值变化时（回复后、用量刷新或 Fable 读数变化）展开 5 秒，播完动画再收起
 - **展开时**：圆环依次扫入、数字像老虎机一样滚动、旁边飘出「+N%」
-- **缓存倒计时**：缓存命中旁边显示缓存还能热多久（订阅约 1 小时、API 密钥 5 分钟，每次回复重新计时），剩 5 分钟变色，过期显示「已过期」。缓存过期后下一轮要把整段对话重新写入缓存，更耗额度，赶在过期前回复更划算
-- **Clawd**：干活时显示工具图标，空闲时呼吸、眨眼、张望；需要你、完成、睡眠和压缩各有姿势；测试通过会欢呼，失败或工具报错会显示失误表情；20 分钟内 3 次烦躁提示后跺脚（`/config` 里 `tantrums` 设为 `off` 可关闭）。空闲或睡着时还有早晨咖啡、夜帽、季节天气、圣诞帽和新年派对帽；缓存命中 ≥90% 时戴墨镜放松（点子来自 [@Joshua_WD](https://x.com/Joshua_WD)）
-- **隐私**：只观察 `classic.PermissionRequest` 来显示「需要你」，从不替你回答或修改请求；情绪爆发功能只在本地检查 `prompt.submit` 文本是否含烦躁词句，不保存、不发送、不改写，`tantrums: off` 会关闭此检查；读取工具结果仅用于判断测试通过/失败和工具错误。
-- **中英双语**：默认跟随系统语言（macOS 读系统首选语言，Windows 读显示语言）；`/config` 里的 `language` 可以选 `auto` / `zh` / `en`
+- **缓存倒计时**：Claude 工作时隐藏，首轮回复后才显示在缓存命中旁（订阅约 1 小时、API 密钥 5 分钟，每次回复重新计时），剩 5 分钟变色，过期显示「已过期」。缓存过期后下一轮要把整段对话重新写入缓存，更耗额度
+- **Clawd 的活动与心情**：工作时显示对应工具图标，深色模式下信息栏有紫色像素点阵；空闲时呼吸、眨眼、张望；10 分钟无活动后睡觉。权限请求和计划批准（`ExitPlanMode`）显示「!」，`AskUserQuestion` 显示「?」；测试通过/失败、工具报错和烦躁也有专属反应（20 分钟内 3 次后跺脚，`tantrums: off` 关闭）。任何 5 小时、每周或 Fable 额度达到 90% 都会冒汗；仅当缓存命中 ≥90% 且没有额度达到 90% 才戴墨镜（点子来自 [@Joshua_WD](https://x.com/Joshua_WD)）
+- **工具图标**：Bash/PowerShell 是终端，Edit/Write/MultiEdit/NotebookEdit 是铅笔，Read/Grep/Glob 是放大镜，WebFetch/WebSearch 是地球，Agent/Task 是闪电，MCP 工具是小图标，其余是转圈图标
+- **时段与季节装扮**：北半球季节；咖啡 06:00–10:00，夜帽 22:00–06:00，圣诞节 12 月 20–26 日，新年 12 月 31 日至 1 月 1 日。`seasonal: off` 关闭这些装扮
+- **隐私**：只观察 `classic.PermissionRequest` 来显示「!」，从不替你回答或修改请求；计划批准（`ExitPlanMode`）也显示「!」。每条提交文本只检查去掉首尾空格后是否以 `/` 开头，以区分斜杠命令和对话；`tantrums` 开启时还会在 composer 本地检查烦躁词句。提示文本不保存、不发送、不改写；`tantrums: off` 只关闭烦躁检查。读取工具结果仅用于判断测试通过/失败和工具错误。
+- **中英双语**：默认跟随系统语言（macOS 读系统首选语言，Windows 读显示语言）；`language` 只认小写 `auto` / `zh` / `en`，其他值按 `auto` 处理
+- **配置**：`seasonal` 和 `tantrums` 填 `off`（不分大小写、忽略首尾空格）才会关闭；其他值保持开启
 - **浅色 / 深色**：跟着 Claude App 的外观设置自动切换，背景始终透明
-- **养成**：Claude 每答完一轮 Clawd 涨 10 点经验（缓存命中 ≥90% 再 +5，每天第一轮 +20）。Lv.2 头顶冒出小芽、Lv.3 戴红领结、Lv.5 换棒球帽、Lv.10 戴皇冠；还有 8 个成就（缓存大师、夜猫子、极限操作、连续 7 天……）。鼠标放到 Clawd 身上看等级和经验，数据跨会话保存
+- **养成**：Claude 每答完一轮 Clawd 涨 10 点经验（缓存命中 ≥90% 再 +5，每天第一轮 +20）。Lv.2 长出小芽、Lv.3 戴红领结、Lv.5 戴帽子、Lv.10 戴皇冠。悬停可看等级、经验和连续天数；展开时也显示近 7 天用量。8 个成就中，缓存大师、夜猫子、极限操作、一周不停等只在 `/clawd-card` 列出本会话新解锁项，不弹出提示；数据跨会话保存
 - **战报卡**：输入 `/clawd-card`，生成本次会话的战报（时长、回合、工具调用、改动文件、Tokens、缓存命中、等级、本次解锁的成就），复制到剪贴板、存到「图片/Clawd Reports」（只留最近 20 张，更早的自动移进废纸篓），直接粘贴到 X（macOS 用系统自带的 Quick Look 导出；Windows 用系统自带的 Edge，没有 Edge 时用 Chrome，旧图移进回收站）
 - **万圣节**（10 月 25 日到 11 月 1 日）：Clawd 戴巫师帽、拎南瓜桶；Claude 干活时披上床单变幽灵，旁边飘的代码换成糖果。每答完一轮他会举起桶**讨糖**：点他一下就是给糖（开心 3 秒），连点两下空翻、三下跳起来撒糖；12 秒没人理他就生气跺脚，点一下就消气。不想要时段、季节和节日装扮：`/config` 里把 `seasonal` 填成 `off`
 - **鼠标**：放到 Clawd 身上会冒爱心，点它会空翻；放到圆环上显示详细数值
 - **近 7 天用量**：信息栏展开时，鼠标放到 Clawd 身上显示最近 7 天（从现在往回 7×24 小时）用了多少 tokens，所有会话合计、含子代理；战报卡上也有这一行。插件自己按小时记账（Claude 只给当前会话的用量），所以从装上 1.9.0 起才开始记，不满 7 天时会写明从哪天开始
 - **切换**：点右侧 ▲ 一直展开，点 ▼ 收起；或在输入框输入 `/clawd`
-- **Clawd 成长**：升级和成就仍会计入等级与战报卡，不发送弹出提示
 
 ### 安装
 
@@ -87,7 +91,7 @@ claude plugin update usage-pet@claude-desktop-mods
 
 ### 需要什么 / 已知限制
 
-- Claude 桌面 App 的 **Code 页**，浅色、深色外观都支持。终端版只显示数字，没有 Clawd 和圆环动画
+- Claude 桌面 App 的 **Code 页**支持浅色和深色。终端只显示上下文、5 小时、每周（和 Fable）进度条，没有缓存命中或 Clawd；Remote Control、手机和网页端不显示
 - Claude Code **2.1.287 起**默认支持 mod；作者在 2.1.286（macOS）上实测，Windows 从 1.6.0 起支持
 - Windows 导出战报图片要用 Windows PowerShell 5.1（系统自带）和 Edge 或 Chrome
 - 桌面 App 目前有一个重画 bug（[anthropics/claude-code#99211](https://github.com/anthropics/claude-code/issues/99211)）：状态变化时动画会从头播；▲▼ 按钮偶尔点不动，可以用 `/clawd` 代替
@@ -102,24 +106,26 @@ claude plugin uninstall usage-pet@claude-desktop-mods
 
 ## English
 
-### usage-pet
+### usage-pet (v1.12.2)
 
-- **Four meters, with an optional fifth Fable weekly ring**: context window, 5-hour limit, weekly limit, and cache hit rate (cumulative for the session). Amber at 80%, red at 95%; cache hit warns below 50%
-- **Fable weekly**: shown after Weekly, this separate Fable model allowance displays its percent used and reset time. It uses the same amber/red thresholds as the other limits, and Clawd sweats at 90%+. It appears only for a first-party OAuth Claude subscription login that has a Fable weekly limit. API keys, Bedrock/Vertex, gateways, no login, or a failed request leave the band at four rings; a refresh failure keeps the last good value. Claude Code's plugin API exposes only the 5-hour and weekly windows, so the plugin makes its own GET to Anthropic's usage endpoint (`https://api.anthropic.com/api/oauth/usage`) at session start and after replies, at most once every 5 minutes. It uses `$.session.authorize()` and `$.http.fetch`; Claude Code adds the credential on the host side, and the plugin never sees the token. The only request is that GET: no prompts, replies, or telemetry are sent. `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` or an organization web-fetch policy can block it.
-- **Auto-collapse**: a 30px strip most of the time; expands for 5 seconds whenever usage data refreshes, plays its animations, then collapses
+- **Four base rings**: context, 5-hour limit, weekly limit and cache hit rate (cumulative for the main conversation this session, excluding subagents), plus an optional fifth Fable weekly ring. Rings, labels and percentages are larger than in earlier versions. Amber at 80%, red at 95%; cache hit warns below 50%
+- **Fable weekly**: when available, this separate allowance appears after Weekly with percent used and reset time, using the same amber/red thresholds. It appears only for an eligible first-party OAuth Claude subscription; API keys, Bedrock/Vertex, gateways, no login or a failed request leave it hidden, and refresh failures keep the last good value. The plugin fetches it at session start and after replies, at most every 5 minutes, using host-side authorization; no token, prompts, replies or telemetry are sent. `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` or an organization policy can block the GET.
+- **Auto-collapse**: a 30px strip most of the time; when numbers change, it expands for 5 seconds after a reply, usage refresh or Fable reading, then collapses
 - **Expanded**: rings sweep in, digits roll like an odometer, `+N%` chips float up
-- **Cache countdown**: next to Cache hit, how long the cache stays warm (about 1 hour on a subscription, 5 minutes on an API key; every reply restarts it). Amber in the last 5 minutes, "cold" once expired. A cold cache means the next turn re-caches the whole conversation, which costs more of your limit
-- **Clawd**: shows tool icons while working and distinct needs-you, done, sleep and compaction looks; celebrates passing tests and reacts to failures or tool errors; stomps after 3 frustrated prompts in 20 minutes (`tantrums: off` in `/config` disables it). When idle or asleep he can have morning coffee, wear a nightcap, and show seasonal weather or Christmas and New Year hats. He sweats above 90% limits and wears sunglasses at 90%+ cache hit (idea by [@Joshua_WD](https://x.com/Joshua_WD))
-- **Privacy**: observes `classic.PermissionRequest` only to show "needs you" and never answers or changes a request; the tantrum feature checks `prompt.submit` text locally for frustration (not stored, sent or changed; `tantrums: off` disables this check); reads tool results only to spot test pass/fail and tool errors.
-- **English / 中文**: follows your system language by default (macOS preferred languages, Windows display language); set `language` in `/config` to `auto`, `zh` or `en`
+- **Cache countdown**: hidden while Claude works; appears next to Cache hit after the first reply (about 1 hour on a subscription, 5 minutes on an API key; every reply restarts it). Amber in the last 5 minutes, "cold" once expired. A cold cache means the next turn re-caches the whole conversation.
+- **Clawd's activity and moods**: shows the matching tool icon while working, with a purple pixel dither across the band in dark mode; breathes, blinks and sleeps after 10 idle minutes. Permission requests and plan approval (`ExitPlanMode`) show "!"; `AskUserQuestion` shows "?". He reacts to test pass/fail, tool errors and frustration (three frustrated composer prompts in 20 minutes trigger a tantrum; `tantrums: off` disables it). Any 5-hour, weekly or Fable limit at 90% makes him sweat; sunglasses require cache hit ≥90% and no limit at 90%+.
+- **Tool icons**: Bash/PowerShell → terminal; Edit/Write/MultiEdit/NotebookEdit → pencil; Read/Grep/Glob → magnifier; WebFetch/WebSearch → globe; Agent/Task → bolt; MCP tools → mini icon; other tools → spinner
+- **Seasonal moods**: northern-hemisphere seasons; coffee 06:00–10:00, nightcap 22:00–06:00, Christmas Dec 20–26, New Year Dec 31–Jan 1. `seasonal: off` disables time-of-day, seasonal and holiday looks.
+- **Privacy**: every submitted prompt is checked for a leading `/` after trimming whitespace to distinguish slash commands from turns; when `tantrums` is on, composer text is also checked locally for frustration. Prompt text is never stored, sent or changed; `tantrums: off` disables only the frustration check. `classic.PermissionRequest` is observed only to show "!" and is never answered or changed; `ExitPlanMode` also shows "!". Tool results are read only to spot test pass/fail and errors.
+- **English / 中文**: follows your system language by default (macOS preferred languages, Windows display language); `language` accepts lowercase `auto`, `zh` or `en`; anything else means `auto`
+- **Settings**: `seasonal` and `tantrums` are disabled only by `off` (case-insensitive, surrounding spaces ignored); any other value keeps them on
 - **Light / dark**: follows the Claude app appearance, always on a transparent background
-- **Growth**: Clawd earns 10 XP per turn (+5 at 90%+ cache hit, +20 for the first turn of the day). A sprout at Lv.2, a red bow tie at Lv.3, a cap at Lv.5, a crown at Lv.10, and 8 achievements (Cache master, Night owl, Close call, Full week…). Hover Clawd for his level and XP; progress is kept across sessions
-- **Report card**: `/clawd-card` makes a card of this session (duration, turns, tool calls, files edited, tokens, cache hit, level, achievements unlocked), copies it to the clipboard and saves it to Pictures/Clawd Reports (keeps the latest 20; older ones go to the Trash), ready to paste into X (exported with Quick Look on macOS; on Windows with Edge, or Chrome, and older cards go to the Recycle Bin)
+- **Growth**: Clawd earns 10 XP per turn (+5 at 90%+ cache hit, +20 for the first turn of the day), with a sprout at Lv.2, bow tie at Lv.3, cap at Lv.5 and crown at Lv.10. Hover for level, XP and streak, plus the last-7-days line while expanded. Of 8 achievements (Cache master, Night owl, Close call, Full week…), only those newly unlocked this session appear on `/clawd-card`; there are no pop-ups, and progress persists across sessions.
+- **Report card**: `/clawd-card` makes a card of this session (duration, turns, tool calls, files edited, tokens, cache hit, level, achievements unlocked this session), copies it to the clipboard and saves it to Pictures/Clawd Reports (keeps the latest 20; older ones go to the Trash), ready to paste into X (exported with Quick Look on macOS; on Windows with Edge, or Chrome, and older cards go to the Recycle Bin)
 - **Halloween** (Oct 25 to Nov 1): Clawd wears a witch hat and carries a pumpkin pail; while Claude works he turns into a bedsheet ghost and candy floats up instead of code. After each turn he holds out his pail for **trick or treat**: click him once to give candy (he's happy for 3 seconds), twice for a flip, three times and he jumps for joy and throws candy. Ignore him for 12 seconds and he stomps in a huff until you click. Turn time-of-day, seasonal and holiday looks off with `seasonal: off` in `/config`
 - **Pointer**: hover Clawd for hearts, click for a flip; hover a ring for details
 - **Last 7 days**: with the band expanded, hover Clawd to see how many tokens you used in the last 7 days (the past 7×24 hours), all sessions together, subagents included; the report card shows it too. The plugin keeps its own hourly tally (Claude only reports the current session), so counting starts when you install 1.9.0, and until a full week has passed it says since when
 - **Toggle**: ▲ keeps it expanded, ▼ collapses; or type `/clawd`
-- **Clawd growth**: level-ups and achievements still update his level and report card; the plugin sends no pop-up notifications
 
 ### Install
 
@@ -143,7 +149,7 @@ Auto-update is **off by default** for third-party marketplaces. Turn it on in `/
 
 ### Requirements and known issues
 
-- The **Code tab of Claude Desktop**, light or dark appearance. The terminal shows numbers only
+- The **Code tab of Claude Desktop**, light or dark appearance. The terminal shows context, 5-hour, weekly and optional Fable bars only, with no cache hit or Clawd; Remote Control, mobile and web show nothing
 - Mods are on by default from Claude Code **2.1.287**; tested by the author on 2.1.286 (macOS); Windows is supported from 1.6.0
 - On Windows, exporting the report card needs Windows PowerShell 5.1 (built in) and Edge or Chrome
 - Desktop redraws every mod site on any state change ([anthropics/claude-code#99211](https://github.com/anthropics/claude-code/issues/99211)), which restarts animations and can make the ▲▼ button miss clicks; `/clawd` always works
