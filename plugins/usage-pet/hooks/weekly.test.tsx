@@ -164,6 +164,29 @@ test('第一次记账时记下开始时间', { options: { language: 'en' } }, as
   expect(await clawdTitle($)).toContain('Last 7 days: 1k tokens (all sessions, incl. subagents; counting since Oct 16)')
 })
 
+test('session.start 注册命令失败时仍记录用量快照', { options: { language: 'en' } }, async ($, on) => {
+  mock.clock(on, { now: NOW })
+  mock.store(on, {})
+  on('session.id', () => ({ value: 'start-snapshot' }))
+  on('session.start', ($, e) => ({ cwd: e.cwd }))
+  on('session.measure', ($, e) => ({ changed: e.changed }))
+  on('session.authorize', () => ({ value: null }))
+  on('session.usage', () => ({ value: { startedAt: 0, context: { window: 200000, tokens: 80000, percent: 40 }, rateLimits: [] } }))
+  on('command.register', () => {
+    throw new Error('command registration failed')
+  })
+  const snapshots: unknown[] = []
+  on('state.set', ($, e, next) => {
+    if (e.key === 'bars') snapshots.push(e.value)
+
+    return next(e)
+  })
+
+  await $.session.start({ cwd: '/tmp', surface: 'desktop', isInteractive: true } as never)
+
+  expect(snapshots.some(value => (value as { to?: { contextPercent?: number } }).to?.contextPercent === 40)).toBe(true)
+})
+
 test('主对话和子代理同时答完：两笔都记上，不会一笔盖掉另一笔', { options: { language: 'en' } }, async ($, on) => {
   const { data } = await setup($, on)
   await Promise.all([$.turn.complete(TURN), $.turn.complete({ ...TURN, turnId: 't2', agentId: 'sub-1' })])

@@ -949,7 +949,7 @@ export const register: Register = (on, options) => {
     activeActivityOwners.clear()
     activityFrame = { kind: 'idle' }
     publishedActivity = undefined
-    await safeBookkeeping($, 'session.start bookkeeping failed', async () => {
+    await safeBookkeeping($, 'session.start fable and language setup failed', async () => {
       refreshFable($, fableState)
       // auto 先沿用本地已有语言（首次是英文），系统检测放到后台，不阻塞 session.start。
       let lang: Lang = 'en'
@@ -971,6 +971,9 @@ export const register: Register = (on, options) => {
           })
           .catch(err => debugError($, 'language detection failed', err))
       }
+    })
+
+    await safeBookkeeping($, 'session.start pet and report load failed', async () => {
       // 养成数据从 store 读进来；战报从这个会话第一次加载开始计时（重载插件不重置）
       try {
         const pet = normalize(await $.store.get(PET_KEY))
@@ -979,12 +982,18 @@ export const register: Register = (on, options) => {
         $.ui.log(`usage-pet: 读养成数据失败：${String(err)}`, { to: 'debug' })
       }
       await updateIfChanged($, reportAtom, r => (r.startedAt ? r : { ...r, startedAt: Date.now() }))
+    })
+
+    await safeBookkeeping($, 'session.start command registration failed', async () => {
       await $.command.register({
         name: 'clawd',
         description: 'Clawd band: toggle always-expanded / auto-collapse · 在「一直展开」和「自动收起」之间切换',
         immediate: true,
       })
       await $.command.register({ name: 'clawd-card', description: `${T.en.cardCommand} · ${T.zh.cardCommand}` })
+    })
+
+    await safeBookkeeping($, 'session.start usage seed failed', async () => {
       // summary：本地估算，不发请求；只用它的 apiUsage（上一次回复的用量）给还没读数的缓存垫底
       const u = await $.session.usage({ breakdown: 'summary' })
       const last = u.context.breakdown?.apiUsage
@@ -998,14 +1007,21 @@ export const register: Register = (on, options) => {
         }))
       }
       await record($, { ...toSnap(u.context, u.rateLimits, u.cost), fable: fableState.value }, true)
-      try {
-        await refreshWeek($, await clockNow($))
-      } catch (err) {
-        $.ui.log(`usage-pet: 读近 7 天用量失败：${String(err)}`, { to: 'debug' })
-      }
+    })
 
+    await safeBookkeeping($, '读近 7 天用量失败', async () => {
+      await refreshWeek($, await clockNow($))
+    })
+
+    await safeBookkeeping($, 'session.start tantrum reset failed', () => {
       tantrumTimes = []
+    })
+
+    await safeBookkeeping($, 'session.start activity reset failed', async () => {
       await setActivityFrame($, { kind: 'idle' })
+    })
+
+    await safeBookkeeping($, 'session.start activity timestamp reset failed', async () => {
       await noteActivity($)
     })
 
@@ -1269,7 +1285,9 @@ export const register: Register = (on, options) => {
   })
 
   on('session.measure', async ($, e, next) => {
-    await record($, { ...toSnap(e.context, e.rateLimits, e.cost), fable: fableState.value })
+    await safeBookkeeping($, 'session.measure bookkeeping failed', async () => {
+      await record($, { ...toSnap(e.context, e.rateLimits, e.cost), fable: fableState.value })
+    })
 
     return next(e)
   })

@@ -6,6 +6,13 @@ export type Release = { version: string; notes: Record<Lang, string[]> }
 
 export const CHANGELOG: Release[] = [
   {
+    version: '1.13.4',
+    notes: {
+      zh: ['修复：用量刷新出错不再影响插件；启动步骤各自独立，单步失败时信息栏和命令仍可正常显示'],
+      en: ['Fix: usage refresh errors no longer affect the plugin; startup steps run independently, so one failure won’t leave the band blank or commands missing'],
+    },
+  },
+  {
     version: '1.13.3',
     notes: {
       zh: ['修复：许可工具完成或被拒绝后及时清除感叹号；万圣节战报卡补齐配色；放松模式下睡眠和完成姿势不再眨眼；烦躁识别过滤代码和常见技术词；启动时不再等待系统语言检测'],
