@@ -1,7 +1,12 @@
 import { expect, mock, test } from 'claude-code/testing'
 
 import type { Bars } from '../types'
-import { bandSvg } from './band'
+import { bandSvgParts, H } from './band'
+
+const bandSvg = (...args: Parameters<typeof bandSvgParts>) => {
+  const { gauges, clawd } = bandSvgParts(...args)
+  return gauges + clawd
+}
 
 const BARS: Bars = {
   from: null,
@@ -100,13 +105,14 @@ async function setup($: Harness[0], on: Harness[1], withLimits: boolean) {
   on('command.register', ($, e) => ({ value: { command: e.name } }))
   on('turn.complete', ($, e) => ({ text: '', usage: e.usage }))
   await $.session.start(START as never)
+  await $.command.run({ command: 'clawd', args: '' } as never)
   if (withLimits) {
     await $.session.measure(measure)
   }
 
   return clock
 }
-const bandSource = async ($: Harness[0]) => String((await (await $.ui.mount(BAND)).findAll({ type: 'Svg' }))[0].props?.source)
+const bandSource = async ($: Harness[0]) => String((await (await $.ui.mount(BAND)).findAll({ type: 'Svg' }))[1].props?.source)
 
 test('订阅（有额度读数）：答完一轮后按 1 小时倒计时；过 20 分钟重画，从 40 分钟接着倒', { options: { language: 'en' } }, async ($, on) => {
   const clock = await setup($, on, true)

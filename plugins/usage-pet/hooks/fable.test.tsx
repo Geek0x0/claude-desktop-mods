@@ -1,7 +1,12 @@
 import { expect, mock, test } from 'claude-code/testing'
 
 import type { Bars } from '../types'
-import { bandAlt, bandSvg, MIN_BAND_W, MIN_BAND_W_WITH_FABLE } from './band'
+import { bandAlt, bandSvgParts, MIN_BAND_W_WITH_ACTIVITY, MIN_BAND_W_WITH_FABLE_AND_ACTIVITY } from './band'
+
+const bandSvg = (...args: Parameters<typeof bandSvgParts>) => {
+  const { gauges, clawd } = bandSvgParts(...args)
+  return gauges + clawd
+}
 
 const gaugeCount = (svg: string) => svg.match(/<g class="g(?: enter)?"/g)?.length ?? 0
 
@@ -18,18 +23,18 @@ test('Fable 每周额度排在每周额度后作为第五个圆环，并出现�
       cache: { rate: 92, read: 900, write: 50, fresh: 50 },
     },
   } as unknown as Bars
-  const svg = bandSvg(bars, false, MIN_BAND_W_WITH_FABLE, false, 'en')
+  const svg = bandSvg(bars, false, MIN_BAND_W_WITH_FABLE_AND_ACTIVITY, false, 'en')
 
   expect(gaugeCount(svg)).toBe(5)
   const trackXs = [...svg.matchAll(/<circle cx="([\d.]+)" cy="40" r="26" class="track"\/>/g)].map(match => Number(match[1]))
   expect(trackXs).toHaveLength(5)
-  expect(trackXs[4] + 28.5).toBeLessThanOrEqual(MIN_BAND_W_WITH_FABLE - 22)
+  expect(trackXs[4] + 28.5).toBeLessThanOrEqual(MIN_BAND_W_WITH_FABLE_AND_ACTIVITY - 22)
   expect(svg.indexOf('<title>Weekly 40%')).toBeLessThan(svg.indexOf('<title>Fable weekly 28%'))
-  expect(bandSvg(bars, false, MIN_BAND_W_WITH_FABLE, true, 'en')).toContain('<title>Fable weekly 28%')
+  expect(bandSvg(bars, false, MIN_BAND_W_WITH_FABLE_AND_ACTIVITY, true, 'en')).toContain('<title>Fable weekly 28%')
   expect(bandAlt(bars.to, false, 'en')).toBe('Context 20%, 5-hour 30%, Weekly 40%, Fable weekly 28%, Cache hit 92%; Claude is resting')
 
   const stressed = { ...bars, to: { ...bars.to, fable: { percent: 90 } } }
-  expect(bandSvg(stressed, false, MIN_BAND_W_WITH_FABLE, false, 'en')).toContain('class="clawd stressed"')
+  expect(bandSvg(stressed, false, MIN_BAND_W_WITH_FABLE_AND_ACTIVITY, false, 'en')).toContain('class="clawd stressed"')
 })
 
 test('没有 Fable 时保持原有四个圆环和 alt 文本', () => {
@@ -121,16 +126,18 @@ test('session.start 读取大小写不敏感的 Fable 每周额度，后续用�
   expect(network.fetches).toBe(2)
 
   const ui = await $.ui.mount(BAND)
-  const svg = String((await ui.findAll({ type: 'Svg' }))[0].props?.source)
+  const gaugesSvg = (await ui.findAll({ type: 'Svg' }))[1]
+  const svg = String(gaugesSvg.props?.source)
   expect(svg).toContain('<title>Fable weekly 31%')
-  expect(String((await ui.findAll({ type: 'Svg' }))[0].props?.alt)).toContain('Fable weekly 31%')
+  expect(String(gaugesSvg.props?.alt)).toContain('Fable weekly 31%')
 
   const terminal = await $.ui.mount({ ...BAND, surface: 'terminal' })
   expect(await terminal.find({ type: 'Text', text: 'Fable weekly' })).toBeDefined()
   expect(await terminal.find({ type: 'Text', text: '31%' })).toBeDefined()
 
   const narrow = await $.ui.mount(NARROW_BAND)
-  expect((await narrow.findAll({ type: 'Svg' }))[0].props?.width).toBe(MIN_BAND_W_WITH_FABLE)
+  const narrowSvgs = await narrow.findAll({ type: 'Svg' })
+  expect((narrowSvgs[0].props?.width as number) + (narrowSvgs[1].props?.width as number)).toBe(MIN_BAND_W_WITH_FABLE_AND_ACTIVITY)
 })
 
 test('Fable 返回成功但没有匹配额度时，清除旧圆环', { options: { language: 'en' } }, async ($, on) => {
@@ -139,7 +146,7 @@ test('Fable 返回成功但没有匹配额度时，清除旧圆环', { options: 
   await clock.advance(0)
   await $.session.measure(MEASURE)
   const before = await $.ui.mount(BAND)
-  expect(String((await before.findAll({ type: 'Svg' }))[0].props?.source)).toContain('<title>Fable weekly 31%')
+  expect(String((await before.findAll({ type: 'Svg' }))[1].props?.source)).toContain('<title>Fable weekly 31%')
 
   await clock.advance(5 * 60000)
   await $.turn.complete({ answer: 'ok', durationMs: 1000, isAborted: false, turnId: 'refresh', reason: 'answer', usage: { model: 'claude-opus-5-5', input_tokens: 50, output_tokens: 40, cache_read_input_tokens: 900, cache_creation_input_tokens: 50 } } as never)
@@ -147,10 +154,11 @@ test('Fable 返回成功但没有匹配额度时，清除旧圆环', { options: 
   await clock.advance(0)
   await $.session.measure(MEASURE)
   const after = await $.ui.mount(BAND)
-  const svg = String((await after.findAll({ type: 'Svg' }))[0].props?.source)
+  const afterSvgs = await after.findAll({ type: 'Svg' })
+  const svg = String(afterSvgs[1].props?.source)
   expect(network.fetches).toBe(2)
   expect(gaugeCount(svg)).toBe(4)
-  expect(String((await after.findAll({ type: 'Svg' }))[0].props?.alt)).not.toContain('Fable')
+  expect(String(afterSvgs[1].props?.alt)).not.toContain('Fable')
 })
 
 test('Fable 请求超时后可再次刷新，不会一直处于 refreshing', { options: { language: 'en' } }, async ($, on) => {
@@ -173,9 +181,10 @@ test('没有第一方授权时跳过 Fable 请求，普通信息栏仍正常显�
   const { network } = await setup($, on, [], null)
 
   const ui = await $.ui.mount(NARROW_BAND)
-  const svg = (await ui.findAll({ type: 'Svg' }))[0]
+  const svgs = await ui.findAll({ type: 'Svg' })
+  const svg = svgs[1]
   expect(network.fetches).toBe(0)
-  expect(svg.props?.width).toBe(MIN_BAND_W)
+  expect((svgs[0].props?.width as number) + (svgs[1].props?.width as number)).toBe(MIN_BAND_W_WITH_ACTIVITY)
   expect(gaugeCount(String(svg.props?.source))).toBe(4)
   expect(String(svg.props?.alt)).not.toContain('Fable')
 })
@@ -184,7 +193,7 @@ test('Fable 用量请求失败时不影响普通信息栏', { options: { languag
   const { network } = await setup($, on, [{ status: 503, text: 'unavailable' }])
 
   const ui = await $.ui.mount(BAND)
-  const svg = (await ui.findAll({ type: 'Svg' }))[0]
+  const svg = (await ui.findAll({ type: 'Svg' }))[1]
   expect(network.fetches).toBe(1)
   expect(gaugeCount(String(svg.props?.source))).toBe(4)
   expect(String(svg.props?.alt)).not.toContain('Fable')
@@ -194,7 +203,7 @@ test('Fable 用量 JSON 格式错误时不影响普通信息栏', { options: { l
   const { network } = await setup($, on, [{ status: 200, text: '{' }])
 
   const ui = await $.ui.mount(BAND)
-  const svg = (await ui.findAll({ type: 'Svg' }))[0]
+  const svg = (await ui.findAll({ type: 'Svg' }))[1]
   expect(network.fetches).toBe(1)
   expect(gaugeCount(String(svg.props?.source))).toBe(4)
   expect(String(svg.props?.alt)).not.toContain('Fable')

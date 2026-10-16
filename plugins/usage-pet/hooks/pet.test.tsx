@@ -118,6 +118,75 @@ const turn = (read: number, write: number, fresh: number) => ({
   usage: { model: 'claude-opus-5-5', input_tokens: fresh, output_tokens: 40, cache_read_input_tokens: read, cache_creation_input_tokens: write },
 })
 
+test('快速切换三个工具姿势：立即写第一个，只写停留结束时的最后一个', ZH, async ($, on) => {
+  const activityWrites: { kind: string; icon?: string }[] = []
+  let releaseTools!: () => void
+  let markBashStarted!: () => void
+  let markReadStarted!: () => void
+  let markEditStarted!: () => void
+  const toolGate = new Promise<void>(resolve => (releaseTools = resolve))
+  const bashStarted = new Promise<void>(resolve => (markBashStarted = resolve))
+  const readStarted = new Promise<void>(resolve => (markReadStarted = resolve))
+  const editStarted = new Promise<void>(resolve => (markEditStarted = resolve))
+  const { clock } = await start($, on, {}, on => {
+    on('state.set', ($, e, next) => {
+      if (e.key === 'activity') activityWrites.push(e.value as (typeof activityWrites)[number])
+
+      return next(e)
+    })
+    on('tool.call', async ($, e) => {
+      if (e.tool === 'Bash') markBashStarted()
+      if (e.tool === 'Read') markReadStarted()
+      if (e.tool === 'Edit') markEditStarted()
+      await toolGate
+
+      return { result: {} as never }
+    })
+  })
+  activityWrites.length = 0
+  await clock.advance(600)
+
+  const bash = $.tool.call({ tool: 'Bash', agentId: 'sub-1' } as never)
+  await bashStarted
+  const read = $.tool.call({ tool: 'Read', agentId: 'sub-1' } as never)
+  await readStarted
+  const edit = $.tool.call({ tool: 'Edit', agentId: 'sub-1' } as never)
+  await editStarted
+  expect(activityWrites).toEqual([{ kind: 'working', icon: 'terminal' }])
+
+  await clock.advance(599)
+  expect(activityWrites).toEqual([{ kind: 'working', icon: 'terminal' }])
+  await clock.advance(1)
+  expect(activityWrites).toEqual([
+    { kind: 'working', icon: 'terminal' },
+    { kind: 'working', icon: 'pencil' },
+  ])
+
+  releaseTools()
+  await Promise.all([bash, read, edit])
+  expect(activityWrites).toEqual([
+    { kind: 'working', icon: 'terminal' },
+    { kind: 'working', icon: 'pencil' },
+  ])
+})
+
+test('姿势停留期结束后孤立的变化立即写入', ZH, async ($, on) => {
+  const activityWrites: { kind: string; icon?: string }[] = []
+  const { clock } = await start($, on, {}, on => {
+    on('state.set', ($, e, next) => {
+      if (e.key === 'activity') activityWrites.push(e.value as (typeof activityWrites)[number])
+
+      return next(e)
+    })
+    on('tool.call', () => ({ result: {} as never }))
+  })
+  activityWrites.length = 0
+  await clock.advance(600)
+
+  await $.tool.call({ tool: 'Bash', agentId: 'sub-1' } as never)
+  expect(activityWrites).toEqual([{ kind: 'working', icon: 'terminal' }])
+})
+
 // 关掉节日装扮：万圣节期间头顶是巫师帽，看不到小芽
 test('通知：会话开始、升级和解锁成就都不弹提示，等级和成就仍出现在信息栏和战报卡', { options: { language: 'zh', seasonal: 'off' } }, async ($, on) => {
   const { toasts } = await start($, on, { pet: { xp: 95, turns: 9, streak: 1, lastDay: '2000-01-01', achievements: [] } }, on =>
@@ -276,22 +345,24 @@ test('工具调用期间显示工具图标，完成后恢复工作字形并透�
       return { result: { marker: 'unchanged' } as never }
     })
   })
+  await clock.advance(600)
 
   const pending = $.tool.call({ tool: 'Bash', command: 'pwd' } as never)
   await started
   const workingBand = { ...BAND, props: { ...BAND.props, isWorking: true, bodyColumns: 20 } }
   const during = await $.ui.mount(workingBand as never)
-  const duringSvgNode = (await during.findAll({ type: 'Svg' }))[0]
+  const duringSvgs = await during.findAll({ type: 'Svg' })
+  const duringSvgNode = duringSvgs[0]
   const duringSvg = String(duringSvgNode.props?.source)
 
   expect(duringSvg).toContain('class="activity-icon terminal"')
   expect(duringSvg).toContain('<g class="laptop">')
-  expect(duringSvgNode.props?.width).toBe(398)
+  expect((duringSvgs[0].props?.width as number) + (duringSvgs[1].props?.width as number)).toBe(398)
 
   release()
   expect(await pending).toEqual({ result: { marker: 'unchanged' } })
 
-  await clock.advance(300)
+  await clock.advance(600)
   const after = await $.ui.mount(workingBand as never)
   const afterSvg = String((await after.findAll({ type: 'Svg' }))[0].props?.source)
   expect(afterSvg).not.toContain('class="activity-icon terminal"')
@@ -319,11 +390,13 @@ test('并行工具调用：较早调用结束时保留最新图标，全部结�
       return { result: {} as never }
     })
   })
+  await clock.advance(600)
 
   const bash = $.tool.call({ tool: 'Bash', command: 'pwd' } as never)
   await bashStarted
   const read = $.tool.call({ tool: 'Read', file_path: '/tmp/a' } as never)
   await readStarted
+  await clock.advance(600)
   const workingBand = { ...BAND, props: { ...BAND.props, isWorking: true } }
   const newest = await $.ui.mount(workingBand as never)
   expect(String((await newest.findAll({ type: 'Svg' }))[0].props?.source)).toContain('class="activity-icon magnifier"')
@@ -338,7 +411,7 @@ test('并行工具调用：较早调用结束时保留最新图标，全部结�
   const beforeRestore = await $.ui.mount(workingBand as never)
   expect(String((await beforeRestore.findAll({ type: 'Svg' }))[0].props?.source)).toContain('class="activity-icon magnifier"')
 
-  await clock.advance(300)
+  await clock.advance(600)
   const afterAll = await $.ui.mount(workingBand as never)
   const afterAllSvg = String((await afterAll.findAll({ type: 'Svg' }))[0].props?.source)
   expect(afterAllSvg).not.toContain('class="activity-icon magnifier"')
@@ -369,6 +442,7 @@ test('子代理工具突发：十个同图标含重叠与快速连续调用只�
     })
   })
   activityWrites.length = 0
+  await clock.advance(600)
 
   const overlapping = [0, 1].map(i => $.tool.call({ tool: 'Bash', command: `printf ${i}`, agentId: 'sub-1' } as never))
   await pairStarted
@@ -385,33 +459,51 @@ test('子代理工具突发：十个同图标含重叠与快速连续调用只�
   }
   expect(activityWrites.length).toBe(1)
 
-  await clock.advance(300)
+  await clock.advance(600)
   expect(activityWrites.length).toBe(2)
   expect(activityWrites[1]?.value.kind).toBe('idle')
   expect(activityWrites.every(write => JSON.stringify(write.value) !== JSON.stringify(write.previous))).toBe(true)
 })
 
-test('子代理工具突发：切换图标只在可见图标改变时写，结束后三百毫秒统一恢复', ZH, async ($, on) => {
+test('子代理工具突发：快速切换只写最后图标，结束后统一恢复', ZH, async ($, on) => {
   const activityWrites: { value: { kind: string; icon?: string }; previous: unknown }[] = []
+  let releaseFinalRead!: () => void
+  let markFinalReadStarted!: () => void
+  const finalReadGate = new Promise<void>(resolve => (releaseFinalRead = resolve))
+  const finalReadStarted = new Promise<void>(resolve => (markFinalReadStarted = resolve))
   const { clock } = await start($, on, {}, on => {
     on('state.set', ($, e, next) => {
       if (e.key === 'activity') activityWrites.push({ value: e.value as (typeof activityWrites)[number]['value'], previous: e.previous })
 
       return next(e)
     })
-    on('tool.call', () => ({ result: {} as never }))
+    on('tool.call', async ($, e) => {
+      if (e.tool === 'Read' && (e as unknown as { file_path?: string }).file_path === '/tmp/final') {
+        markFinalReadStarted()
+        await finalReadGate
+      }
+
+      return { result: {} as never }
+    })
   })
   activityWrites.length = 0
+  await clock.advance(600)
 
-  for (const tool of ['Bash', 'Read', 'Bash', 'Bash', 'Read']) {
+  for (const tool of ['Bash', 'Read', 'Bash', 'Bash']) {
     await $.tool.call({ tool, agentId: 'sub-1' } as never)
   }
+  const finalRead = $.tool.call({ tool: 'Read', file_path: '/tmp/final', agentId: 'sub-1' } as never)
+  await finalReadStarted
 
-  expect(activityWrites.map(write => write.value.icon)).toEqual(['terminal', 'magnifier', 'terminal', 'magnifier'])
+  await clock.advance(600)
+  expect(activityWrites.map(write => write.value.icon)).toEqual(['terminal', 'magnifier'])
   expect(activityWrites.every(write => write.value.kind === 'working')).toBe(true)
-  await clock.advance(300)
-  expect(activityWrites.length).toBe(5)
-  expect(activityWrites[4]?.value.kind).toBe('idle')
+
+  releaseFinalRead()
+  await finalRead
+  await clock.advance(600)
+  expect(activityWrites.length).toBe(3)
+  expect(activityWrites[2]?.value.kind).toBe('idle')
   expect(activityWrites.every(write => JSON.stringify(write.value) !== JSON.stringify(write.previous))).toBe(true)
 })
 
@@ -432,15 +524,17 @@ test('权限请求：许可工具完成后立即清除感叹号，后续工具�
     on('classic.PermissionRequest', () => ({ value: permissionResult }))
   })
 
-  const bash = $.tool.call({ tool: 'Bash', command: 'sleep 1' } as never)
-  await started
   expect(await $.classic.PermissionRequest({ tool_name: 'Bash', tool_input: { command: 'sleep 1' } } as never)).toEqual({ value: permissionResult })
+  await clock.advance(600)
 
   const waiting = await $.ui.mount(BAND)
   const waitingSvg = String((await waiting.findAll({ type: 'Svg' }))[0].props?.source)
   expect(waitingSvg).toContain('class="activity-icon bang"')
   expect(waitingSvg).not.toContain('class="activity-icon terminal"')
 
+  const bash = $.tool.call({ tool: 'Bash', command: 'sleep 1' } as never)
+  await started
+  await clock.advance(600)
   release()
   await bash
   const afterBash = await $.ui.mount(BAND)
@@ -448,10 +542,11 @@ test('权限请求：许可工具完成后立即清除感叹号，后续工具�
   expect(afterBashSvg).not.toContain('class="activity-icon bang"')
   expect(afterBashSvg).toContain('class="activity-icon terminal"')
 
-  await clock.advance(300)
+  await clock.advance(600)
   const afterRestore = await $.ui.mount(BAND)
   expect(String((await afterRestore.findAll({ type: 'Svg' }))[0].props?.source)).not.toContain('class="activity-icon bang"')
 
+  await clock.advance(600)
   await $.tool.call({ tool: 'Read', file_path: '/tmp/a' } as never)
   const afterRead = await $.ui.mount(BAND)
   const afterReadSvg = String((await afterRead.findAll({ type: 'Svg' }))[0].props?.source)
@@ -465,7 +560,7 @@ test('权限请求：工具调用被拒绝时也清除它引起的感叹号', ZH
   let markStarted!: () => void
   const gate = new Promise<void>(resolve => (release = resolve))
   const started = new Promise<void>(resolve => (markStarted = resolve))
-  await start($, on, {}, on => {
+  const { clock } = await start($, on, {}, on => {
     on('classic.PermissionRequest', () => ({ value: permissionResult }))
     on('tool.call', async ($, e) => {
       if (e.tool === 'Bash') {
@@ -482,8 +577,12 @@ test('权限请求：工具调用被拒绝时也清除它引起的感叹号', ZH
   const bash = $.tool.call({ tool: 'Bash', command: 'pwd' } as never)
   await started
   expect(await $.classic.PermissionRequest({ tool_name: 'Bash', tool_input: { command: 'pwd' } } as never)).toEqual({ value: permissionResult })
+  await clock.advance(600)
+  const waiting = await $.ui.mount(BAND)
+  expect(String((await waiting.findAll({ type: 'Svg' }))[0].props?.source)).toContain('class="activity-icon bang"')
   release()
   expect(await bash).toEqual({ deny: 'denied by test stand-in' })
+  await clock.advance(600)
   const ui = await $.ui.mount(BAND)
   expect(String((await ui.findAll({ type: 'Svg' }))[0].props?.source)).not.toContain('class="activity-icon bang"')
 })
@@ -497,7 +596,7 @@ test('问题和计划：工具调用显示问号或感叹号，调用结束时�
   const planGate = new Promise<void>(resolve => (releasePlan = resolve))
   const questionStarted = new Promise<void>(resolve => (markQuestionStarted = resolve))
   const planStarted = new Promise<void>(resolve => (markPlanStarted = resolve))
-  await start($, on, {}, on =>
+  const { clock } = await start($, on, {}, on =>
     on('tool.call', async ($, e) => {
       if (e.tool === 'AskUserQuestion') {
         markQuestionStarted()
@@ -511,6 +610,7 @@ test('问题和计划：工具调用显示问号或感叹号，调用结束时�
       return { result: { tool: e.tool } as never }
     }),
   )
+  await clock.advance(600)
 
   const question = $.tool.call({ tool: 'AskUserQuestion', questions: [] } as never)
   await questionStarted
@@ -519,6 +619,7 @@ test('问题和计划：工具调用显示问号或感叹号，调用结束时�
   expect(src).toContain('class="activity-icon question"')
   releaseQuestion()
   await question
+  await clock.advance(600)
   ui = await $.ui.mount(BAND)
   src = String((await ui.findAll({ type: 'Svg' }))[0].props?.source)
   expect(src).not.toContain('class="activity-icon question"')
@@ -528,6 +629,7 @@ test('问题和计划：工具调用显示问号或感叹号，调用结束时�
   src = String((await ui.findAll({ type: 'Svg' }))[0].props?.source)
   expect(src).not.toContain('class="activity-icon question"')
 
+  await clock.advance(600)
   const plan = $.tool.call({ tool: 'ExitPlanMode', plan: 'ready' } as never)
   await planStarted
   ui = await $.ui.mount(BAND)
@@ -535,11 +637,13 @@ test('问题和计划：工具调用显示问号或感叹号，调用结束时�
   expect(src).toContain('class="activity-icon bang"')
   releasePlan()
   await plan
+  await clock.advance(600)
   ui = await $.ui.mount(BAND)
   src = String((await ui.findAll({ type: 'Svg' }))[0].props?.source)
   expect(src).not.toContain('class="activity-icon bang"')
 
   await $.turn.complete(turn(0, 0, 0))
+  await clock.advance(600)
   ui = await $.ui.mount(BAND)
   src = String((await ui.findAll({ type: 'Svg' }))[0].props?.source)
   expect(src).not.toContain('class="activity-icon bang"')
@@ -566,6 +670,7 @@ test('主回合完成：完成姿势停留六秒，中断和子代理不显示�
   const { clock } = await start($, on, {})
   const ui = await $.ui.mount(BAND)
 
+  await clock.advance(600)
   await $.turn.complete(turn(0, 0, 0))
   await ui.redraw()
   expect(String((await ui.findAll({ type: 'Svg' }))[0].props?.source)).toContain('class="clawd done')
@@ -593,6 +698,7 @@ test('十分钟没有活动后进入睡眠，提示提交会唤醒 Clawd', ZH, a
   expect(asleep).toContain('class="sleep-eyes"')
   expect(asleep).toContain('class="sleep-z"')
 
+  await clock.advance(600)
   await $.tool.call({ tool: 'Read', file_path: '/tmp/a' } as never)
   await ui.redraw()
   expect(String((await ui.findAll({ type: 'Svg' }))[0].props?.source)).not.toMatch(/class="clawd[^\"]* sleep"/)
@@ -601,6 +707,7 @@ test('十分钟没有活动后进入睡眠，提示提交会唤醒 Clawd', ZH, a
   expect(String((await ui.findAll({ type: 'Svg' }))[0].props?.source)).toMatch(/class="clawd[^\"]* sleep"/)
 
   await $.prompt.submit({ text: 'wake up', asUser: true } as never)
+  await clock.advance(600)
   await ui.redraw()
   expect(String((await ui.findAll({ type: 'Svg' }))[0].props?.source)).not.toMatch(/class="clawd[^\"]* sleep"/)
 })
@@ -611,13 +718,14 @@ test('上下文压缩：期间显示压扁姿势，结束后恢复并透传压�
   const gate = new Promise<void>(resolve => (release = resolve))
   const started = new Promise<void>(resolve => (markStarted = resolve))
   const compactResult = { messages: [{ role: 'user', text: 'summary', toolUses: [] }], tokensBefore: 120, tokensAfter: 60 }
-  await start($, on, {}, on => {
+  const { clock } = await start($, on, {}, on => {
     on('session.compact', async () => {
       markStarted()
       await gate
       return compactResult as never
     })
   })
+  await clock.advance(600)
 
   const compactInput: SessionCompactInput = {
     trigger: 'plugin',
@@ -633,6 +741,7 @@ test('上下文压缩：期间显示压扁姿势，结束后恢复并透传压�
 
   release()
   expect(await compact).toEqual(compactResult)
+  await clock.advance(600)
   const after = await $.ui.mount(BAND)
   expect(String((await after.findAll({ type: 'Svg' }))[0].props?.source)).not.toContain('class="clawd compacting')
 })
@@ -651,23 +760,35 @@ test('测试工具结果：通过和失败显示六秒反应，安装命令不�
       return { result: {} as never }
     })
   })
+  await clock.advance(600)
   const ui = await $.ui.mount(BAND)
 
   await $.tool.call({ tool: 'Bash', command: 'npm test' } as never)
+  await clock.advance(599)
   await ui.redraw()
   let src = String((await ui.findAll({ type: 'Svg' }))[0].props?.source)
+  expect(src).not.toMatch(/class="clawd[^\"]*\breaction\b/)
+  await clock.advance(1)
+  await ui.redraw()
+  src = String((await ui.findAll({ type: 'Svg' }))[0].props?.source)
   expect(src).toMatch(/class="clawd[^\"]*\breaction test-pass\b/)
   expect(src).toContain('class="activity-icon check"')
   expect(src).toContain('class="reaction-confetti"')
 
-  await clock.advance(6000)
+  await clock.advance(5399)
   await ui.redraw()
+  src = String((await ui.findAll({ type: 'Svg' }))[0].props?.source)
+  expect(src).toMatch(/class="clawd[^\"]*\breaction test-pass\b/)
+  await clock.advance(1)
+  await ui.redraw()
+  expect(String((await ui.findAll({ type: 'Svg' }))[0].props?.source)).not.toMatch(/class="clawd[^\"]*\breaction\b/)
   await $.tool.call({ tool: 'Bash', command: 'npm install vitest' } as never)
   await ui.redraw()
   src = String((await ui.findAll({ type: 'Svg' }))[0].props?.source)
   expect(src).not.toMatch(/class="clawd[^\"]*\breaction\b/)
 
   await $.tool.call({ tool: 'Bash', command: 'npm test' } as never)
+  await clock.advance(600)
   await ui.redraw()
   src = String((await ui.findAll({ type: 'Svg' }))[0].props?.source)
   expect(src).toMatch(/class="clawd[^\"]*\breaction test-fail\b/)
@@ -687,6 +808,7 @@ test('失误反应：工具错误显示叉叉，拒绝与子代理调用不显�
   const ui = await $.ui.mount(BAND)
 
   await $.tool.call({ tool: 'Read', file_path: '/tmp/missing' } as never)
+  await clock.advance(600)
   await ui.redraw()
   let src = String((await ui.findAll({ type: 'Svg' }))[0].props?.source)
   expect(src).toMatch(/class="clawd[^\"]*\breaction oops\b/)
@@ -708,7 +830,7 @@ test('失误反应：工具错误显示叉叉，拒绝与子代理调用不显�
 
 test('烦躁提示：插件代发的强烈文字原样透传但不计数', ZH, async ($, on) => {
   const forwarded: PromptSubmitInput[] = []
-  await start($, on, {}, undefined, e => forwarded.push(e))
+  const { clock } = await start($, on, {}, undefined, e => forwarded.push(e))
   const ui = await $.ui.mount(BAND)
   const prompts = ['为什么又坏了？', '还是不行，继续试', '搞什么，还是不行']
   const attachments = [{ type: 'document' as const, filename: 'feedback.txt' }]
@@ -720,6 +842,7 @@ test('烦躁提示：插件代发的强烈文字原样透传但不计数', ZH, a
   expect(forwarded[0].text).toBe(prompts[0])
   expect(forwarded[0].attachments).toEqual(attachments)
   expect(forwarded[2].text).toBe(prompts[2])
+  await clock.advance(600)
   await ui.redraw()
   const src = String((await ui.findAll({ type: 'Svg' }))[0].props?.source)
   expect(src).not.toMatch(/class="clawd[^\"]*\breaction tantrum\b/)
@@ -750,7 +873,7 @@ test('反应优先级：测试失败反应不会覆盖待处理的权限请求',
   let markEditStarted!: () => void
   const editGate = new Promise<void>(resolve => (releaseEdit = resolve))
   const editStarted = new Promise<void>(resolve => (markEditStarted = resolve))
-  await start($, on, {}, on => {
+  const { clock } = await start($, on, {}, on => {
     on('classic.PermissionRequest', () => ({ value: permissionResult }))
     on('tool.call', async ($, e) => {
       if (e.tool === 'Edit') {
@@ -767,6 +890,7 @@ test('反应优先级：测试失败反应不会覆盖待处理的权限请求',
   const edit = $.tool.call({ tool: 'Edit', file_path: '/tmp/a', old_string: 'a', new_string: 'b' } as never)
   await editStarted
   expect(await $.classic.PermissionRequest({ tool_name: 'Edit', tool_input: { file_path: '/tmp/a' } } as never)).toEqual({ value: permissionResult })
+  await clock.advance(600)
   await $.tool.call({ tool: 'Bash', command: 'npm test' } as never)
   const ui = await $.ui.mount(BAND)
   const src = String((await ui.findAll({ type: 'Svg' }))[0].props?.source)
@@ -775,6 +899,7 @@ test('反应优先级：测试失败反应不会覆盖待处理的权限请求',
 
   releaseEdit()
   await edit
+  await clock.advance(600)
   const afterEdit = await $.ui.mount(BAND)
   expect(String((await afterEdit.findAll({ type: 'Svg' }))[0].props?.source)).not.toContain('class="activity-icon bang"')
 })

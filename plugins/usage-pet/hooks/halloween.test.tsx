@@ -1,9 +1,14 @@
 import { expect, mock, test } from 'claude-code/testing'
 
 import type { Bars } from '../types'
-import { bandSvg } from './band'
+import { bandSvgParts } from './band'
 import { cardSvg } from './card'
 import { isHalloween, NEW_PET } from './pet'
+
+const bandSvg = (...args: Parameters<typeof bandSvgParts>) => {
+  const { gauges, clawd } = bandSvgParts(...args)
+  return gauges + clawd
+}
 
 const WITCH = '#3B2A55'
 const PAIL = '#F28C28'

@@ -3,12 +3,11 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { Activity, Bars } from '../types'
 import { moodAt } from './mood'
 import {
-  bandSvg,
+  ACTIVITY_LAYOUT_RESERVE,
+  bandSvgParts,
   H,
   H_MINI,
-  MIN_BAND_W,
   MIN_BAND_W_WITH_ACTIVITY,
-  MIN_BAND_W_WITH_FABLE,
   MIN_BAND_W_WITH_FABLE_AND_ACTIVITY,
   paceWarningAt,
 } from './band'
@@ -32,10 +31,79 @@ const measure = (ctx: number, session: number, weekly: number) => ({
   changed: ['context', 'rateLimits'] as ('context' | 'rateLimits')[],
 })
 
-const svgOf = async (ui: { findAll: (q: { type: 'Svg' }) => Promise<{ props?: Record<string, unknown> }[]> }) =>
-  (await ui.findAll({ type: 'Svg' }))[0]
+const svgOf = async (ui: { findAll: (q: { type: 'Svg' }) => Promise<{ props?: Record<string, unknown> }[]> }) => {
+  const [clawd, gauges] = await ui.findAll({ type: 'Svg' })
+  if (!clawd || !gauges) return clawd
+  const width = Number(clawd.props?.width) + Number(gauges.props?.width)
+  const height = clawd.props?.height
+
+  return {
+    props: {
+      source: `<svg viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">${String(gauges.props?.source)}${String(clawd.props?.source)}</svg>`,
+      width,
+      height,
+      alt: gauges.props?.alt,
+      isInteractive: Boolean(clawd.props?.isInteractive && gauges.props?.isInteractive),
+    },
+  }
+}
+
+const bandSvg = (...args: Parameters<typeof bandSvgParts>) => {
+  const { gauges, clawd } = bandSvgParts(...args)
+  return gauges + clawd
+}
+
+const svgSourcesOf = async (ui: { findAll: (q: { type: 'Svg' }) => Promise<{ props?: Record<string, unknown> }[]> }) =>
+  (await ui.findAll({ type: 'Svg' })).map(node => String(node.props?.source))
 
 const EMPTY_BARS = { from: null, to: null }
+
+test('姿势变化只改变 Clawd SVG，读数数据改变时才改变 gauges SVG', () => {
+  const bars = {
+    from: null,
+    to: {
+      contextPercent: 42,
+      contextTokens: 84000,
+      contextWindow: 200000,
+      session: { percent: 8 },
+      weekly: { percent: 63 },
+      cache: { rate: 92, read: 900000, write: 50000, fresh: 50000 },
+    },
+  } as unknown as Bars
+  const now = new Date(2026, 9, 10, 14).getTime()
+  const calm = bandSvgParts(bars, false, 1100, false, 'zh', { level: 1, title: 'Clawd' }, undefined, { kind: 'idle' }, now)
+  const posed = bandSvgParts(
+    bars,
+    false,
+    1100,
+    false,
+    'zh',
+    { level: 2, title: 'Clawd Lv.2', halloween: true, mood: moodAt(new Date(2026, 9, 31, 8)) },
+    undefined,
+    { kind: 'working', icon: 'terminal' },
+    now,
+  )
+  const changedBars = { ...bars, to: { ...bars.to!, contextPercent: 43 } } as Bars
+  const changed = bandSvgParts(changedBars, false, 1100, false, 'zh', { level: 1, title: 'Clawd' }, undefined, { kind: 'idle' }, now)
+
+  expect(posed.gauges).toBe(calm.gauges)
+  expect(posed.clawd).not.toBe(calm.clawd)
+  for (const clawdOnly of ['.clawd', 'class="clawd"', '.hop', '@keyframes hop{', '.glyph', '@keyframes float{', '.stressed', '.activity-', '.sweat', '.mood-', '.halloween-']) {
+    expect(calm.gauges).not.toContain(clawdOnly)
+  }
+  expect(changed.gauges).not.toBe(calm.gauges)
+})
+
+test('展开和细条的 cut 固定保留工具图标空间', () => {
+  for (const mini of [false, true]) {
+    const idle = bandSvgParts(EMPTY_BARS, false, 1100, mini, 'zh', undefined, undefined, { kind: 'idle' })
+    const working = bandSvgParts(EMPTY_BARS, false, 1100, mini, 'zh', undefined, undefined, { kind: 'working', icon: 'terminal' })
+
+    expect(idle.cut).toBe(working.cut)
+    expect(Number.isInteger(idle.cut)).toBe(true)
+    expect(idle.cut).toBe(mini ? 109 : 120)
+  }
+})
 
 test('额度消耗快于剩余时间时：预测耗尽时间，过滤无效提醒', () => {
   const now = new Date(2026, 0, 1, 12).getTime()
@@ -96,8 +164,10 @@ test('消耗过快时：中文和英文圆环详情与悬停提示都显示预�
 
 test('干活时：展开和细条都有紫色像素背景，且背景在读数和 Clawd 之前', ZH, async () => {
   for (const mini of [false, true]) {
-    const source = bandSvg(EMPTY_BARS, true, 1100, mini)
+    const parts = bandSvgParts(EMPTY_BARS, true, 1100, mini)
+    const source = parts.gauges + parts.clawd
     const height = mini ? H_MINI : H
+    const gaugesWidth = 1100 - parts.cut
     const background = source.indexOf('class="ultra-dither"')
     expect(background).toBeGreaterThan(-1)
     expect(background).toBeLessThan(source.indexOf('<g class="gauges">'))
@@ -115,7 +185,11 @@ test('干活时：展开和细条都有紫色像素背景，且背景在读数�
     expect(source).toContain('id="ultra-dither-density-mask"')
     expect(source).toContain('<g mask="url(#ultra-dither-density-mask)">')
     expect(source).toContain('id="ultra-dither-pattern-add-0"')
-    expect(source).toContain(`viewBox="0 0 1100 ${height}" width="1100" height="${height}"`)
+    expect(parts.gauges).toContain(`viewBox="0 0 ${gaugesWidth} ${height}" width="${gaugesWidth}" height="${height}"`)
+    expect(parts.clawd).toContain(`viewBox="0 0 ${parts.cut} ${height}" width="${parts.cut}" height="${height}"`)
+    expect(parts.gauges).toContain(`transform="translate(-${parts.cut} 0)"`)
+    expect(parts.gauges).toContain('gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="1100" y2="0"')
+    expect(parts.clawd).toContain('gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="1100" y2="0"')
     expect(source).toContain(`maskContentUnits="userSpaceOnUse" x="0" y="0" width="1100" height="${height}"`)
     const patterns = [...source.matchAll(/<pattern\b[\s\S]*?<\/pattern>/g)].map(match => match[0])
     expect(patterns.join('')).not.toContain('ultra-dither-density')
@@ -158,8 +232,6 @@ test('圆环和细条：展开尺寸、描边、文字与进度条都按新比�
   expect(mini).toContain('y="19" class="mlab"')
   expect(mini).toContain('y="19" class="mval"')
   expect(mini).toContain('translate(14 0) scale(3)')
-  expect(MIN_BAND_W).toBe(372)
-  expect(MIN_BAND_W_WITH_FABLE).toBe(436)
   expect(MIN_BAND_W_WITH_ACTIVITY).toBe(398)
   expect(MIN_BAND_W_WITH_FABLE_AND_ACTIVITY).toBe(462)
 })
@@ -235,9 +307,11 @@ test('浅色外观：工作底纹隐藏，不叠加深色描边或标签颜色',
 })
 
 test('休息时：不画紫色像素背景，Clawd 保持待机外观', ZH, async () => {
-  const source = bandSvg(EMPTY_BARS, false, 1100)
+  const parts = bandSvgParts(EMPTY_BARS, false, 1100)
+  const source = parts.gauges + parts.clawd
   expect(source).not.toContain('ultra-dither')
-  expect(source).toContain('viewBox="0 0 1100 80"')
+  expect(parts.gauges).toContain('viewBox="0 0 980 80"')
+  expect(parts.clawd).toContain('viewBox="0 0 120 80"')
   expect(source).toContain('class="clawd"')
   expect(source).toContain('class="hop idle"')
   expect(source).toContain('class="shadow idle"')
@@ -552,10 +626,11 @@ test('活动和反应覆盖时段、季节与节日装扮，睡眠仍可显示',
 })
 
 test('干活时：1100px 信息栏的 SVG 源码远低于宿主限制', ZH, async () => {
-  const expanded = bandSvg(EMPTY_BARS, true, 1100)
-  const mini = bandSvg(EMPTY_BARS, true, 1100, true)
-  expect(expanded.length).toBeLessThan(131072)
-  expect(mini.length).toBeLessThan(131072)
+  const expanded = bandSvgParts(EMPTY_BARS, true, 1100)
+  const mini = bandSvgParts(EMPTY_BARS, true, 1100, true)
+  for (const source of [expanded.clawd, expanded.gauges, mini.clawd, mini.gauges]) {
+    expect(source.length).toBeLessThan(131072)
+  }
 })
 
 test('SVG 尺寸：五环变化、工作图标和万圣节倒计时装扮均控制在四万五千字符内', () => {
@@ -570,18 +645,19 @@ test('SVG 尺寸：五环变化、工作图标和万圣节倒计时装扮均控�
   })
   const moving = { from: snap(49), to: snap(100) } as unknown as Bars
   const idleSnap = snap(100)
-  const idle = bandSvg({ from: idleSnap, to: idleSnap } as unknown as Bars, false, 1400)
+  const idle = bandSvgParts({ from: idleSnap, to: idleSnap } as unknown as Bars, false, 1400)
   const halloweenMood = { level: 6, title: 'Clawd Lv.6', halloween: true, askAgo: 0, mood: moodAt(new Date(2026, 9, 31, 8)) }
-  const working = bandSvg(moving, true, 1400, false, 'zh', halloweenMood, undefined, { kind: 'working', icon: 'terminal' })
-  const decorated = bandSvg(moving, false, 1400, false, 'zh', halloweenMood, { remainMs: 3600000, ttlMs: 3600000 })
+  const working = bandSvgParts(moving, true, 1400, false, 'zh', halloweenMood, undefined, { kind: 'working', icon: 'terminal' })
+  const decorated = bandSvgParts(moving, false, 1400, false, 'zh', halloweenMood, { remainMs: 3600000, ttlMs: 3600000 })
 
-  expect(working).toContain('class="activity-icon terminal"')
-  expect(working).toContain('class="ultra-dither"')
-  expect(decorated).toContain('id="hwtimer"')
-  expect(decorated).toContain('class="mood-coffee"')
-  expect(decorated).toContain('class="tm"')
-  expect(decorated).toContain('Fable')
-  expect(Math.max(idle.length, working.length, decorated.length)).toBeLessThan(45000)
+  expect(working.clawd).toContain('class="activity-icon terminal"')
+  expect(working.gauges).toContain('class="ultra-dither"')
+  expect(working.clawd).toContain('class="ultra-dither"')
+  expect(decorated.clawd).toContain('id="hwtimer"')
+  expect(decorated.clawd).toContain('class="mood-coffee"')
+  expect(decorated.gauges).toContain('class="tm"')
+  expect(decorated.gauges).toContain('Fable')
+  expect(Math.max(idle.clawd.length, idle.gauges.length, working.clawd.length, working.gauges.length, decorated.clawd.length, decorated.gauges.length)).toBeLessThan(45000)
 })
 
 test('终端：直接画三个读数（不用 Client），数字、token 和进度条都在', ZH, async ($, on) => {
@@ -602,7 +678,11 @@ test('桌面：一张显式宽高、自带底色的 SVG；变化时有扫环、�
 
   const ui = await $.ui.mount({ ...BAND(false), surface: 'desktop' })
   expect(JSON.stringify(await ui.drawn())).not.toContain('"Client"')
-  expect(await ui.findAll({ type: 'Svg' })).toHaveLength(1)
+  const svgNodes = await ui.findAll({ type: 'Svg' })
+  expect(svgNodes).toHaveLength(2)
+  expect(svgNodes[0].props?.width).toBe(120)
+  expect(svgNodes[1].props?.width).toBe(948)
+  expect(svgNodes.every(node => node.props?.isInteractive === true)).toBe(true)
   const first = await svgOf(ui)
   expect(first.props?.width).toBe(1068)
   expect(first.props?.height).toBe(H)
@@ -645,6 +725,38 @@ test('桌面：一张显式宽高、自带底色的 SVG；变化时有扫环、�
   expect(after).toContain('class="hop idle"')
   expect(after).not.toContain('+15%')
   expect((await svgOf(ui)).props?.alt).toContain('上下文 57%')
+})
+
+test('一分钟内 AbovePrompt 的 pose-only 重画复用 gauges source 字节串', ZH, async ($, on) => {
+  const now = Date.now()
+  mock.store(on, {})
+  const clock = mock.clock(on, { now })
+  on('session.start', ($, e) => ({ cwd: e.cwd }))
+  on('session.usage', () => ({ value: { startedAt: 0, context: { window: 200000 }, rateLimits: [] } }))
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  on('turn.complete', ($, e) => ({ text: '', usage: e.usage }))
+  on('tool.call', () => ({ result: {} as never }))
+  await $.session.start({ cwd: '/tmp', surface: 'desktop', isInteractive: true } as never)
+  await $.command.run({ command: 'clawd', args: '' } as never)
+  await $.turn.complete({
+    answer: 'ok',
+    durationMs: 1000,
+    isAborted: false,
+    turnId: 'pose-memo',
+    reason: 'answer',
+    usage: { model: 'claude-opus-5-5', input_tokens: 50, output_tokens: 40, cache_read_input_tokens: 900, cache_creation_input_tokens: 50 },
+  } as never)
+  await clock.advance(6600)
+
+  const ui = await $.ui.mount({ ...BAND(false), surface: 'desktop' })
+  const [clawdBefore, gaugesBefore] = await svgSourcesOf(ui)
+  await clock.advance(600)
+  await $.tool.call({ tool: 'Bash', command: 'pwd' } as never)
+  await ui.redraw()
+  const [clawdAfter, gaugesAfter] = await svgSourcesOf(ui)
+
+  expect(gaugesAfter).toBe(gaugesBefore)
+  expect(clawdAfter).not.toBe(clawdBefore)
 })
 
 test('Clawd：干活时搬出笔记本，额度 ≥90% 冒汗', ZH, async ($, on) => {
@@ -729,7 +841,7 @@ test('主回合：提示、读数、完成和七秒内计时器的 state.set 总
   expect(writes.every(write => JSON.stringify(write.value) !== JSON.stringify(write.previous))).toBe(true)
 })
 
-test('排布均匀：左右留白相等，Clawd 与四块之间五段间距相等', ZH, async ($, on) => {
+test('排布均匀：左右留白相等，从预留工具图标后的 Clawd 边缘计算间距', ZH, async ($, on) => {
   on('session.measure', ($, e) => ({ changed: e.changed }))
   // 故意用长短差很多的文字：上下文副标题短，每周额度副标题长
   await $.session.measure(measure(42, 8, 63))
@@ -738,10 +850,11 @@ test('排布均匀：左右留白相等，Clawd 与四块之间五段间距相�
   const blocks = [...src.matchAll(new RegExp(`<rect x="([\\d.]+)" y="0" width="([\\d.]+)" height="${H}" fill="transparent"\\/>`, 'g'))].map(m => [Number(m[1]), Number(m[2])])
   expect(blocks).toHaveLength(4)
   const near = (a: number, b: number) => Math.abs(a - b) < 0.6
-  const clawdRight = 22 + 16 * 4.5
-  const gaps = [blocks[0][0] - clawdRight, ...[1, 2, 3].map(i => blocks[i][0] - (blocks[i - 1][0] + blocks[i - 1][1]))]
+  const reservedEdge = 22 + 16 * 4.5 + ACTIVITY_LAYOUT_RESERVE
+  const gaps = [blocks[0][0] - reservedEdge, ...[1, 2, 3].map(i => blocks[i][0] - (blocks[i - 1][0] + blocks[i - 1][1]))]
   for (const g of gaps) expect(near(g, gaps[0])).toBe(true)
   // 右边留白 = 左边留白（22）
+  expect(src).toContain('transform="translate(22 ')
   expect(near(1068 - (blocks[3][0] + blocks[3][1]), 22)).toBe(true)
   // 各块宽度跟着文字走，不再强行等宽（上下文按悬停详情「84,000 tokens」留宽，比 5 小时额度那块宽）
   expect(blocks[0][1] > blocks[1][1]).toBe(true)
@@ -814,7 +927,7 @@ test('折叠：数据刷新展开 5 秒后收成细条；按钮和 /clawd 切换
   expect((await svgOf(ui)).props?.height).toBe(H_MINI)
 })
 
-test('细条排布均匀：左右留白相等、Clawd 与四项之间间距相等', ZH, async ($, on) => {
+test('细条排布均匀：左右留白相等，从预留工具图标后的 Clawd 边缘计算间距', ZH, async ($, on) => {
   const clock = mock.clock(on)
   on('session.measure', ($, e) => ({ changed: e.changed }))
   await $.session.measure(measure(42, 8, 63))
@@ -825,8 +938,10 @@ test('细条排布均匀：左右留白相等、Clawd 与四项之间间距相�
   const items = [...src.matchAll(new RegExp(`<rect x="([\\d.]+)" y="0" width="([\\d.]+)" height="${H_MINI}" fill="transparent"\\/>`, 'g'))].map(m => [Number(m[1]), Number(m[2])])
   expect(items).toHaveLength(4)
   const near = (a: number, b: number) => Math.abs(a - b) < 0.6
-  const gaps = [items[0][0] - (14 + 26 * 3), ...[1, 2, 3].map(i => items[i][0] - (items[i - 1][0] + items[i - 1][1]))]
+  const miniReservedEdge = 14 + 26 * 3 + 17 // MINI_X + MINI_LAYOUT_W + MINI_ACTIVITY_RESERVE
+  const gaps = [items[0][0] - miniReservedEdge, ...[1, 2, 3].map(i => items[i][0] - (items[i - 1][0] + items[i - 1][1]))]
   for (const g of gaps) expect(near(g, gaps[0])).toBe(true)
+  expect(src).toContain('transform="translate(14 ')
   expect(near(1068 - (items[3][0] + items[3][1]), 14)).toBe(true)
 })
 
@@ -895,15 +1010,17 @@ test('英文界面：language = en 时标签、重置时间、读屏描述都是
   expect(src).not.toContain('上下文')
 })
 
-test('英文界面：四块仍然左右留白相等、间距相等', EN, async ($, on) => {
+test('英文界面：四块仍然左右留白相等，从预留工具图标后的 Clawd 边缘计算间距', EN, async ($, on) => {
   on('session.measure', ($, e) => ({ changed: e.changed }))
   await $.session.measure(measure(42, 8, 63))
   const ui = await $.ui.mount({ ...BAND(false), surface: 'desktop' })
   const src = String((await svgOf(ui)).props?.source)
   const blocks = [...src.matchAll(new RegExp(`<rect x="([\\d.]+)" y="0" width="([\\d.]+)" height="${H}" fill="transparent"\\/>`, 'g'))].map(m => [Number(m[1]), Number(m[2])])
   const near = (a: number, b: number) => Math.abs(a - b) < 0.6
-  const gaps = [blocks[0][0] - (22 + 16 * 4.5), ...[1, 2, 3].map(i => blocks[i][0] - (blocks[i - 1][0] + blocks[i - 1][1]))]
+  const reservedEdge = 22 + 16 * 4.5 + ACTIVITY_LAYOUT_RESERVE
+  const gaps = [blocks[0][0] - reservedEdge, ...[1, 2, 3].map(i => blocks[i][0] - (blocks[i - 1][0] + blocks[i - 1][1]))]
   for (const g of gaps) expect(near(g, gaps[0])).toBe(true)
+  expect(src).toContain('transform="translate(22 ')
   expect(near(1068 - (blocks[3][0] + blocks[3][1]), 22)).toBe(true)
 })
 
@@ -1101,8 +1218,8 @@ test('窗口变窄：信息栏宽度跟着收，加上右边按钮也不超过�
     const band = { ...BAND(false), props: { ...BAND(false).props, bodyColumns: cols }, viewport: { columns: cols, rows: 40 }, surface: 'desktop' as const }
     const svg = await svgOf(await $.ui.mount(band))
     const width = Number(svg.props?.width)
-    // 可用宽度 ≈ 每列 8px；SVG + 按钮（44）不超过它（最窄 372 的下限只在极窄时才起作用）
-    if (cols * 8 - 8 >= MIN_BAND_W + 44) expect(width + 44).toBeLessThanOrEqual(cols * 8 - 8)
+    // 可用宽度 ≈ 每列 8px；SVG + 按钮（44）不超过它（最窄 398 的下限只在极窄时才起作用）
+    if (cols * 8 - 8 >= MIN_BAND_W_WITH_ACTIVITY + 44) expect(width + 44).toBeLessThanOrEqual(cols * 8 - 8)
     const src = String(svg.props?.source)
     const blocks = [...src.matchAll(new RegExp(`<rect x="([\\d.]+)" y="0" width="([\\d.]+)" height="${H}" fill="transparent"\\/>`, 'g'))].map(m => Number(m[1]) + Number(m[2]))
     expect(blocks).toHaveLength(4)

@@ -1,9 +1,14 @@
 import { expect, mock, test } from 'claude-code/testing'
 
 import type { Bars } from '../types'
-import { bandAlt, bandSvg, formatCost, MIN_BAND_W_WITH_COST, MIN_BAND_W_WITH_FABLE_AND_COST, MIN_BAND_W_WITH_COST_AND_ACTIVITY, MIN_BAND_W_WITH_FABLE_AND_COST_AND_ACTIVITY } from './band'
+import { bandAlt, bandSvgParts, formatCost, MIN_BAND_W_WITH_COST_AND_ACTIVITY, MIN_BAND_W_WITH_FABLE_AND_COST_AND_ACTIVITY } from './band'
 import { cardAlt, cardSvg, type CardData } from './card'
 import { NEW_PET } from './pet'
+
+const bandSvg = (...args: Parameters<typeof bandSvgParts>) => {
+  const { gauges, clawd } = bandSvgParts(...args)
+  return gauges + clawd
+}
 
 const EN = { options: { language: 'en' } }
 const BARS = {
@@ -42,15 +47,13 @@ test('会话费用：展开、细条和辅助文本显示 API 费用', () => {
 })
 
 test('费用块：在最窄布局占一个完整块宽，最小宽度同时计入 Fable 和工具图标', () => {
-  const narrow = bandSvg(BARS, false, MIN_BAND_W_WITH_COST, false, 'en')
+  const narrow = bandSvg(BARS, false, MIN_BAND_W_WITH_COST_AND_ACTIVITY, false, 'en')
   const badge = narrow.match(/<circle cx="([\d.]+)" cy="[\d.]+" r="26" class="cost-badge"\/>/)
 
-  expect(MIN_BAND_W_WITH_COST).toBe(436)
-  expect(MIN_BAND_W_WITH_FABLE_AND_COST).toBe(500)
   expect(MIN_BAND_W_WITH_COST_AND_ACTIVITY).toBe(462)
   expect(MIN_BAND_W_WITH_FABLE_AND_COST_AND_ACTIVITY).toBe(526)
   expect(badge).not.toBeNull()
-  expect(Number(badge?.[1]) + 28.5).toBeLessThanOrEqual(MIN_BAND_W_WITH_COST - 22)
+  expect(Number(badge?.[1]) + 28.5).toBeLessThanOrEqual(MIN_BAND_W_WITH_COST_AND_ACTIVITY - 22)
 })
 
 test('没有费用：信息栏输出保持旧样式和旧 alt 文本', () => {
@@ -58,11 +61,13 @@ test('没有费用：信息栏输出保持旧样式和旧 alt 文本', () => {
     from: null,
     to: { contextPercent: 20, contextTokens: 40000, contextWindow: 200000, session: { percent: 30 }, weekly: { percent: 40 }, cache: { rate: 92, read: 900, write: 50, fresh: 50 } },
   }
-  const svg = bandSvg(noCost, false, 1100, false, 'en')
+  const parts = bandSvgParts(noCost, false, 1100, false, 'en', undefined, undefined, undefined, 0)
 
-  expect(svg.length).toBe(23577)
-  expect(fingerprint(svg)).toBe(1730808866)
-  expect(svg).not.toContain('cost-badge')
+  expect(parts.clawd.length).toBe(10884)
+  expect(parts.gauges.length).toBe(13131)
+  expect(fingerprint(parts.clawd)).toBe(3898783688)
+  expect(fingerprint(parts.gauges)).toBe(712157436)
+  expect(parts.gauges).not.toContain('cost-badge')
   expect(bandAlt(noCost.to, false, 'en')).toBe('Context 20%, 5-hour 30%, Weekly 40%, Cache hit 92%; Claude is resting')
 })
 
@@ -148,10 +153,12 @@ test('费用来源：读取 session.usage，按 session.measure 更新并在无�
   await $.session.measure(MEASURE as never)
   barWrites = 0
 
-  const band = async () => String((await (await $.ui.mount(BAND)).findAll({ type: 'Svg' }))[0].props?.source)
+  const band = async () => String((await (await $.ui.mount(BAND)).findAll({ type: 'Svg' }))[1].props?.source)
   expect(await band()).toContain('>$0.24</text>')
   const narrow = await $.ui.mount({ ...BAND, props: { ...BAND.props, bodyColumns: 30 } })
-  expect((await narrow.findAll({ type: 'Svg' }))[0].props?.width).toBe(MIN_BAND_W_WITH_COST)
+  const narrowSvgs = await narrow.findAll({ type: 'Svg' })
+  expect(narrowSvgs[0].props?.width).toBe(120)
+  expect(narrowSvgs[0].props?.width as number + (narrowSvgs[1].props?.width as number)).toBe(MIN_BAND_W_WITH_COST_AND_ACTIVITY)
   await $.session.measure({ ...MEASURE, cost: { usd: 1.25 } } as never)
   expect(barWrites).toBe(1)
   expect(await band()).toContain('>$1.25</text>')

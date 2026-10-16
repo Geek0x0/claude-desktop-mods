@@ -6,6 +6,13 @@ export type Release = { version: string; notes: Record<Lang, string[]> }
 
 export const CHANGELOG: Release[] = [
   {
+    version: '1.15.0',
+    notes: {
+      zh: ['减少闪烁：Claude 快速切换步骤时合并姿势变化，每个姿势至少停留约 0.6 秒；Clawd 与圆环分开绘制，姿势变化不再重启圆环动画；工具图标始终预留位置，圆环不会随图标出现而移动；悬停圆环时 Clawd 不再转头看它'],
+      en: ['Less flicker: when Claude switches steps quickly, pose changes are merged so each pose stays for about 0.6 seconds; Clawd and the rings are drawn separately, so pose changes no longer restart ring animations; space for the tool icon is always reserved so the rings stay put; hovering a ring no longer makes Clawd glance at it'],
+    },
+  },
+  {
     version: '1.14.0',
     notes: {
       zh: ['上下文环标出自动压缩位置，悬停可看剩余 tokens；5 小时、每周和 Fable 每周环会在额度可能先于重置用完时提示时间（窗口前 10% 不显示）'],

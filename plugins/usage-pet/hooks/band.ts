@@ -24,9 +24,8 @@ export function paceWarningAt(
   return exhaustedAt < resetsAt ? exhaustedAt : undefined
 }
 
-// 桌面端整条（Clawd + 三个圆环）画成一张 SVG。动画全部是 SVG 内的 CSS 动画，浏览器在合成线程上按刷新率播放。
-// 桌面端任何状态变化都会重画整条、动画从头播（anthropics/claude-code#99211），
-// 所以「一次性」动画（圆环扫过、数字滚动、+N% 提示、Clawd 跳一下）只在 from ≠ to 时才写进去。
+// 桌面端把 Clawd 和读数分成两张 SVG。AbovePrompt 重画时，source 未变的那一部分会保留 CSS 动画。
+// 「一次性」动画（圆环扫过、数字滚动、+N% 提示、Clawd 跳一下）只在 from ≠ to 时才写进去。
 
 export const H = 80
 // 收起后的细条高度：Clawd 10 格 × 3px，刚好容下本体；帽子等装扮可以稍微探出
@@ -286,14 +285,14 @@ export const formatCost = (usd: number): string => `$${usd.toFixed(2)}`
 
 const grouped = (n: number) => String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
 
-function resetText(resetsAt: string | undefined, lang: Lang): string {
+function resetText(resetsAt: string | undefined, lang: Lang, now: number): string {
   if (!resetsAt) {
     return ''
   }
   const at = new Date(resetsAt)
   const time = clockText(at)
 
-  return at.getTime() - Date.now() < 24 * 3600000 ? T[lang].reset(time) : T[lang].resetDay(weekday(lang, at.getDay()), time)
+  return at.getTime() - now < 24 * 3600000 ? T[lang].reset(time) : T[lang].resetDay(weekday(lang, at.getDay()), time)
 }
 
 function clockText(at: Date): string {
@@ -301,22 +300,22 @@ function clockText(at: Date): string {
 }
 
 // 提醒时间沿用重置时间的本地时钟和星期格式。
-function paceText(window: { percent: number; resetsAt?: string } | undefined, lengthMs: number, weekly: boolean, lang: Lang): string | undefined {
-  const at = paceWarningAt(window, lengthMs, Date.now())
+function paceText(window: { percent: number; resetsAt?: string } | undefined, lengthMs: number, weekly: boolean, lang: Lang, now: number): string | undefined {
+  const at = paceWarningAt(window, lengthMs, now)
   if (at === undefined) return undefined
   const date = new Date(at)
   const time = clockText(date)
-  const today = new Date().toDateString()
+  const today = new Date(now).toDateString()
   const when = weekly && date.toDateString() !== today ? `${weekday(lang, date.getDay())} ${time}` : time
 
   return T[lang].paceWarning(when)
 }
 
-function leftText(resetsAt: string | undefined, lang: Lang): string {
+function leftText(resetsAt: string | undefined, lang: Lang, now: number): string {
   if (!resetsAt) {
     return ''
   }
-  const min = Math.max(0, Math.round((Date.parse(resetsAt) - Date.now()) / 60000))
+  const min = Math.max(0, Math.round((Date.parse(resetsAt) - now) / 60000))
   if (min < 60) {
     return T[lang].left(min, 'm')
   }
@@ -353,18 +352,17 @@ function textWidth(text: string, size: number): number {
 // 缓存倒计时的字号：比标题（14）和副标题（12）都小，只当旁注
 const TIMER_SIZE = 9
 // 标题右边的缓存倒计时留宽：最长的那一档（60m / 60分 / cold / 已过期）
-let timerLang: Lang = 'zh'
-const timerWidth = (g: Gauge, size: number) =>
+const timerWidth = (g: Gauge, size: number, lang: Lang) =>
   g.timerMs === undefined
     ? 0
-    : 6 + Math.max(textWidth(T[timerLang].cacheLeft(Math.max(60, Math.ceil(g.timerMs / 60000))), size), textWidth(T[timerLang].cacheCold, size))
-const contentWidth = (g: Gauge) =>
-  RING_W + RING_LABEL_GAP + Math.max(textWidth(g.label, LAB_SIZE) + timerWidth(g, TIMER_SIZE), textWidth(g.sub, SUB_SIZE), textWidth(g.detail, SUB_SIZE))
+    : 6 + Math.max(textWidth(T[lang].cacheLeft(Math.max(60, Math.ceil((g.timerTtlMs ?? g.timerMs) / 60000))), size), textWidth(T[lang].cacheCold, size))
+const contentWidth = (g: Gauge, lang: Lang) =>
+  RING_W + RING_LABEL_GAP + Math.max(textWidth(g.label, LAB_SIZE) + timerWidth(g, TIMER_SIZE, lang), textWidth(g.sub, SUB_SIZE), textWidth(g.detail, SUB_SIZE))
 
 // 缓存倒计时：插件不能每分钟重画（重画会让所有动画从头播），所以把每一分钟的数字都画好，
 // 用 SMIL 按时间轮流显示：剩 m 分钟那一个在 [剩余-m 分, 剩余-(m-1) 分) 这段时间可见，最后换成「已过期」
 // beside：旁边那段文字的字号。字小一号时和它共用底线会显得偏下，所以按两段文字的中线对齐（字母、数字的中线约在底线上 0.36em）
-function cacheTimerSvg(x: number, baseline: number, remainMs: number, lang: Lang, size: number, beside: number): string {
+function cacheTimerSvg(x: number, baseline: number, remainMs: number, lang: Lang, size: number, beside: number, startedAt?: number): string {
   const t = T[lang]
   const y = (baseline - (beside - size) * 0.36).toFixed(2)
   const at = (ms: number) => `${Math.max(0, ms / 1000).toFixed(2).replace(/\.?0+$/, '')}s`
@@ -387,7 +385,7 @@ function cacheTimerSvg(x: number, baseline: number, remainMs: number, lang: Lang
     : ''
   const cold = `<text class="cold" opacity="0"><set attributeName="opacity" to="1" begin="${at(remainMs)}" fill="freeze"/>${t.cacheCold}</text>`
 
-  return `<g class="tm" transform="translate(${x.toFixed(1)} ${y})" style="${style}">${coarse}${minutes}${cold}</g>`
+  return `<g class="tm"${startedAt === undefined ? '' : ` data-start="${startedAt}"`} transform="translate(${x.toFixed(1)} ${y})" style="${style}">${coarse}${minutes}${cold}</g>`
 }
 
 // At most 60 timed minute labels plus one coarse label and the expired label.
@@ -398,11 +396,11 @@ const MAX_TIMER_MINUTES = 60
 // 宁可少字，也不让内容挤出信息栏、把右边的按钮挤到下一行
 type Layout = 'full' | 'compact' | 'stacked' | 'rings'
 const STACKED_LABEL = 9
-const blockWidth = (g: Gauge, layout: Layout) =>
+const blockWidth = (g: Gauge, layout: Layout, lang: Lang) =>
   layout === 'full'
-    ? contentWidth(g)
+    ? contentWidth(g, lang)
     : layout === 'compact'
-      ? RING_W + RING_LABEL_GAP + (g.kind === 'cost' ? Math.max(textWidth(g.label, LAB_SIZE), textWidth(g.sub, SUB_SIZE)) : textWidth(g.label, LAB_SIZE)) + timerWidth(g, TIMER_SIZE)
+      ? RING_W + RING_LABEL_GAP + (g.kind === 'cost' ? Math.max(textWidth(g.label, LAB_SIZE), textWidth(g.sub, SUB_SIZE)) : textWidth(g.label, LAB_SIZE)) + timerWidth(g, TIMER_SIZE, lang)
       : layout === 'stacked'
         ? Math.max(RING_W, textWidth(g.label, STACKED_LABEL))
         : RING_W
@@ -410,18 +408,18 @@ const blockWidth = (g: Gauge, layout: Layout) =>
 const MIN_GAP: Record<Layout, number> = { full: 14, compact: 14, stacked: 10, rings: 6 }
 
 // 最窄排法只留圆环；Clawd 按本体的 16 格计宽，笔记本和动效伸进间距
-export const MIN_BAND_W = Math.ceil(2 * CLAWD_X + CLAWD_W + 4 * RING_W + 4 * MIN_GAP.rings)
-export const MIN_BAND_W_WITH_FABLE = Math.ceil(2 * CLAWD_X + CLAWD_W + 5 * RING_W + 5 * MIN_GAP.rings)
-export const MIN_BAND_W_WITH_COST = MIN_BAND_W + RING_W + MIN_GAP.rings
-export const MIN_BAND_W_WITH_FABLE_AND_COST = MIN_BAND_W_WITH_FABLE + RING_W + MIN_GAP.rings
+const MIN_BAND_W = Math.ceil(2 * CLAWD_X + CLAWD_W + 4 * RING_W + 4 * MIN_GAP.rings)
+const MIN_BAND_W_WITH_FABLE = Math.ceil(2 * CLAWD_X + CLAWD_W + 5 * RING_W + 5 * MIN_GAP.rings)
+const MIN_BAND_W_WITH_COST = MIN_BAND_W + RING_W + MIN_GAP.rings
+const MIN_BAND_W_WITH_FABLE_AND_COST = MIN_BAND_W_WITH_FABLE + RING_W + MIN_GAP.rings
 export const MIN_BAND_W_WITH_ACTIVITY = MIN_BAND_W + ACTIVITY_LAYOUT_RESERVE
 export const MIN_BAND_W_WITH_FABLE_AND_ACTIVITY = MIN_BAND_W_WITH_FABLE + ACTIVITY_LAYOUT_RESERVE
 export const MIN_BAND_W_WITH_COST_AND_ACTIVITY = MIN_BAND_W_WITH_COST + ACTIVITY_LAYOUT_RESERVE
 export const MIN_BAND_W_WITH_FABLE_AND_COST_AND_ACTIVITY = MIN_BAND_W_WITH_FABLE_AND_COST + ACTIVITY_LAYOUT_RESERVE
 
-export function pickLayout(gauges: { label: string; sub: string; detail: string }[], width: number, clawdWidth = CLAWD_W): Layout {
+export function pickLayout(gauges: { label: string; sub: string; detail: string }[], width: number, clawdWidth = CLAWD_W + ACTIVITY_LAYOUT_RESERVE, lang: Lang = 'zh'): Layout {
   const need = (layout: Layout) =>
-    2 * CLAWD_X + clawdWidth + gauges.reduce((a, g) => a + blockWidth(g as Gauge, layout), 0) + gauges.length * MIN_GAP[layout]
+    2 * CLAWD_X + clawdWidth + gauges.reduce((a, g) => a + blockWidth(g as Gauge, layout, lang), 0) + gauges.length * MIN_GAP[layout]
 
   return (['full', 'compact', 'stacked'] as const).find(layout => need(layout) <= width) ?? 'rings'
 }
@@ -441,6 +439,8 @@ type Gauge = {
   to?: number
   // 缓存倒计时：离缓存过期还有多少毫秒（≤0 = 已过期，undefined = 不显示）
   timerMs?: number
+  timerTtlMs?: number
+  timerStartedAt?: number
 }
 
 const off = (p: number | undefined) => (C * (1 - Math.min(100, Math.max(0, p ?? 0)) / 100)).toFixed(2)
@@ -563,12 +563,12 @@ function gauge(g: Gauge, i: number, x: number, w: number, isChanged: boolean, is
     `</g>` +
     (layout === 'full'
       ? `<text x="${cx + R + 10}" y="${cy - 3}" class="lab">${g.label}</text>` +
-        (g.timerMs === undefined ? '' : cacheTimerSvg(cx + R + 10 + textWidth(g.label, LAB_SIZE) + 6, cy - 3, g.timerMs, lang, TIMER_SIZE, LAB_SIZE)) +
+        (g.timerMs === undefined ? '' : cacheTimerSvg(cx + R + 10 + textWidth(g.label, LAB_SIZE) + 6, cy - 3, g.timerMs, lang, TIMER_SIZE, LAB_SIZE, g.timerStartedAt)) +
         `<text x="${cx + R + 10}" y="${cy + 11}" class="sub">${g.sub}</text>` +
         `<text x="${cx + R + 10}" y="${cy + 11}" class="sub2">${g.detail}</text>`
       : layout === 'compact'
         ? `<text x="${cx + R + 10}" y="${cy + 4}" class="lab">${g.label}</text>` +
-          (g.timerMs === undefined ? '' : cacheTimerSvg(cx + R + 10 + textWidth(g.label, LAB_SIZE) + 6, cy + 4, g.timerMs, lang, TIMER_SIZE, LAB_SIZE))
+          (g.timerMs === undefined ? '' : cacheTimerSvg(cx + R + 10 + textWidth(g.label, LAB_SIZE) + 6, cy + 4, g.timerMs, lang, TIMER_SIZE, LAB_SIZE, g.timerStartedAt))
         : layout === 'stacked'
           ? `<text x="${cx}" y="${H - 7}" text-anchor="middle" class="lab stk">${g.label}</text>`
           : '') +
@@ -912,8 +912,11 @@ function clawd(
 
 // ───────────────────────── 样式 ─────────────────────────
 
+const BASE_STYLE =
+  `:root{color-scheme:light dark;background:transparent}text{font-family:-apple-system,"SF Pro Text","PingFang SC","Segoe UI","Microsoft YaHei UI","Microsoft YaHei",sans-serif}`
+
 const STYLE =
-  `:root{color-scheme:light dark;background:transparent}text{font-family:-apple-system,"SF Pro Text","PingFang SC","Segoe UI","Microsoft YaHei UI","Microsoft YaHei",sans-serif}` +
+  BASE_STYLE +
   // Clawd
   `.clawd *{transform-box:fill-box}` +
   `.hop,.breath,.tremble{transform-origin:50% 100%}` +
@@ -922,7 +925,6 @@ const STYLE =
   `.shadow{fill:#000;opacity:.42;transform-origin:center}.shadow.idle{animation:idleshadow 9s ${OUT} 2s infinite}.shadow.once{animation:shadow .8s ${OUT} both}` +
   `.eye{transform-origin:center;animation:blink 4.6s infinite}.working .eye{animation-duration:3.3s}` +
   `.look{transition:transform .3s ${OUT};animation:look 7s ease-in-out infinite}.working .look{animation:focus 4s ease-in-out infinite}` +
-  `.gauges:hover~.clawd .look{animation:none;transform:translate(1px,-.15px)}` +
   `.happy,.cheek{opacity:0;transition:opacity .18s ease}` +
   // 墨镜不全程戴：空闲时 9 秒一轮「戴着 → 推到额头露出眼睛 → 拉回来」；Claude 干活时推到头顶专心敲代码
   `.shades{opacity:0;transition:opacity .18s ease}.chill .shades{opacity:1;animation:shadesCycle 9s ease-in-out infinite}` +
@@ -940,6 +942,8 @@ const STYLE =
   `.clawd:hover .shadow{animation:bshadow .55s cubic-bezier(.3,.7,.4,1) infinite}` +
   `.clawd:hover .eyes,.clawd:hover .shades{opacity:0;animation:none}.clawd:hover .happy{opacity:1}.clawd:hover .cheek{opacity:.9}` +
   `.clawd:hover .heart{animation:heart 1.35s ${OUT} infinite}}` +
+  `.glyph{font-size:2.3px;font-weight:700;fill:#F0EEE6;opacity:0;animation:float 2.4s ${OUT} infinite}` +
+  `@keyframes float{0%{opacity:0;transform:translate(0,1px) scale(.7)}18%{opacity:.9;transform:translate(.3px,-1px) scale(1)}100%{opacity:0;transform:translate(1.2px,-8px) scale(.9)}}` +
   `#hit,#hit2,#hit3{cursor:pointer}` +
   // keyframes
   `@keyframes shadesCycle{0%,50%{transform:none}56%,80%{transform:translateY(-1.9px)}86%,100%{transform:none}}` +
@@ -962,10 +966,13 @@ const STYLE =
   `@keyframes tremble{0%,100%{transform:none}25%{transform:translateX(.14px)}75%{transform:translateX(-.14px)}}` +
   `@keyframes heart{0%{opacity:0;transform:scale(.4)}20%{opacity:1;transform:scale(1)}100%{opacity:0;transform:translate(var(--dx),-5px) scale(.8)}}` +
   `@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}` +
-  // 阴影和渐变在展开、细条共用
   `@media (prefers-color-scheme:light){` +
-  `.shadow{opacity:.16}@keyframes idleshadow{0%,86%,100%{transform:none;opacity:.16}92%{transform:scale(.6);opacity:.08}}` +
-  `#grad-ok stop+stop{stop-color:#EC9A78}#grad-warn stop+stop{stop-color:#F2B04E}#grad-danger stop+stop{stop-color:#F2705C}}`
+  `.shadow{opacity:.16}.glyph{fill:#6B6862}@keyframes idleshadow{0%,86%,100%{transform:none;opacity:.16}92%{transform:scale(.6);opacity:.08}}}`
+
+const GAUGE_BASE_STYLE =
+  BASE_STYLE +
+  `@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}` +
+  `@media (prefers-color-scheme:light){#grad-ok stop+stop{stop-color:#EC9A78}#grad-warn stop+stop{stop-color:#F2B04E}#grad-danger stop+stop{stop-color:#F2705C}}`
 
 const EXPANDED_STYLE =
   `.num{font-size:${NUM_SIZE}px;font-weight:700;fill:#F4F2EC;font-variant-numeric:tabular-nums}.num.dim{fill:#6E6C66}.num.sm{font-size:${NUM_SMALL_SIZE}px}` +
@@ -981,15 +988,13 @@ const EXPANDED_STYLE =
   `.chip{font-size:9.5px;font-weight:700;opacity:0;animation:chip 1.8s ${OUT} .25s both}` +
   `.chip.ok{fill:#F3B18F}.chip.warn{fill:#FFCB7A}.chip.danger{fill:#FF8F7A}` +
   `@media (hover:hover){.g:hover .ring{transform:scale(1.09)}.g:hover .sub{opacity:0;filter:blur(2px)}.g:hover .sub2{opacity:1;filter:blur(0)}}` +
-  `.glyph{font-size:2.3px;font-weight:700;fill:#F0EEE6;opacity:0;animation:float 2.4s ${OUT} infinite}` +
   `@keyframes rise{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}` +
   `@keyframes chip{0%{opacity:0;transform:translateY(4px)}18%{opacity:1;transform:none}75%{opacity:1}100%{opacity:0;transform:translateY(-6px)}}` +
   `@keyframes dpulse{0%,100%{opacity:.35}50%{opacity:.9}}` +
-  `@keyframes float{0%{opacity:0;transform:translate(0,1px) scale(.7)}18%{opacity:.9;transform:translate(.3px,-1px) scale(1)}100%{opacity:0;transform:translate(1.2px,-8px) scale(.9)}}` +
   `.sep{stroke:#2A2927}` +
   `@media (prefers-color-scheme:light){` +
   `.num{fill:#1F1E1D}.num.dim{fill:#B4B1A8}.pct{fill:#8A877E}.lab{fill:#2D2C2A}.sub{fill:#77746C}.sub2{fill:#46443F}` +
-  `.track{stroke:#E8E5DC}.sep{stroke:#E5E2D9}.glow{opacity:.3}.chip.ok{fill:#C2603F}.chip.warn{fill:#B26E12}.chip.danger{fill:#D2392B}.glyph{fill:#6B6862}` +
+  `.track{stroke:#E8E5DC}.sep{stroke:#E5E2D9}.glow{opacity:.3}.chip.ok{fill:#C2603F}.chip.warn{fill:#B26E12}.chip.danger{fill:#D2392B}` +
   `}`
 
 const COMPACT_TICK_STYLE =
@@ -1000,13 +1005,15 @@ const COST_STYLE =
   `.cost-badge{fill:url(#grad-ok);stroke:#F3B18F;stroke-width:1.2}.cost-glyph{font-size:21px;font-weight:800;fill:#231511;text-anchor:middle}.cost-glyph.in-badge{font-size:15px}.cost-value{font-size:${SUB_SIZE}px;font-weight:700;fill:#ECEAE4;font-variant-numeric:tabular-nums}.cost-value.in-badge{font-size:8px}.cost-sub{font-size:10px;fill:#8C8A84}` +
   `@media (prefers-color-scheme:light){.cost-badge{stroke:#C2603F}.cost-glyph{fill:#231511}.cost-value{fill:#2D2C2A}.cost-sub{fill:#77746C}}`
 
-const MINI_STYLE =
+const MINI_CLAWD_STYLE =
   `.pace{transform-origin:center}.mini.working .pace{animation:pace 3.2s ease-in-out infinite}` +
   `.mini.working .legA,.mini.working .legB{opacity:1}.mini.working .legA{animation:step .3s ease-in-out infinite alternate}.mini.working .legB{animation:step .3s ease-in-out .15s infinite alternate}` +
-  `.mlab{font-size:${MINI_LABEL_SIZE}px;fill:#8C8A84}.mval{font-size:${MINI_VALUE_SIZE}px;font-weight:700;fill:#ECEAE4;font-variant-numeric:tabular-nums}.mtrack{fill:#2C2B29}.mfill.danger{animation:mpulse 1.6s ease-in-out infinite}` +
   `@keyframes pace{0%{transform:none}46%{transform:translateX(10px)}50%{transform:translateX(10px) scaleX(-1)}96%{transform:scaleX(-1)}100%{transform:none}}` +
+  `@keyframes step{from{transform:none}to{transform:translateY(-.9px)}}`
+
+const MINI_GAUGE_STYLE =
+  `.mlab{font-size:${MINI_LABEL_SIZE}px;fill:#8C8A84}.mval{font-size:${MINI_VALUE_SIZE}px;font-weight:700;fill:#ECEAE4;font-variant-numeric:tabular-nums}.mtrack{fill:#2C2B29}.mfill.danger{animation:mpulse 1.6s ease-in-out infinite}` +
   `@keyframes mpulse{0%,100%{opacity:.6}50%{opacity:1}}` +
-  `@keyframes step{from{transform:none}to{transform:translateY(-.9px)}}` +
   `@media (prefers-color-scheme:light){.mtrack{fill:#E8E5DC}.mlab{fill:#77746C}.mval{fill:#2D2C2A}}`
 
 const TIMER_STYLE =
@@ -1088,14 +1095,16 @@ function activityStyle(activity?: Activity, showIcon = true): string {
   )
 }
 
-const DEFS =
+const GAUGE_DEFS =
   `<defs>` +
   `<linearGradient id="grad-ok" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#D97757"/><stop offset="1" stop-color="#F5BC98"/></linearGradient>` +
   `<linearGradient id="grad-warn" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#E9963F"/><stop offset="1" stop-color="#FFD58A"/></linearGradient>` +
   `<linearGradient id="grad-danger" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#E5484D"/><stop offset="1" stop-color="#FF9A82"/></linearGradient>` +
-  `<radialGradient id="aura"><stop offset="0" stop-color="#D97757" stop-opacity=".22"/><stop offset="1" stop-color="#D97757" stop-opacity="0"/></radialGradient>` +
   `<filter id="blur" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="2.2"/></filter>` +
   `</defs>`
+
+const CLAWD_DEFS =
+  `<defs><radialGradient id="aura"><stop offset="0" stop-color="#D97757" stop-opacity=".22"/><stop offset="1" stop-color="#D97757" stop-opacity="0"/></radialGradient></defs>`
 
 // 干活时用三张固定种子的图案轮流闪烁；单元格按密度拆成常亮底层和渐变显出的高密度层。
 const ditherHash = (n: number) => {
@@ -1113,8 +1122,6 @@ const ditherPath = (cells: number[]) =>
 const DITHER_STYLE =
   `@media (prefers-color-scheme:dark){` +
   `.ultra-dither{opacity:.4}` +
-  `.gauges text{paint-order:stroke;stroke:#1C1B1A;stroke-width:3px;stroke-linejoin:round}.gauges .cost-glyph{stroke:none}` +
-  `.mlab,.sub,.pct,.dim{fill:#E5E5E5}` +
   `.ultra-dither .layer-0{opacity:.8;animation:ultra-dither-twinkle-0 1.2s ease-in-out -.4s infinite alternate}` +
   `.ultra-dither .layer-1{opacity:.8;animation:ultra-dither-twinkle-1 2s ease-in-out -1.1s infinite alternate}` +
   `.ultra-dither .layer-2{opacity:.8;animation:ultra-dither-twinkle-2 2.8s ease-in-out -2.2s infinite alternate}` +
@@ -1122,6 +1129,9 @@ const DITHER_STYLE =
   `@keyframes ultra-dither-twinkle-1{from{opacity:1}to{opacity:.6}}` +
   `@keyframes ultra-dither-twinkle-2{from{opacity:.6}to{opacity:1}}` +
   `}@media (prefers-color-scheme:light){.ultra-dither{display:none}}`
+
+const DITHER_GAUGE_STYLE =
+  `@media (prefers-color-scheme:dark){.gauges text{paint-order:stroke;stroke:#1C1B1A;stroke-width:3px;stroke-linejoin:round}.gauges .cost-glyph{stroke:none}.mlab,.sub,.pct,.dim{fill:#E5E5E5}}`
 
 function ditherSvg(width: number, height: number): string {
   const patterns = Array.from({ length: 3 }, (_, layer) => {
@@ -1167,8 +1177,8 @@ function ditherSvg(width: number, height: number): string {
 
 // ───────────────────────── 整条 ─────────────────────────
 
-// 收起后的细条：小 Clawd + 所有可用读数的「标签 细进度条 百分比」，同样左右留白相等、间距相等；不画分隔线，靠间距分组
-function miniSvg(gauges: Gauge[], isWorking: boolean, isStressed: boolean, width: number, isChill: boolean, pet?: PetView, lang: Lang = 'zh', activity?: Activity): string {
+// 收起后的细条：所有可用读数的「标签 细进度条 百分比」，靠间距分组。
+function miniGaugeContent(gauges: Gauge[], width: number, lang: Lang): { content: string; canShowActivityIcon: boolean } {
   // 窄窗口同样逐级收：标签 + 细条 + 百分比 → 标签 + 百分比 → 短标签 + 百分比 → 只剩百分比（完整标签在悬停提示里）
   const measure = (showBar: boolean, showLabel: boolean, isShort = false) =>
     gauges.map(g => {
@@ -1178,24 +1188,21 @@ function miniSvg(gauges: Gauge[], isWorking: boolean, isStressed: boolean, width
       const valueW = textWidth(value, MINI_VALUE_SIZE) * 1.05
       const showProgress = showBar && g.kind !== 'cost'
 
-      return { g, value, label, labelW, valueW, showBar: showProgress, showLabel, w: (showLabel ? labelW + 8 : 0) + (showProgress ? MINI_BAR + 8 : 0) + valueW + timerWidth(g, TIMER_SIZE) }
+      return { g, value, label, labelW, valueW, showBar: showProgress, showLabel, w: (showLabel ? labelW + 8 : 0) + (showProgress ? MINI_BAR + 8 : 0) + valueW + timerWidth(g, TIMER_SIZE, lang) }
     })
-  // 间距至少 24px：Clawd 干活时会往右跑 20px，不能撞上第一项
-  const fits = (list: { w: number }[], activityReserve = 0) =>
-    2 * MINI_X + MINI_LAYOUT_W + activityReserve + list.reduce((a, b) => a + b.w, 0) + list.length * 24 <= width
+  // 间距至少 24px：Clawd 干活时会往右跑 20px，不能撞上第一项。图标空间一直预留。
+  const fits = (list: { w: number }[]) =>
+    2 * MINI_X + MINI_LAYOUT_W + MINI_ACTIVITY_RESERVE + list.reduce((a, b) => a + b.w, 0) + list.length * 24 <= width
   const compact = measure(false, false)
   const layouts = [measure(true, true), measure(false, true), measure(false, true, true), compact]
-  const iconItems = activity?.icon ? layouts.find(list => fits(list, MINI_ACTIVITY_RESERVE)) : undefined
-  const showActivityIcon = iconItems !== undefined
-  const items = iconItems ?? layouts.find(list => fits(list)) ?? compact
-  const activityReserve = showActivityIcon ? MINI_ACTIVITY_RESERVE : 0
-  const mood = moodForClawd(isWorking, activity, pet)
-  const hasTimer = gauges.some(g => g.timerMs !== undefined)
-  const layoutWidth = MINI_LAYOUT_W + activityReserve
-  const gap = Math.max(24, (width - 2 * MINI_X - layoutWidth - items.reduce((a, b) => a + b.w, 0)) / items.length)
+  const items = layouts.find(list => fits(list))
+  const canShowActivityIcon = items !== undefined
+  const selected = items ?? compact
+  const layoutWidth = MINI_LAYOUT_W + MINI_ACTIVITY_RESERVE
+  const gap = Math.max(24, (width - 2 * MINI_X - layoutWidth - selected.reduce((a, b) => a + b.w, 0)) / selected.length)
   let x = MINI_X + layoutWidth + gap
   const parts: string[] = []
-  items.forEach(({ g, value, label, labelW, valueW, showBar, showLabel, w }) => {
+  selected.forEach(({ g, value, label, labelW, valueW, showBar, showLabel, w }) => {
     const t = g.tier ?? tier(g.to ?? 0)
     const barX = x + (showLabel ? labelW + 8 : 0)
     const fill = ((Math.min(100, Math.max(0, g.to ?? 0)) / 100) * MINI_BAR).toFixed(1)
@@ -1208,32 +1215,41 @@ function miniSvg(gauges: Gauge[], isWorking: boolean, isStressed: boolean, width
           ? `<rect x="${barX.toFixed(1)}" y="${MINI_BAR_Y}" width="${fill}" height="${MINI_BAR_H}" rx="${MINI_BAR_H / 2}" fill="url(#grad-${t})" class="mfill ${t}"/>`
           : '') +
         `<text x="${(barX + (showBar ? MINI_BAR + 8 : 0)).toFixed(1)}" y="${MINI_TEXT_BASELINE}" class="mval">${value}</text>` +
-        (g.timerMs === undefined ? '' : cacheTimerSvg(barX + (showBar ? MINI_BAR + 8 : 0) + valueW + 6, MINI_TEXT_BASELINE, g.timerMs, lang, TIMER_SIZE, MINI_VALUE_SIZE)) +
+        (g.timerMs === undefined ? '' : cacheTimerSvg(barX + (showBar ? MINI_BAR + 8 : 0) + valueW + 6, MINI_TEXT_BASELINE, g.timerMs, lang, TIMER_SIZE, MINI_VALUE_SIZE, g.timerStartedAt)) +
         `</g>`,
     )
     x += w + gap
   })
 
-  return (
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${H_MINI}" width="${width}" height="${H_MINI}" style="color-scheme:light dark;background:transparent">` +
-    `<style>${STYLE}${MINI_STYLE}${activityStyle(activity, showActivityIcon)}${isStressed ? SWEAT_STYLE : ''}${mood ? MOOD_STYLE : ''}${pet?.halloween ? HALLOWEEN_STYLE : ''}${hasTimer ? TIMER_STYLE : ''}${isWorking ? DITHER_STYLE : ''}</style>` +
-    DEFS +
-    (isWorking ? ditherSvg(width, H_MINI) : '') +
-    `<g class="gauges">${parts.join('')}</g>` +
-    clawd(isWorking, isStressed, false, true, isChill, pet, activity, showActivityIcon) +
-    `</svg>`
-  )
+  return { content: `<g class="gauges">${parts.join('')}</g>`, canShowActivityIcon }
 }
 
 // cacheTimer：离缓存过期的毫秒数和有效期（Claude 干活时不显示：那时缓存一直在用）
-export type CacheTimer = { remainMs: number; ttlMs: number }
+export type CacheTimer = { remainMs: number; ttlMs: number; startedAt?: number }
 
-export function bandSvg(bars: Bars, isWorking: boolean, width: number, mini = false, lang: Lang = 'zh', pet?: PetView, cacheTimer?: CacheTimer, activity?: Activity): string {
-  timerLang = lang
+export type BandSvgParts = { clawd: string; gauges: string; cut: number; gaugesKey: string }
+
+function svgDocument(width: number, height: number, style: string, content: string): string {
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" style="color-scheme:light dark;background:transparent">` +
+    `<style>${style}</style>${content}</svg>`
+  )
+}
+
+export function bandSvgParts(
+  bars: Bars,
+  isWorking: boolean,
+  width: number,
+  mini = false,
+  lang: Lang = 'zh',
+  pet?: PetView,
+  cacheTimer?: CacheTimer,
+  activity?: Activity,
+  now = Date.now(),
+): BandSvgParts {
   // The host's live working flag outranks a lingering done/sleep pose.
   const displayActivity: Activity | undefined =
     isWorking && (activity?.kind === 'done' || activity?.kind === 'sleep') ? { kind: 'working' } : activity
-  const mood = moodForClawd(isWorking, displayActivity, pet)
   const { from, to } = bars
   // $.state 存取会序列化，from/to 永远是两个对象，必须比内容
   const isChanged = JSON.stringify(from) !== JSON.stringify(to)
@@ -1246,9 +1262,15 @@ export function bandSvg(bars: Bars, isWorking: boolean, width: number, mini = fa
   const t = T[lang]
   const pct = (v: number | undefined) => (v === undefined ? '—' : `${Math.round(v)}%`)
   const timer = isWorking ? undefined : cacheTimer
-  const sessionPace = paceText(to?.session, FIVE_HOUR_MS, false, lang)
-  const weeklyPace = paceText(to?.weekly, WEEK_MS, true, lang)
-  const fablePace = paceText(to?.fable, WEEK_MS, true, lang)
+  const sessionReset = resetText(to?.session?.resetsAt, lang, now)
+  const weeklyReset = resetText(to?.weekly?.resetsAt, lang, now)
+  const fableReset = resetText(to?.fable?.resetsAt, lang, now)
+  const sessionLeft = leftText(to?.session?.resetsAt, lang, now)
+  const weeklyLeft = leftText(to?.weekly?.resetsAt, lang, now)
+  const fableLeft = leftText(to?.fable?.resetsAt, lang, now)
+  const sessionPace = paceText(to?.session, FIVE_HOUR_MS, false, lang, now)
+  const weeklyPace = paceText(to?.weekly, WEEK_MS, true, lang, now)
+  const fablePace = paceText(to?.fable, WEEK_MS, true, lang, now)
   const compactText = to?.contextTokens === undefined || to.compactAt === undefined
     ? undefined
     : to.contextTokens >= to.compactAt
@@ -1272,9 +1294,9 @@ export function bandSvg(bars: Bars, isWorking: boolean, width: number, mini = fa
       id: 's',
       label: t.session,
       short: t.short.session,
-      sub: resetText(to?.session?.resetsAt, lang) || t.noData,
-      detail: sessionPace ?? (leftText(to?.session?.resetsAt, lang) || t.noData),
-      title: to?.session ? `${t.session} ${to.session.percent}% · ${resetText(to.session.resetsAt, lang)}${sessionPace ? ` · ${sessionPace}` : ''}` : `${t.session}: ${t.noData}`,
+      sub: sessionReset || t.noData,
+      detail: sessionPace ?? (sessionLeft || t.noData),
+      title: to?.session ? `${t.session} ${to.session.percent}% · ${sessionReset}${sessionPace ? ` · ${sessionPace}` : ''}` : `${t.session}: ${t.noData}`,
       from: from?.session?.percent,
       to: to?.session?.percent,
     },
@@ -1282,9 +1304,9 @@ export function bandSvg(bars: Bars, isWorking: boolean, width: number, mini = fa
       id: 'w',
       label: t.weekly,
       short: t.short.weekly,
-      sub: resetText(to?.weekly?.resetsAt, lang) || t.noData,
-      detail: weeklyPace ?? (leftText(to?.weekly?.resetsAt, lang) || t.noData),
-      title: to?.weekly ? `${t.weekly} ${to.weekly.percent}% · ${resetText(to.weekly.resetsAt, lang)}${weeklyPace ? ` · ${weeklyPace}` : ''}` : `${t.weekly}: ${t.noData}`,
+      sub: weeklyReset || t.noData,
+      detail: weeklyPace ?? (weeklyLeft || t.noData),
+      title: to?.weekly ? `${t.weekly} ${to.weekly.percent}% · ${weeklyReset}${weeklyPace ? ` · ${weeklyPace}` : ''}` : `${t.weekly}: ${t.noData}`,
       from: from?.weekly?.percent,
       to: to?.weekly?.percent,
     },
@@ -1294,9 +1316,9 @@ export function bandSvg(bars: Bars, isWorking: boolean, width: number, mini = fa
             id: 'f',
             label: t.fable,
             short: t.short.fable,
-            sub: resetText(to.fable.resetsAt, lang) || t.noData,
-            detail: fablePace ?? (leftText(to.fable.resetsAt, lang) || t.noData),
-            title: `${t.fable} ${to.fable.percent}% · ${resetText(to.fable.resetsAt, lang) || t.noData}${fablePace ? ` · ${fablePace}` : ''}`,
+            sub: fableReset || t.noData,
+            detail: fablePace ?? (fableLeft || t.noData),
+            title: `${t.fable} ${to.fable.percent}% · ${fableReset || t.noData}${fablePace ? ` · ${fablePace}` : ''}`,
             from: from?.fable?.percent,
             to: to.fable.percent,
           },
@@ -1316,6 +1338,8 @@ export function bandSvg(bars: Bars, isWorking: boolean, width: number, mini = fa
       from: from?.cache?.rate,
       to: to?.cache?.rate,
       timerMs: timer?.remainMs,
+      timerTtlMs: timer?.ttlMs,
+      timerStartedAt: timer?.startedAt,
     },
     ...(to?.cost
       ? [
@@ -1334,41 +1358,81 @@ export function bandSvg(bars: Bars, isWorking: boolean, width: number, mini = fa
       : []),
   ]
   const hasCost = gauges.some(g => g.kind === 'cost')
-  if (mini) {
-    return miniSvg(gauges, isWorking, isStressed, width, isChill, pet, lang, displayActivity)
-  }
   const hasCompactTick = gauges.some(g => g.tickAt !== undefined)
   const hasTimer = gauges.some(g => g.timerMs !== undefined)
-
-  // 按内容实际宽度排：左右留白相等（都是 CLAWD_X），Clawd 与每块之间的间距相等
-  const hasActivityIcon = displayActivity?.icon !== undefined
-  const clawdWidth = CLAWD_W + (hasActivityIcon ? ACTIVITY_LAYOUT_RESERVE : 0)
-  const layout = pickLayout(gauges, width, clawdWidth)
-  const widths = gauges.map(g => blockWidth(g, layout))
-  const gap = Math.max(MIN_GAP[layout], (width - 2 * CLAWD_X - clawdWidth - widths.reduce((a, b) => a + b, 0)) / gauges.length)
-  const xs: number[] = []
-  widths.reduce((x, w) => (xs.push(x), x + w + gap), CLAWD_X + clawdWidth + gap)
-  const blocks = gauges.map((g, i) => gauge(g, i, xs[i], widths[i], isChanged, isFirst, css, layout, lang)).join('')
-  // 分隔线放在两块之间那段间距的正中间
-  const seps = Array.from({ length: gauges.length - 1 }, (_, i) => i + 1)
-    .map(i => {
-      const mid = (xs[i] - gap / 2).toFixed(1)
-
-      return `<line x1="${mid}" y1="${RING_CY - R + 1}" x2="${mid}" y2="${RING_CY + R - 1}" class="sep"/>`
-    })
-    .join('')
-
+  const cut = Math.ceil(mini ? MINI_X + MINI_LAYOUT_W + MINI_ACTIVITY_RESERVE : CLAWD_X + CLAWD_W + ACTIVITY_LAYOUT_RESERVE)
   const clawdChanged = isChanged && !isFirst
+  const mood = moodForClawd(isWorking, displayActivity, pet)
+  let gaugesContent: string
+  let gaugesStyle: string
+  let showActivityIcon = displayActivity?.icon !== undefined
 
-  return (
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${H}" width="${width}" height="${H}" style="color-scheme:light dark;background:transparent">` +
-    `<style>${STYLE}${EXPANDED_STYLE}${hasCompactTick ? COMPACT_TICK_STYLE : ''}${activityStyle(displayActivity)}${isStressed ? SWEAT_STYLE : ''}${mood ? MOOD_STYLE : ''}${pet?.halloween ? HALLOWEEN_STYLE : ''}${hasTimer ? TIMER_STYLE : ''}${hasCost ? COST_STYLE : ''}${css.join('')}${isWorking ? DITHER_STYLE : ''}</style>` +
-    DEFS +
-    (isWorking ? ditherSvg(width, H) : '') +
-    `<g class="gauges">${seps}${blocks}</g>` +
-    clawd(isWorking, isStressed, clawdChanged, false, isChill, pet, displayActivity) +
-    `</svg>`
-  )
+  if (mini) {
+    const miniGauge = miniGaugeContent(gauges, width, lang)
+    showActivityIcon = displayActivity?.icon !== undefined && miniGauge.canShowActivityIcon
+    gaugesContent = miniGauge.content
+    gaugesStyle = GAUGE_BASE_STYLE + MINI_GAUGE_STYLE + (hasTimer ? TIMER_STYLE : '') + (isWorking ? DITHER_STYLE + DITHER_GAUGE_STYLE : '')
+  } else {
+    // 按完整信息栏坐标排：左右留白相等，工具图标空间固定预留
+    const clawdWidth = CLAWD_W + ACTIVITY_LAYOUT_RESERVE
+    const layout = pickLayout(gauges, width, clawdWidth, lang)
+    const widths = gauges.map(g => blockWidth(g, layout, lang))
+    const gap = Math.max(MIN_GAP[layout], (width - 2 * CLAWD_X - clawdWidth - widths.reduce((a, b) => a + b, 0)) / gauges.length)
+    const xs: number[] = []
+    widths.reduce((x, w) => (xs.push(x), x + w + gap), CLAWD_X + clawdWidth + gap)
+    const blocks = gauges.map((g, i) => gauge(g, i, xs[i], widths[i], isChanged, isFirst, css, layout, lang)).join('')
+    const seps = Array.from({ length: gauges.length - 1 }, (_, i) => i + 1)
+      .map(i => {
+        const mid = (xs[i] - gap / 2).toFixed(1)
+        return `<line x1="${mid}" y1="${RING_CY - R + 1}" x2="${mid}" y2="${RING_CY + R - 1}" class="sep"/>`
+      })
+      .join('')
+    gaugesContent = `<g class="gauges">${seps}${blocks}</g>`
+    gaugesStyle =
+      GAUGE_BASE_STYLE +
+      EXPANDED_STYLE +
+      (hasCompactTick ? COMPACT_TICK_STYLE : '') +
+      (hasTimer ? TIMER_STYLE : '') +
+      (hasCost ? COST_STYLE : '') +
+      css.join('') +
+      (isWorking ? DITHER_STYLE + DITHER_GAUGE_STYLE : '')
+  }
+
+  const clawdStyle =
+    STYLE +
+    (mini ? MINI_CLAWD_STYLE : '') +
+    activityStyle(displayActivity, showActivityIcon) +
+    (isStressed ? SWEAT_STYLE : '') +
+    (mood ? MOOD_STYLE : '') +
+    (pet?.halloween ? HALLOWEEN_STYLE : '') +
+    (isWorking ? DITHER_STYLE : '')
+  const height = mini ? H_MINI : H
+  const clawdContent =
+    CLAWD_DEFS +
+    (isWorking ? ditherSvg(width, height) : '') +
+    clawd(isWorking, isStressed, clawdChanged, mini, isChill, pet, displayActivity, showActivityIcon)
+  const gaugesContentInFullCoordinates =
+    `<g transform="translate(-${cut} 0)">` +
+    (isWorking ? ditherSvg(width, height) : '') +
+    gaugesContent +
+    `</g>`
+  const gaugesKey = JSON.stringify({
+    gauges: gauges.map(g => ({ ...g, timerMs: undefined })),
+    isChanged,
+    isFirst,
+    timer: timer ? { ttlMs: timer.ttlMs, expired: timer.remainMs <= 0 } : null,
+    isWorking,
+    width,
+    mini,
+    lang,
+  })
+
+  return {
+    clawd: svgDocument(cut, height, clawdStyle, clawdContent),
+    gauges: svgDocument(width - cut, height, gaugesStyle, GAUGE_DEFS + gaugesContentInFullCoordinates),
+    cut,
+    gaugesKey,
+  }
 }
 
 export function bandAlt(to: Snap | null, isWorking: boolean, lang: Lang = 'zh'): string {

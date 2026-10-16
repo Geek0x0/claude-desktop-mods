@@ -4,16 +4,13 @@ import type { Atom, EngineInterface, ModelUsage, PluginState, Register, SessionC
 import type { Activity, Bars, CacheStat, CacheTotals, Pet, ReactionKind, Report, SessionCost, Snap, Week, Window } from '../types'
 import {
   bandAlt,
-  bandSvg,
+  bandSvgParts,
   type CacheTimer,
+  type BandSvgParts,
   H,
   H_MINI,
-  MIN_BAND_W,
-  MIN_BAND_W_WITH_COST,
-  MIN_BAND_W_WITH_COST_AND_ACTIVITY,
   MIN_BAND_W_WITH_ACTIVITY,
-  MIN_BAND_W_WITH_FABLE,
-  MIN_BAND_W_WITH_FABLE_AND_COST,
+  MIN_BAND_W_WITH_COST_AND_ACTIVITY,
   MIN_BAND_W_WITH_FABLE_AND_COST_AND_ACTIVITY,
   MIN_BAND_W_WITH_FABLE_AND_ACTIVITY,
   formatCost,
@@ -31,6 +28,10 @@ type UsagePetAtomKey = keyof PluginState['usage-pet'] & string
 type UsagePetAtom<K extends UsagePetAtomKey, T> = Atom<T> & { readonly ref: StateRef<'usage-pet', K> }
 type ActivityFrame = Activity & { owner?: number; previous?: ActivityFrame }
 type ToolBurst = { owner: number; calls: Set<number>; frame?: ActivityFrame; timer?: Timer; generation: number }
+
+// Limit retained SVG time values across host remounts; reuse stays source-stable within the window.
+const GAUGE_SOURCE_MEMO_MAX_AGE_MS = 60_000
+let previousGaugeSvg: (Pick<BandSvgParts, 'gauges' | 'gaugesKey'> & { createdAt: number }) | undefined
 
 const barsRef = { plugin: 'usage-pet', key: 'bars' } as const
 const cacheRef = { plugin: 'usage-pet', key: 'cache' } as const
@@ -61,6 +62,7 @@ const reportAtom = atom(reportRef, NEW_REPORT) as UsagePetAtom<'report', Report>
 const activityAtom = atom(activityRef, { kind: 'idle' } as Activity) as UsagePetAtom<'activity', Activity>
 const MAX_ACTIVITY_DEPTH = 8
 const TOOL_RESTORE_MS = 300
+const MIN_POSE_MS = 600
 let activityFrame: ActivityFrame = { kind: 'idle' }
 let activityOwner = 0
 const activeActivityOwners = new Set<number>()
@@ -208,18 +210,66 @@ function visibleActivity(frame: ActivityFrame): Activity {
   }
 }
 
-// activity atom 只由内存里的 activityFrame 写：按上次写出的值去重，不回读 state
+// activity atom 只由内存里的 activityFrame 写：按上次写出的值去重，并合并最短停留期内的快速变化
 // （在别的钩子帧里读到的可能还是旧值，比较会误判成「没变」而漏写）
 let publishedActivity: Activity | undefined
+let lastActivityWriteAt: number | undefined
+let activityPublishTimer: Timer | undefined
+let activityPublishGeneration = 0
 
-async function publishActivity($: EngineInterface): Promise<Activity> {
-  const next = visibleActivity(activityFrame)
-  if (publishedActivity && deepEqual(publishedActivity, next)) return next
+function cancelActivityPublishTimer($: EngineInterface, label: string) {
+  const timer = activityPublishTimer
+  activityPublishTimer = undefined
+  activityPublishGeneration++
+  try {
+    timer?.cancel()
+  } catch (error) {
+    debugError($, label, error)
+  }
+}
 
+async function writeActivity($: EngineInterface, next: Activity, at: number): Promise<Activity> {
   publishedActivity = next
+  lastActivityWriteAt = at
   await $.state.set(activityRef, next)
 
-  return next
+  return visibleActivity(activityFrame)
+}
+
+async function publishActivity($: EngineInterface): Promise<Activity> {
+  let next = visibleActivity(activityFrame)
+  if (publishedActivity && deepEqual(publishedActivity, next)) return next
+
+  const now = await clockNow($)
+  next = visibleActivity(activityFrame)
+  if (publishedActivity && deepEqual(publishedActivity, next)) return next
+
+  const elapsed = lastActivityWriteAt === undefined ? MIN_POSE_MS : now - lastActivityWriteAt
+  if (elapsed < MIN_POSE_MS) {
+    if (!activityPublishTimer) {
+      const generation = ++activityPublishGeneration
+      try {
+        activityPublishTimer = $.clock.after(MIN_POSE_MS - elapsed, () => {
+          if (generation !== activityPublishGeneration) return
+
+          activityPublishTimer = undefined
+          void safeBookkeeping($, 'activity pose publish timer failed', async () => {
+            await publishActivity($)
+          })
+        })
+      } catch (error) {
+        debugError($, 'activity pose publish timer setup failed', error)
+
+        return writeActivity($, next, now)
+      }
+    }
+
+    return visibleActivity(activityFrame)
+  }
+
+  cancelActivityPublishTimer($, 'activity pose publish timer cancel failed')
+
+  return writeActivity($, next, now)
 }
 
 function setActivityFrame($: EngineInterface, frame: ActivityFrame) {
@@ -740,7 +790,7 @@ function cacheTimer(warmAt: number, bars: Bars, now: number): CacheTimer | undef
   }
   const ttlMs = bars.to?.session || bars.to?.weekly ? TTL_SUBSCRIPTION_MS : TTL_API_MS
 
-  return { remainMs: Math.min(ttlMs, warmAt + ttlMs - now), ttlMs }
+  return { remainMs: Math.min(ttlMs, warmAt + ttlMs - now), ttlMs, startedAt: warmAt }
 }
 
 // 这个会话自己那份账的键；拿不到会话 id（不该发生）就记在一个公共键上
@@ -966,6 +1016,8 @@ export const register: Register = (on, options) => {
     pendingPermission = undefined
     if (toolBurst) cancelToolRestore(toolBurst)
     toolBurst = undefined
+    cancelActivityPublishTimer($, 'session.start activity publish timer cancel failed')
+    lastActivityWriteAt = undefined
     activeActivityOwners.clear()
     activityFrame = { kind: 'idle' }
     publishedActivity = undefined
@@ -1338,25 +1390,32 @@ export const register: Register = (on, options) => {
         // 桌面端的 Client 在 2.1.286 上一律 10 秒超时（缺 CSP nonce，同见 #99211），所以桌面只用 Svg
         const { Box, Button, Svg } = $.ui.resolve(e)
         const activity = await read($, activityAtom)
-        const hasActivityIcon = activity.icon !== undefined
         // 不设大下限：以前最少 560px，窗口窄时信息栏比可用宽度还宽，按钮就被挤到下一行。
-        // 窄了由 bandSvg 自己逐级收（去副标题 → 只剩圆环），按钮始终在同一行右侧
-        // 工具图标伸出 Clawd 本体的排布框，活动时给它单独留位
+        // 窄了由 bandSvgParts 自己逐级收（去副标题 → 只剩圆环），按钮始终在同一行右侧
+        // Clawd 工具图标的空间始终保留，避免姿势变化挪动圆环
         const hasFable = bars.to?.fable !== undefined
         const hasCost = bars.to?.cost !== undefined
-        const minimumWithoutActivity = hasFable
-          ? hasCost ? MIN_BAND_W_WITH_FABLE_AND_COST : MIN_BAND_W_WITH_FABLE
-          : hasCost ? MIN_BAND_W_WITH_COST : MIN_BAND_W
-        const minimumWithActivity = hasFable
+        const minimumWidth = hasFable
           ? hasCost ? MIN_BAND_W_WITH_FABLE_AND_COST_AND_ACTIVITY : MIN_BAND_W_WITH_FABLE_AND_ACTIVITY
           : hasCost ? MIN_BAND_W_WITH_COST_AND_ACTIVITY : MIN_BAND_W_WITH_ACTIVITY
-        const minimumWidth = hasActivityIcon ? minimumWithActivity : minimumWithoutActivity
         const width = Math.max(minimumWidth, e.props.bodyColumns * PX_PER_COLUMN - 8 - BUTTON_W)
         const pinned = await read($, pinnedAtom)
         const isMini = !pinned && !(await read($, expandedAtom))
         // 近 7 天用量只在展开时写进 Clawd 的悬停提示：收起时是一条细条，不放
         const week = isMini ? undefined : weekLine(await read($, weekAtom), lang, now)
         const shown = week ? { ...pet, title: `${pet.title} · ${week}` } : pet
+        const parts = bandSvgParts(bars, e.props.isWorking, width, isMini, lang, shown, cacheTimer(await read($, warmAtom), bars, now), activity, now)
+        let gaugesSource = parts.gauges
+        if (
+          previousGaugeSvg &&
+          previousGaugeSvg.gaugesKey === parts.gaugesKey &&
+          now >= previousGaugeSvg.createdAt &&
+          now - previousGaugeSvg.createdAt < GAUGE_SOURCE_MEMO_MAX_AGE_MS
+        ) {
+          gaugesSource = previousGaugeSvg.gauges
+        } else {
+          previousGaugeSvg = { gaugesKey: parts.gaugesKey, gauges: gaugesSource, createdAt: now }
+        }
         // 收起时按「展开」= 一直展开；展开时按「收起」= 立刻收起并回到自动模式
         // 按的那一刻再读状态，不用画的时候记下的 isMini（中间可能已经重画过）
         const toggle = async () => {
@@ -1369,9 +1428,18 @@ export const register: Register = (on, options) => {
         return (
           <Box flexDirection="row" alignItems="center" flexWrap="nowrap">
             <Svg
-              source={bandSvg(bars, e.props.isWorking, width, isMini, lang, shown, cacheTimer(await read($, warmAtom), bars, now), activity)}
+              key="clawd"
+              source={parts.clawd}
+              alt={pet.title}
+              width={parts.cut}
+              height={isMini ? H_MINI : H}
+              isInteractive
+            />
+            <Svg
+              key="gauges"
+              source={gaugesSource}
               alt={bandAlt(bars.to, e.props.isWorking, lang)}
-              width={width}
+              width={width - parts.cut}
               height={isMini ? H_MINI : H}
               isInteractive
             />
