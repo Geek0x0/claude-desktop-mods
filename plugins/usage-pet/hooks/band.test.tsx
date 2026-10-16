@@ -844,6 +844,52 @@ test('跟随系统（Windows）：显示语言英文（en-US）→ 英文', AUTO
   expect(String((await svgOf(ui)).props?.alt)).toContain('Context')
 })
 
+test('跟随系统：启动不等待慢语言检测，检测完成后信息栏切换中文', AUTO, async ($, on) => {
+  mock.store(on, {})
+  mock.clock(on)
+  mock.env(on, {})
+  on('session.measure', ($, e) => ({ changed: e.changed }))
+  on('session.start', ($, e) => ({ cwd: e.cwd }))
+  on('session.usage', () => ({ value: { startedAt: 0, context: { window: 200000 }, rateLimits: [] } }))
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
+
+  let release!: () => void
+  let markDetectionStarted!: () => void
+  let markChineseStored!: () => void
+  const gate = new Promise<void>(resolve => (release = resolve))
+  const detectionStarted = new Promise<void>(resolve => (markDetectionStarted = resolve))
+  const chineseStored = new Promise<void>(resolve => (markChineseStored = resolve))
+  on('process.run', async () => {
+    markDetectionStarted()
+    await gate
+
+    return { value: { exitCode: 0, stdout: '(\n    "zh-Hans-CN",\n    en\n)\n', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+  })
+  on('state.set', ($, e, next) => {
+    if (e.key === 'lang' && e.value === 'zh') markChineseStored()
+
+    return next(e)
+  })
+
+  const sessionStart = $.session.start(START as never)
+  await detectionStarted
+  let startTimeout!: ReturnType<typeof setTimeout>
+  const resolvedWhileDetectionPending = await Promise.race([
+    sessionStart.then(() => true),
+    new Promise<boolean>(resolve => {
+      startTimeout = setTimeout(() => resolve(false), 100)
+    }),
+  ])
+  clearTimeout(startTimeout)
+  release()
+  await sessionStart
+  await chineseStored
+
+  expect(resolvedWhileDetectionPending).toBe(true)
+  const ui = await $.ui.mount({ ...BAND(false), surface: 'desktop' })
+  expect(String((await svgOf(ui)).props?.alt)).toContain('上下文')
+})
+
 test('放松模式：缓存命中 ≥90% 戴墨镜；同时额度告急则只冒汗不戴墨镜', ZH, async ($, on) => {
   on('session.measure', ($, e) => ({ changed: e.changed }))
   on('turn.complete', ($, e) => ({ text: '', usage: e.usage }))
@@ -878,6 +924,32 @@ test('放松模式 + 干活：墨镜和干活两种状态同时挂在 Clawd 上�
   const src = String((await svgOf(ui)).props?.source)
   expect(src).toMatch(/class="clawd working[^"]* chill"/)
   expect(src).toContain('.chill.working .shades{animation:none;transform:translateY(-1.9px)}')
+})
+
+test('放松模式 + 睡眠或完成：眼睛静止闭合；待你状态仍保持睁眼', () => {
+  const chillBars: Bars = {
+    from: null,
+    to: {
+      contextPercent: 20,
+      contextTokens: 40000,
+      contextWindow: 200000,
+      session: { percent: 10 },
+      weekly: { percent: 20 },
+      cache: { rate: 92, read: 920, write: 40, fresh: 40 },
+    },
+  }
+  const sleeping = bandSvg(chillBars, false, 900, false, 'zh', undefined, undefined, { kind: 'sleep' })
+  const done = bandSvg(chillBars, false, 900, false, 'zh', undefined, undefined, { kind: 'done' })
+  const needsYou = bandSvg(chillBars, false, 900, false, 'zh', undefined, undefined, { kind: 'needs-you', icon: 'bang' })
+  const reaction = bandSvg(chillBars, false, 900, false, 'zh', undefined, undefined, { kind: 'reaction', reaction: 'oops', icon: 'cross' })
+
+  expect(sleeping).toContain('.sleep .eyes{opacity:0;animation:none}')
+  expect(done).toContain('.done .eyes{opacity:0;animation:none}')
+  expect(sleeping).toContain('.sleep .shades{opacity:0;animation:none}')
+  expect(done).toContain('.done .shades{opacity:0;animation:none}')
+  expect(needsYou).toContain('.needs-you .eyes{opacity:1;animation:none;transform:scale(1.25);transform-origin:center}')
+  expect(needsYou).toContain('.needs-you .shades{opacity:0;animation:none}')
+  expect(reaction).toContain('.reaction .eyes,.reaction .shades{opacity:0;animation:none}')
 })
 
 test('悬停换上的详情（如「84,000 tokens」）比副标题长时，这一块按详情留宽，不压分隔线、不出右边界', EN, async ($, on) => {

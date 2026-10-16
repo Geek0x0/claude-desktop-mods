@@ -1,6 +1,6 @@
 // Clawd 战报卡：一张 640×360（16:9）的 SVG，面板里直接画，也导出成 PNG 发 X。
 // 固定深色：它是一张「图片」，不是界面的一部分，浅色外观下也是同一张卡。
-import { clawdBody, formatCost, tokensText } from './band'
+import { clawdBody, formatCost, HALLOWEEN_COLOR_STYLE, tokensText } from './band'
 import { type Lang, T } from './i18n'
 import { type Achievement, levelOf, type Pet, threshold } from './pet'
 
@@ -62,6 +62,7 @@ export function cardSvg(data: CardData, lang: Lang, canvas: CardCanvas = 'pane')
   const progress = Math.min(1, Math.max(0, (data.pet.xp - from) / (next - from)))
   const minutes = Math.max(0, Math.round((data.now - data.startedAt) / 60000))
   const isChill = (data.cacheRate ?? 0) >= 90
+  const cardStyle = `${STYLE}${data.halloween ? HALLOWEEN_COLOR_STYLE : ''}`
 
   // 时长写成「2h 14m」，单位用小一号的字：中文「2 小时 14 分」放大字号会挤进隔壁一格
   const h = Math.floor(minutes / 60)
@@ -111,7 +112,7 @@ export function cardSvg(data: CardData, lang: Lang, canvas: CardCanvas = 'pane')
   if (canvas === 'square') {
     return (
       `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1200" viewBox="0 0 ${CARD_W} ${CARD_W}">` +
-      `<style>${STYLE}</style><rect width="${CARD_W}" height="${CARD_W}" fill="#1C1B1A"/>` +
+      `<style>${cardStyle}</style><rect width="${CARD_W}" height="${CARD_W}" fill="#1C1B1A"/>` +
       `<g transform="translate(0 ${(CARD_W - CARD_H) / 2})">${card}</g></svg>`
     )
   }
@@ -119,7 +120,7 @@ export function cardSvg(data: CardData, lang: Lang, canvas: CardCanvas = 'pane')
   // wide 是直角（上面 rx = 0）：圆角留下的四个角会被截成白色
   const [width, height] = canvas === 'wide' ? [1200, 675] : [CARD_W, CARD_H]
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${CARD_W} ${CARD_H}" width="${width}" height="${height}"><style>${STYLE}</style>${card}</svg>`
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${CARD_W} ${CARD_H}" width="${width}" height="${height}"><style>${cardStyle}</style>${card}</svg>`
 }
 
 export function cardAlt(data: CardData, lang: Lang): string {

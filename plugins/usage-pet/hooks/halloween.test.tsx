@@ -85,8 +85,14 @@ test('收起的细条上也会讨糖', () => {
 
 test('战报卡：万圣节也戴巫师帽、拎桶', () => {
   const data = { startedAt: 0, now: 60000, turns: 1, toolCalls: 0, files: 0, tokens: 0, pet: NEW_PET, earned: [] }
-  expect(cardSvg({ ...data, halloween: true }, 'zh')).toContain(WITCH)
-  expect(cardSvg(data, 'zh')).not.toContain(WITCH)
+  const halloween = cardSvg({ ...data, halloween: true }, 'zh')
+  expect(halloween).toContain(WITCH)
+  expect(halloween).toContain('class="hw-pail"')
+  expect(halloween).toContain('.halloween-orange{fill:#F28C28}')
+  expect(halloween).toContain('.halloween-paper{fill:#F4F2EC}')
+  const plain = cardSvg(data, 'zh')
+  expect(plain).not.toContain(WITCH)
+  expect(plain).not.toContain('.halloween-orange{fill:#F28C28}')
 })
 
 // ───────── 接进插件：答完一轮开始讨糖 ─────────

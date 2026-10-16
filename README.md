@@ -40,7 +40,7 @@ Forked from [manson341349-beep/claude-desktop-mods](https://github.com/manson341
 
 ## 中文
 
-### usage-pet：Clawd 信息栏（v1.13.2）
+### usage-pet：Clawd 信息栏（v1.13.3）
 
 - **四个基础用量环**：上下文、5 小时额度、每周额度、缓存命中率（仅主对话本会话，排除子代理）；圆环、标签和百分比比早期版本更大。80% 变琥珀色，95% 变红，缓存命中低于 50% 才提醒
 - **Fable 每周（可选第五环）**：有额度时显示在每周之后，沿用额度环的琥珀色 / 红色阈值。仅当符合条件的 Claude 订阅 OAuth 登录有 Fable 每周额度时显示；API 密钥、Bedrock/Vertex、网关、未登录或请求失败时不显示，刷新失败保留上次读数。插件在会话开始和回复后自行 GET Anthropic 用量接口（`https://api.anthropic.com/api/oauth/usage`），最多每 5 分钟一次；宿主添加凭据，插件看不到令牌，也不发送提示词、回复或遥测。策略 `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` 或组织网页请求限制可能会阻止获取
@@ -48,7 +48,7 @@ Forked from [manson341349-beep/claude-desktop-mods](https://github.com/manson341
 - **展开时**：圆环依次扫入、数字像老虎机一样滚动、旁边飘出「+N%」
 - **缓存倒计时**：Claude 工作时隐藏，首轮回复后才显示在缓存命中旁（订阅约 1 小时、API 密钥 5 分钟，每次回复重新计时），剩 5 分钟变色，过期显示「已过期」。缓存过期后下一轮要把整段对话重新写入缓存，更耗额度
 - **本会话费用**：在 Cache hit 后显示；展开时有 `$` 徽章和「费用 $… 本会话」，收起时显示「费用 $…」。终端和 `/clawd-card` 也显示费用。金额与 `/cost` 的 API 等价总额一致；订阅金额是估算，不是账单；宿主未提供费用时隐藏
-- **Clawd 的活动与心情**：工作时显示对应工具图标，深色模式下信息栏有紫色像素点阵；空闲时呼吸、眨眼、张望；10 分钟无活动后睡觉。权限请求和计划批准（`ExitPlanMode`）显示「!」，`AskUserQuestion` 显示「?」；测试通过/失败、工具报错和烦躁也有专属反应（20 分钟内 3 次后跺脚，`tantrums: off` 关闭）。任何 5 小时、每周或 Fable 额度达到 90% 都会冒汗；仅当缓存命中 ≥90% 且没有额度达到 90% 才戴墨镜（点子来自 [@Joshua_WD](https://x.com/Joshua_WD)）
+- **Clawd 的活动与心情**：工作时显示对应工具图标，深色模式下信息栏有紫色像素点阵；空闲时呼吸、眨眼、张望；10 分钟无活动后睡觉。权限请求和计划批准（`ExitPlanMode`）显示「!」，对应工具完成或被拒绝后清除；`AskUserQuestion` 显示「?」。测试通过/失败、工具报错和烦躁也有专属反应（20 分钟内 3 次后跺脚，`tantrums: off` 关闭）。任何 5 小时、每周或 Fable 额度达到 90% 都会冒汗；仅当缓存命中 ≥90% 且没有额度达到 90% 才戴墨镜（点子来自 [@Joshua_WD](https://x.com/Joshua_WD)）
 - **工具图标**：Bash/PowerShell 是终端，Edit/Write/MultiEdit/NotebookEdit 是铅笔，Read/Grep/Glob 是放大镜，WebFetch/WebSearch 是地球，Agent/Task 是闪电，MCP 工具是小图标，其余是转圈图标
 - **时段与季节装扮**：北半球季节；咖啡 06:00–10:00，夜帽 22:00–06:00，圣诞节 12 月 20–26 日，新年 12 月 31 日至 1 月 1 日。`seasonal: off` 关闭这些装扮
 - **隐私**：只读取 Claude Code 本会话的用量与费用（费用与 `/cost` 的 API 等价总额一致；订阅费用是估算，不是账单）；只观察 `classic.PermissionRequest` 来显示「!」，从不替你回答或修改请求；计划批准（`ExitPlanMode`）也显示「!」。每条提交文本只检查去掉首尾空格后是否以 `/` 开头，以区分斜杠命令和对话；`tantrums` 开启时还会在 composer 本地检查烦躁词句。提示文本不保存、不发送、不改写；`tantrums: off` 只关闭烦躁检查。读取工具结果仅用于判断测试通过/失败和工具错误。
@@ -107,7 +107,7 @@ claude plugin uninstall usage-pet@claude-desktop-mods
 
 ## English
 
-### usage-pet (v1.13.2)
+### usage-pet (v1.13.3)
 
 - **Four base rings**: context, 5-hour limit, weekly limit and cache hit rate (cumulative for the main conversation this session, excluding subagents), plus an optional fifth Fable weekly ring. Rings, labels and percentages are larger than in earlier versions. Amber at 80%, red at 95%; cache hit warns below 50%
 - **Fable weekly**: when available, this separate allowance appears after Weekly with percent used and reset time, using the same amber/red thresholds. It appears only for an eligible first-party OAuth Claude subscription; API keys, Bedrock/Vertex, gateways, no login or a failed request leave it hidden, and refresh failures keep the last good value. The plugin fetches it at session start and after replies, at most every 5 minutes, using host-side authorization; no token, prompts, replies or telemetry are sent. `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` or an organization policy can block the GET.
@@ -115,7 +115,7 @@ claude plugin uninstall usage-pet@claude-desktop-mods
 - **Expanded**: rings sweep in, digits roll like an odometer, `+N%` chips float up
 - **Cache countdown**: hidden while Claude works; appears next to Cache hit after the first reply (about 1 hour on a subscription, 5 minutes on an API key; every reply restarts it). Amber in the last 5 minutes, "cold" once expired. A cold cache means the next turn re-caches the whole conversation.
 - **Session cost**: shown after Cache hit as a $ badge and `Cost $… This session` when expanded, or `Cost $…` in the collapsed strip; also shown in the terminal and as a `/clawd-card` tile. It matches `/cost`'s API-equivalent total; subscription amounts are estimates, not bills. Hidden when the host reports no cost.
-- **Clawd's activity and moods**: shows the matching tool icon while working, with a purple pixel dither across the band in dark mode; breathes, blinks and sleeps after 10 idle minutes. Permission requests and plan approval (`ExitPlanMode`) show "!"; `AskUserQuestion` shows "?". He reacts to test pass/fail, tool errors and frustration (three frustrated composer prompts in 20 minutes trigger a tantrum; `tantrums: off` disables it). Any 5-hour, weekly or Fable limit at 90% makes him sweat; sunglasses require cache hit ≥90% and no limit at 90%+.
+- **Clawd's activity and moods**: shows the matching tool icon while working, with a purple pixel dither across the band in dark mode; breathes, blinks and sleeps after 10 idle minutes. Permission requests and plan approval (`ExitPlanMode`) show "!"; the mark clears when that tool finishes or is denied. `AskUserQuestion` shows "?". He reacts to test pass/fail, tool errors and frustration (three frustrated composer prompts in 20 minutes trigger a tantrum; `tantrums: off` disables it). Any 5-hour, weekly or Fable limit at 90% makes him sweat; sunglasses require cache hit ≥90% and no limit at 90%+.
 - **Tool icons**: Bash/PowerShell → terminal; Edit/Write/MultiEdit/NotebookEdit → pencil; Read/Grep/Glob → magnifier; WebFetch/WebSearch → globe; Agent/Task → bolt; MCP tools → mini icon; other tools → spinner
 - **Seasonal moods**: northern-hemisphere seasons; coffee 06:00–10:00, nightcap 22:00–06:00, Christmas Dec 20–26, New Year Dec 31–Jan 1. `seasonal: off` disables time-of-day, seasonal and holiday looks.
 - **Privacy**: reads only Claude Code's current-session usage and cost (cost matches the API-equivalent total shown by `/cost`; subscription amounts are estimates, not bills). Every submitted prompt is checked for a leading `/` after trimming whitespace to distinguish slash commands from turns; when `tantrums` is on, composer text is also checked locally for frustration. Prompt text is never stored, sent or changed; `tantrums: off` disables only the frustration check. `classic.PermissionRequest` is observed only to show "!" and is never answered or changed; `ExitPlanMode` also shows "!". Tool results are read only to spot test pass/fail and errors.

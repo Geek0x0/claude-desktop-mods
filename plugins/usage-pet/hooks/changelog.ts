@@ -6,6 +6,13 @@ export type Release = { version: string; notes: Record<Lang, string[]> }
 
 export const CHANGELOG: Release[] = [
   {
+    version: '1.13.3',
+    notes: {
+      zh: ['修复：许可工具完成或被拒绝后及时清除感叹号；万圣节战报卡补齐配色；放松模式下睡眠和完成姿势不再眨眼；烦躁识别过滤代码和常见技术词；启动时不再等待系统语言检测'],
+      en: ['Fixes: clear permission marks when a tool finishes or is denied; color Halloween report cards; keep chill sleep/done eyes still; filter code and common tech terms from tantrum detection; detect system language without blocking startup'],
+    },
+  },
+  {
     version: '1.13.2',
     notes: {
       zh: ['修复：子代理连续调用工具时信息栏会闪烁；同一图标不再重复重画，工具结束后稍等再恢复'],

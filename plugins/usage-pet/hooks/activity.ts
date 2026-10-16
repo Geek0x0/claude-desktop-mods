@@ -21,12 +21,17 @@ export function iconForTool(tool: string): ToolIcon {
 const TEST_CMD =
   /^(?:flutter\s+test|dart\s+test|npm\s+(?:run\s+)?test(?:[:.-][\w:.-]+)?|pnpm\s+(?:run\s+)?test(?:[:.-][\w:.-]+)?|yarn\s+test(?:[:.-][\w:.-]+)?|bun\s+test(?:[:.-][\w:.-]+)?|jest|vitest|pytest|go\s+test|cargo\s+test|(?:\.\/)?gradlew?(?:\s+\S+)*\s+test|mvn\s+test|dotnet\s+test|rspec|phpunit|deno\s+test)(?=\s|$)/i
 const FRUSTRATED =
-  /\b(wtf|wth|ffs|omg|ugh+|argh+|damn|dammit|shit|crap|still (not|broken|failing|wrong|doesn'?t)|doesn'?t work|not working|does not work|seriously|come on|cmon|stupid|useless|i said|what the|nope|scheiss\w*|verdammt|gopf\w*|huere\w*|chabis|nid (gange|funktioniert)|geit nid|funktioniert (immer no |immer noch )?(nid|nicht)|isch kaputt)\b|!!+|\?\?+|\?!|!\?|为什么又|还是不行|搞什么|气死|怎么又|怎么还是|一直不行|为什么还不/iu
-const COMMON_ACRONYMS = new Set(['AI', 'API', 'CD', 'CI', 'CLI', 'CPU', 'CSS', 'CRUD', 'DB', 'DNS', 'GPU', 'HTML', 'HTTP', 'HTTPS', 'IDE', 'JSON', 'LLM', 'OS', 'PR', 'REST', 'SDK', 'SQL', 'SSH', 'TCP', 'UDP', 'UI', 'URL', 'UX', 'UUID', 'XML', 'YAML'])
+  /\b(wtf|wth|ffs|omg|ugh+|argh+|damn|dammit|shit|crap|still (not|broken|failing|wrong|doesn'?t)|doesn'?t work|not working|does not work|stupid|useless|what the|scheiss\w*|verdammt|gopf\w*|huere\w*|chabis|nid (gange|funktioniert)|geit nid|funktioniert (immer no |immer noch )?(nid|nicht)|isch kaputt)\b|!{3,}|\?{3,}|为什么又|还是不行|搞什么|气死|怎么又|怎么还是|一直不行|为什么还不/iu
+const CODE_SPANS = /```[\s\S]*?(?:```|$)|`[^`\n]*`/g
+const COMMON_ACRONYMS = new Set([
+  'AI', 'API', 'CD', 'CI', 'CLI', 'CPU', 'CSS', 'CRUD', 'DB', 'DNS', 'GPU', 'HTML', 'HTTP', 'HTTPS', 'IDE', 'JSON', 'LLM', 'OS', 'PR', 'REST', 'SDK', 'SQL', 'SSH', 'TCP', 'UDP', 'UI', 'URL', 'UX', 'UUID', 'XML', 'YAML',
+  'SELECT', 'FROM', 'WHERE', 'GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS', 'TODO', 'NOTE', 'README',
+])
 
 export function isFrustrated(text: string): boolean {
-  if (FRUSTRATED.test(text)) return true
-  const shouty = (text.match(/(?<![\p{L}\p{N}_])\p{Lu}{2,}(?![\p{L}\p{N}_])/gu) ?? []).filter(word => !COMMON_ACRONYMS.has(word))
+  const visibleText = text.replace(CODE_SPANS, ' ')
+  if (FRUSTRATED.test(visibleText)) return true
+  const shouty = (visibleText.match(/(?<![\p{L}\p{N}_])\p{Lu}{4,}(?![\p{L}\p{N}_])/gu) ?? []).filter(word => !COMMON_ACRONYMS.has(word))
 
   return shouty.length >= 3
 }

@@ -189,8 +189,18 @@ function visibleActivity(frame: ActivityFrame): Activity {
   }
 }
 
-function publishActivity($: EngineInterface) {
-  return updateIfChanged($, activityAtom, () => visibleActivity(activityFrame))
+// activity atom 只由内存里的 activityFrame 写：按上次写出的值去重，不回读 state
+// （在别的钩子帧里读到的可能还是旧值，比较会误判成「没变」而漏写）
+let publishedActivity: Activity | undefined
+
+async function publishActivity($: EngineInterface): Promise<Activity> {
+  const next = visibleActivity(activityFrame)
+  if (publishedActivity && deepEqual(publishedActivity, next)) return next
+
+  publishedActivity = next
+  await $.state.set(activityRef, next)
+
+  return next
 }
 
 function setActivityFrame($: EngineInterface, frame: ActivityFrame) {
@@ -251,9 +261,10 @@ async function needsYou($: EngineInterface, icon: 'bang' | 'question'): Promise<
 
 async function clearNeedsYou($: EngineInterface, owner: number): Promise<boolean> {
   const current = activityFrame
-  if (current.kind !== 'needs-you' || current.owner !== owner) return false
+  const restored = removeActivityOwner(current, owner)
+  if (restored === current) return false
 
-  await setActivityFrame($, restoreActivity(current.previous))
+  await setActivityFrame($, restored)
 
   return true
 }
@@ -927,24 +938,39 @@ export const register: Register = (on, options) => {
   const tantrumsEnabled = String(options?.tantrums ?? 'on').trim().toLowerCase() !== 'off'
   const fableState: FableSession = {}
   let pendingPermission: { tool: string; owner: number } | undefined
+  let langDetectionGeneration = 0
 
   on('session.start', async ($, e, next) => {
+    const detectionGeneration = ++langDetectionGeneration
     mainTurnActive = false
     pendingPermission = undefined
     if (toolBurst) cancelToolRestore(toolBurst)
     toolBurst = undefined
     activeActivityOwners.clear()
     activityFrame = { kind: 'idle' }
+    publishedActivity = undefined
     await safeBookkeeping($, 'session.start bookkeeping failed', async () => {
       refreshFable($, fableState)
-      // 先定语言；读不出来就英文
+      // auto 先沿用本地已有语言（首次是英文），系统检测放到后台，不阻塞 session.start。
       let lang: Lang = 'en'
-      try {
-        lang = choice === 'zh' || choice === 'en' ? choice : await detectLang($)
-      } catch (err) {
-        $.ui.log(`usage-pet: language detection failed: ${String(err)}`, { to: 'debug' })
+      if (choice === 'zh' || choice === 'en') {
+        lang = choice
+      } else {
+        try {
+          lang = await read($, langAtom)
+        } catch (err) {
+          debugError($, 'reading the current language failed', err)
+        }
       }
       await updateIfChanged($, langAtom, () => lang)
+      if (choice !== 'zh' && choice !== 'en') {
+        void detectLang($)
+          .then(async detected => {
+            if (detectionGeneration !== langDetectionGeneration) return
+            await updateIfChanged($, langAtom, current => (current === detected ? current : detected))
+          })
+          .catch(err => debugError($, 'language detection failed', err))
+      }
       // 养成数据从 store 读进来；战报从这个会话第一次加载开始计时（重载插件不重置）
       try {
         const pet = normalize(await $.store.get(PET_KEY))
@@ -1112,6 +1138,7 @@ export const register: Register = (on, options) => {
   on('tool.call', async ($, e, next) => {
     const needsIcon =
       e.agentId === undefined ? (e.tool === 'AskUserQuestion' ? 'question' : e.tool === 'ExitPlanMode' ? 'bang' : undefined) : undefined
+    const activityOwnerAtStart = activityOwner
     let needsOwner: number | undefined
     let burst: ToolBurst | undefined
     let burstCall: number | undefined
@@ -1140,6 +1167,11 @@ export const register: Register = (on, options) => {
     } finally {
       await safeBookkeeping($, 'tool.call cleanup failed', async () => {
         if (burst && burstCall !== undefined) await finishToolCallActivity($, burst, burstCall)
+        const permission = pendingPermission
+        if (permission?.tool === e.tool && permission.owner > activityOwnerAtStart) {
+          pendingPermission = undefined
+          await clearNeedsYou($, permission.owner)
+        }
         if (needsOwner !== undefined) {
           await clearNeedsYou($, needsOwner)
         }

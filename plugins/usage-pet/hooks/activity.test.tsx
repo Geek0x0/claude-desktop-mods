@@ -69,13 +69,34 @@ test('子代理工具错误：不触发主 Clawd 的失误反应', () => {
   expect(reactionForToolResult('Read', '', { isError: true })).toBe('oops')
 })
 
-test('烦躁识别：匹配常见英文和中文表达', () => {
-  expect(['WTF is wrong', 'still not working', '为什么又', '还是不行', '搞什么', '气死'].every(isFrustrated)).toBe(true)
-  expect(isFrustrated('why does this keep failing')).toBe(false)
-  expect(isFrustrated('WHY BROKEN')).toBe(false)
-  expect(isFrustrated('NO WAY THIS')).toBe(true)
-  expect(isFrustrated('HTTP JSON HTML')).toBe(false)
-  expect(isFrustrated('Please update the button color')).toBe(false)
+test('烦躁识别：保留强烈表达与中文，忽略普通语气、标点、技术词和代码', () => {
+  for (const text of ['WTF still broken', 'FFS, still not working', "this doesn't work", '为什么又坏了', '还是不行', '搞什么', '气死', 'THIS IS STILL BROKEN AGAIN', 'THIS IS BROKEN AGAIN', '!!!', '???', 'wtf ?!']) {
+    expect(isFrustrated(text)).toBe(true)
+  }
+
+  for (const text of [
+    'as I said earlier, add a test',
+    'nope, use B',
+    'come on in',
+    'is this seriously supported?',
+    'a ?? b',
+    '!!x',
+    '!!',
+    '??',
+    '?!',
+    '!?',
+    'GET POST DELETE endpoints',
+    'SELECT FROM WHERE',
+    'HTTP JSON HTML',
+    'TODO NOTE README API URL SQL CSS HTML',
+    'WHY BROKEN',
+    'NO WAY THIS',
+    'Please update the button color',
+    'example: ```wtf still broken```',
+    'example: `still not working`',
+  ]) {
+    expect(isFrustrated(text)).toBe(false)
+  }
 })
 
 test('烦躁来源：只把本人输入框提交的强烈提示计入次数', () => {

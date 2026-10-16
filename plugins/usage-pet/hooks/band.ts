@@ -966,6 +966,10 @@ const TIMER_STYLE =
   `.tm{font-weight:600;fill:#F3B18F;font-variant-numeric:tabular-nums}.tm .warn{fill:#FFCB7A}.tm.cold,.tm .cold{fill:#6E6C66;font-weight:500}` +
   `@media (prefers-color-scheme:light){.tm,.tm.cold{fill:#C2603F}.tm .warn{fill:#B26E12}.tm .cold{fill:#B4B1A8}}`
 
+export const HALLOWEEN_COLOR_STYLE =
+  `.halloween-paper{fill:#F4F2EC}.halloween-neutral{fill:#C9C6BE}.halloween-pink{fill:#F7909F}.halloween-gold{fill:#F2C14E}.halloween-orange{fill:#F28C28}.halloween-blue{fill:#5FB0F0}`
+const HALLOWEEN_LIGHT_STYLE =
+  `@media (prefers-color-scheme:light){.hw-q{fill:#C2603F}.halloween-paper{fill:#514E47}.halloween-neutral{fill:#77746C}.halloween-pink{fill:#A74254}.halloween-pink[opacity=".55"]{opacity:1}.halloween-gold{fill:#8A5B00}.halloween-orange{fill:#B65B00}.halloween-blue{fill:#276F9F}}`
 const HALLOWEEN_STYLE =
   // 万圣节：干活时南瓜桶收起来（手要敲电脑）；讨糖时桶摇、问号上下跳、青筋一跳一跳、头顶冒烟（细条太矮，问号和青筋会出上沿，不画）
   `.working .hw-pail{opacity:0}.mini .hw-q,.mini .hw-vein{display:none}` +
@@ -977,8 +981,8 @@ const HALLOWEEN_STYLE =
   `@keyframes qbob{from{transform:none}to{transform:translateY(-.7px)}}` +
   `@keyframes vein{from{transform:scale(.8)}to{transform:scale(1.15)}}` +
   `@keyframes steam{0%{opacity:0;transform:scale(.4)}30%{opacity:.8}100%{opacity:0;transform:translateY(-2.6px) scale(1.3)}}` +
-  `.halloween-paper{fill:#F4F2EC}.halloween-neutral{fill:#C9C6BE}.halloween-pink{fill:#F7909F}.halloween-gold{fill:#F2C14E}.halloween-orange{fill:#F28C28}.halloween-blue{fill:#5FB0F0}` +
-  `@media (prefers-color-scheme:light){.hw-q{fill:#C2603F}.halloween-paper{fill:#514E47}.halloween-neutral{fill:#77746C}.halloween-pink{fill:#A74254}.halloween-pink[opacity=".55"]{opacity:1}.halloween-gold{fill:#8A5B00}.halloween-orange{fill:#B65B00}.halloween-blue{fill:#276F9F}}`
+  HALLOWEEN_COLOR_STYLE +
+  HALLOWEEN_LIGHT_STYLE
 
 const ACTIVITY_STYLE =
   `.activity-icon{shape-rendering:crispEdges}` +
@@ -986,16 +990,16 @@ const ACTIVITY_STYLE =
   `@media (prefers-color-scheme:light){.activity-pixel.pixel-w,.activity-pixel.pixel-s{fill:#4D4A43}.activity-pixel.pixel-t{fill:#377C60}.activity-pixel.pixel-p{fill:#A84F35}.activity-pixel.pixel-y,.activity-pixel.pixel-a{fill:#8A5B00}.activity-pixel.pixel-g{fill:#4B765D}.activity-pixel.pixel-b{fill:#3C6F92}}` +
   `.activity-spinner{transform-box:fill-box;transform-origin:center;animation:activity-spin .9s steps(8) infinite}@keyframes activity-spin{to{transform:rotate(360deg)}}`
 const NEEDS_STYLE =
-  `.needs-you .eyes{transform:scale(1.25);transform-origin:center}.needs-you .hop{animation:needs-hop .85s ease-in-out infinite}.needs-you .activity-icon{animation:needs-blink .7s steps(2,end) infinite}` +
+  `.needs-you .eyes{opacity:1;animation:none;transform:scale(1.25);transform-origin:center}.needs-you .shades{opacity:0;animation:none}.needs-you .hop{animation:needs-hop .85s ease-in-out infinite}.needs-you .activity-icon{animation:needs-blink .7s steps(2,end) infinite}` +
   `@keyframes needs-hop{0%,100%{transform:none}50%{transform:translateY(-1.4px)}}@keyframes needs-blink{0%,49%{opacity:1}50%,100%{opacity:0}}`
 const DONE_STYLE =
-  `.done .eyes{opacity:0}.done .happy{opacity:1}.done .shades{opacity:0;animation:none}.done-sparkle{opacity:.75;animation:done-sparkle 1.1s ease-in-out infinite}.done-sparkle-pixel{fill:#F2C14E}@media (prefers-color-scheme:light){.done-sparkle-pixel{fill:#8A5B00}}` +
+  `.done .eyes{opacity:0;animation:none}.done .happy{opacity:1}.done .shades{opacity:0;animation:none}.done-sparkle{opacity:.75;animation:done-sparkle 1.1s ease-in-out infinite}.done-sparkle-pixel{fill:#F2C14E}@media (prefers-color-scheme:light){.done-sparkle-pixel{fill:#8A5B00}}` +
   `@keyframes done-sparkle{0%,100%{opacity:.4}50%{opacity:1;transform:scale(1.15)}}`
 const COMPACTING_STYLE =
   `.compacting .hop{transform:scale(1.18,.76);transform-origin:50% 100%;animation:compacting-squish .36s ease-in-out infinite alternate}` +
   `@keyframes compacting-squish{from{transform:scale(1.12,.82)}to{transform:scale(1.24,.7)}}`
 const SLEEP_STYLE =
-  `.clawd.sleep{opacity:.5}.sleep .eyes{opacity:0}.sleep .shades{opacity:0;animation:none}.sleep-eyes{display:block}.sleep .hop,.sleep .pace{animation:none!important;transform:none}.sleep-z{opacity:.8;animation:sleep-z 1.8s ease-out infinite}` +
+  `.clawd.sleep{opacity:.5}.sleep .eyes{opacity:0;animation:none}.sleep .shades{opacity:0;animation:none}.sleep-eyes{display:block}.sleep .hop,.sleep .pace{animation:none!important;transform:none}.sleep-z{opacity:.8;animation:sleep-z 1.8s ease-out infinite}` +
   `.sleep-z-pixel{fill:#F0EEE6}@media (prefers-color-scheme:light){.sleep-z-pixel{fill:#4D4A43}}` +
   `@keyframes sleep-z{0%{opacity:0;transform:translateY(1px)}20%{opacity:.8}100%{opacity:0;transform:translateY(-2.5px)}}`
 const REACTION_STYLE =

@@ -147,7 +147,7 @@ test('子代理的回合不涨经验', ZH, async ($, on) => {
 
 test('子代理回合：七天显示的圆整数不变时不写周用量 atom', ZH, async ($, on) => {
   const weekWrites: unknown[] = []
-  await start($, on, {}, on => {
+  const { clock } = await start($, on, {}, on => {
     on('session.id', () => ({ value: 'week-rounding' }))
     on('state.set', ($, e, next) => {
       if (e.key === 'week') weekWrites.push(e.value)
@@ -415,13 +415,13 @@ test('子代理工具突发：切换图标只在可见图标改变时写，结�
   expect(activityWrites.every(write => JSON.stringify(write.value) !== JSON.stringify(write.previous))).toBe(true)
 })
 
-test('权限请求：只观察并透传结果，悬而未决时不会被在途工具图标覆盖', ZH, async ($, on) => {
+test('权限请求：许可工具完成后立即清除感叹号，后续工具图标正常显示', ZH, async ($, on) => {
   let release!: () => void
   let markStarted!: () => void
   const gate = new Promise<void>(resolve => (release = resolve))
   const started = new Promise<void>(resolve => (markStarted = resolve))
   const permissionResult = { additionalContext: ['permission result unchanged'] }
-  await start($, on, {}, on => {
+  const { clock } = await start($, on, {}, on => {
     on('tool.call', async ($, e) => {
       if (e.tool === 'Bash') {
         markStarted()
@@ -444,18 +444,48 @@ test('权限请求：只观察并透传结果，悬而未决时不会被在途�
   release()
   await bash
   const afterBash = await $.ui.mount(BAND)
-  expect(String((await afterBash.findAll({ type: 'Svg' }))[0].props?.source)).toContain('class="activity-icon bang"')
+  const afterBashSvg = String((await afterBash.findAll({ type: 'Svg' }))[0].props?.source)
+  expect(afterBashSvg).not.toContain('class="activity-icon bang"')
+  expect(afterBashSvg).toContain('class="activity-icon terminal"')
+
+  await clock.advance(300)
+  const afterRestore = await $.ui.mount(BAND)
+  expect(String((await afterRestore.findAll({ type: 'Svg' }))[0].props?.source)).not.toContain('class="activity-icon bang"')
 
   await $.tool.call({ tool: 'Read', file_path: '/tmp/a' } as never)
   const afterRead = await $.ui.mount(BAND)
   const afterReadSvg = String((await afterRead.findAll({ type: 'Svg' }))[0].props?.source)
-  expect(afterReadSvg).toContain('class="activity-icon bang"')
-  expect(afterReadSvg).not.toContain('class="activity-icon magnifier"')
+  expect(afterReadSvg).not.toContain('class="activity-icon bang"')
+  expect(afterReadSvg).toContain('class="activity-icon magnifier"')
+})
 
-  await $.tool.call({ tool: 'Bash', command: 'pwd' } as never)
-  const afterPermission = await $.ui.mount(BAND)
-  const afterPermissionSvg = String((await afterPermission.findAll({ type: 'Svg' }))[0].props?.source)
-  expect(afterPermissionSvg).not.toContain('class="activity-icon bang"')
+test('权限请求：工具调用被拒绝时也清除它引起的感叹号', ZH, async ($, on) => {
+  const permissionResult = { additionalContext: ['permission denied unchanged'] }
+  let release!: () => void
+  let markStarted!: () => void
+  const gate = new Promise<void>(resolve => (release = resolve))
+  const started = new Promise<void>(resolve => (markStarted = resolve))
+  await start($, on, {}, on => {
+    on('classic.PermissionRequest', () => ({ value: permissionResult }))
+    on('tool.call', async ($, e) => {
+      if (e.tool === 'Bash') {
+        markStarted()
+        await gate
+
+        return { deny: 'denied by test stand-in' }
+      }
+
+      return { result: {} as never }
+    })
+  })
+
+  const bash = $.tool.call({ tool: 'Bash', command: 'pwd' } as never)
+  await started
+  expect(await $.classic.PermissionRequest({ tool_name: 'Bash', tool_input: { command: 'pwd' } } as never)).toEqual({ value: permissionResult })
+  release()
+  expect(await bash).toEqual({ deny: 'denied by test stand-in' })
+  const ui = await $.ui.mount(BAND)
+  expect(String((await ui.findAll({ type: 'Svg' }))[0].props?.source)).not.toContain('class="activity-icon bang"')
 })
 
 test('问题和计划：工具调用显示问号或感叹号，调用结束时清除', ZH, async ($, on) => {
@@ -716,29 +746,37 @@ test('节日与季节关闭：seasonal=off 时不画时段、季节或节日装�
 
 test('反应优先级：测试失败反应不会覆盖待处理的权限请求', ZH, async ($, on) => {
   const permissionResult = { additionalContext: ['permission result unchanged'] }
-  let release!: () => void
-  let markStarted!: () => void
-  const gate = new Promise<void>(resolve => (release = resolve))
-  const started = new Promise<void>(resolve => (markStarted = resolve))
+  let releaseEdit!: () => void
+  let markEditStarted!: () => void
+  const editGate = new Promise<void>(resolve => (releaseEdit = resolve))
+  const editStarted = new Promise<void>(resolve => (markEditStarted = resolve))
   await start($, on, {}, on => {
     on('classic.PermissionRequest', () => ({ value: permissionResult }))
-    on('tool.call', async () => {
-      markStarted()
-      await gate
+    on('tool.call', async ($, e) => {
+      if (e.tool === 'Edit') {
+        markEditStarted()
+        await editGate
+
+        return { result: {} as never }
+      }
 
       return { result: { stdout: '1 failed', exitCode: 1 } as never }
     })
   })
 
-  const tool = $.tool.call({ tool: 'Bash', command: 'npm test' } as never)
-  await started
-  expect(await $.classic.PermissionRequest({ tool_name: 'Bash', tool_input: { command: 'npm test' } } as never)).toEqual({ value: permissionResult })
-  release()
-  await tool
+  const edit = $.tool.call({ tool: 'Edit', file_path: '/tmp/a', old_string: 'a', new_string: 'b' } as never)
+  await editStarted
+  expect(await $.classic.PermissionRequest({ tool_name: 'Edit', tool_input: { file_path: '/tmp/a' } } as never)).toEqual({ value: permissionResult })
+  await $.tool.call({ tool: 'Bash', command: 'npm test' } as never)
   const ui = await $.ui.mount(BAND)
   const src = String((await ui.findAll({ type: 'Svg' }))[0].props?.source)
   expect(src).toContain('class="activity-icon bang"')
   expect(src).not.toMatch(/class="clawd[^\"]*\breaction test-fail\b/)
+
+  releaseEdit()
+  await edit
+  const afterEdit = await $.ui.mount(BAND)
+  expect(String((await afterEdit.findAll({ type: 'Svg' }))[0].props?.source)).not.toContain('class="activity-icon bang"')
 })
 
 test('战报：工具调用计数，改过的文件按路径去重，被拦下的不算；/clawd-card 导出图片', ZH, async ($, on) => {
