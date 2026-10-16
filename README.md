@@ -40,11 +40,11 @@ Forked from [manson341349-beep/claude-desktop-mods](https://github.com/manson341
 
 ## 中文
 
-### usage-pet：Clawd 信息栏（v1.15.0）
+### usage-pet：Clawd 信息栏（v1.15.1）
 
 - **四个基础用量环**：上下文、5 小时额度、每周额度、缓存命中率（仅主对话本会话，排除子代理）；圆环、标签和百分比比早期版本更大。80% 变琥珀色，95% 变红，缓存命中低于 50% 才提醒。上下文环标出自动压缩位置（关闭自动压缩时不显示），悬停可看距压缩还剩多少 tokens，已到位置时显示「即将压缩」；5 小时、每周和 Fable 每周额度若可能在重置前用完，悬停显示预计用完时间（窗口前 10% 不显示），否则显示剩余时间
 - **Fable 每周（可选第五环）**：有额度时显示在每周之后，沿用额度环的琥珀色 / 红色阈值。仅当符合条件的 Claude 订阅 OAuth 登录有 Fable 每周额度时显示；API 密钥、Bedrock/Vertex、网关、未登录或请求失败时不显示，刷新失败保留上次读数。插件在会话开始和回复后自行 GET Anthropic 用量接口（`https://api.anthropic.com/api/oauth/usage`），最多每 5 分钟一次；宿主添加凭据，插件看不到令牌，也不发送提示词、回复或遥测。策略 `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` 或组织网页请求限制可能会阻止获取
-- **自动折叠**：平时是一条 30px 的细条；数值变化时（回复后、用量刷新或 Fable 读数变化）展开 5 秒，播完动画再收起
+- **收起状态**：默认保持为 30px 的细条；点 ▲ 或运行 `/clawd` 展开，点 ▼ 或再次运行 `/clawd` 收起
 - **展开时**：圆环依次扫入、数字像老虎机一样滚动、旁边飘出「+N%」
 - **缓存倒计时**：Claude 工作时隐藏，首轮回复后才显示在缓存命中旁（订阅约 1 小时、API 密钥 5 分钟，每次回复重新计时），剩 5 分钟变色，过期显示「已过期」。缓存过期后下一轮要把整段对话重新写入缓存，更耗额度
 - **本会话费用**：在 Cache hit 后显示；展开时有 `$` 徽章和「费用 $… 本会话」，收起时显示「费用 $…」。终端和 `/clawd-card` 也显示费用。金额与 `/cost` 的 API 等价总额一致；订阅金额是估算，不是账单；宿主未提供费用时隐藏
@@ -60,7 +60,7 @@ Forked from [manson341349-beep/claude-desktop-mods](https://github.com/manson341
 - **万圣节**（10 月 25 日到 11 月 1 日）：Clawd 戴巫师帽、拎南瓜桶；Claude 干活时披上床单变幽灵，旁边飘的代码换成糖果。每答完一轮他会举起桶**讨糖**：点他一下就是给糖（开心 3 秒），连点两下空翻、三下跳起来撒糖；12 秒没人理他就生气跺脚，点一下就消气。不想要时段、季节和节日装扮：`/config` 里把 `seasonal` 填成 `off`
 - **鼠标**：放到 Clawd 身上会冒爱心，点它会空翻；放到圆环上显示详细数值
 - **近 7 天用量**：信息栏展开时，鼠标放到 Clawd 身上显示最近 7 天（从现在往回 7×24 小时）用了多少 tokens，所有会话合计、含子代理；战报卡上也有这一行。插件自己按小时记账（Claude 只给当前会话的用量），所以从装上 1.9.0 起才开始记，不满 7 天时会写明从哪天开始
-- **切换**：点右侧 ▲ 一直展开，点 ▼ 收起；或在输入框输入 `/clawd`
+- **切换**：信息栏默认保持收起为 30px 的细条，点右侧 ▲ 或运行 `/clawd` 展开；点 ▼ 或再次运行 `/clawd` 收起
 
 ### 安装
 
@@ -107,11 +107,11 @@ claude plugin uninstall usage-pet@claude-desktop-mods
 
 ## English
 
-### usage-pet (v1.15.0)
+### usage-pet (v1.15.1)
 
 - **Four base rings**: context, 5-hour limit, weekly limit and cache hit rate (cumulative for the main conversation this session, excluding subagents), plus an optional fifth Fable weekly ring. Rings, labels and percentages are larger than in earlier versions. Amber at 80%, red at 95%; cache hit warns below 50%. The context ring marks where auto-compaction kicks in (hidden when auto-compact is off); hover to see tokens left, or "compacting soon" at or past the mark. If a 5-hour, weekly or Fable weekly limit may run out before reset, hover to see when (hidden in the first 10% of a window); otherwise it shows time left
 - **Fable weekly**: when available, this separate allowance appears after Weekly with percent used and reset time, using the same amber/red thresholds. It appears only for an eligible first-party OAuth Claude subscription; API keys, Bedrock/Vertex, gateways, no login or a failed request leave it hidden, and refresh failures keep the last good value. The plugin fetches it at session start and after replies, at most every 5 minutes, using host-side authorization; no token, prompts, replies or telemetry are sent. `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` or an organization policy can block the GET.
-- **Auto-collapse**: a 30px strip most of the time; when numbers change, it expands for 5 seconds after a reply, usage refresh or Fable reading, then collapses
+- **Collapsed state**: stays as a 30px strip until you click ▲ or run `/clawd` to expand it; click ▼ or run `/clawd` again to collapse it
 - **Expanded**: rings sweep in, digits roll like an odometer, `+N%` chips float up
 - **Cache countdown**: hidden while Claude works; appears next to Cache hit after the first reply (about 1 hour on a subscription, 5 minutes on an API key; every reply restarts it). Amber in the last 5 minutes, "cold" once expired. A cold cache means the next turn re-caches the whole conversation.
 - **Session cost**: shown after Cache hit as a $ badge and `Cost $… This session` when expanded, or `Cost $…` in the collapsed strip; also shown in the terminal and as a `/clawd-card` tile. It matches `/cost`'s API-equivalent total; subscription amounts are estimates, not bills. Hidden when the host reports no cost.
@@ -127,7 +127,7 @@ claude plugin uninstall usage-pet@claude-desktop-mods
 - **Halloween** (Oct 25 to Nov 1): Clawd wears a witch hat and carries a pumpkin pail; while Claude works he turns into a bedsheet ghost and candy floats up instead of code. After each turn he holds out his pail for **trick or treat**: click him once to give candy (he's happy for 3 seconds), twice for a flip, three times and he jumps for joy and throws candy. Ignore him for 12 seconds and he stomps in a huff until you click. Turn time-of-day, seasonal and holiday looks off with `seasonal: off` in `/config`
 - **Pointer**: hover Clawd for hearts, click for a flip; hover a ring for details
 - **Last 7 days**: with the band expanded, hover Clawd to see how many tokens you used in the last 7 days (the past 7×24 hours), all sessions together, subagents included; the report card shows it too. The plugin keeps its own hourly tally (Claude only reports the current session), so counting starts when you install 1.9.0, and until a full week has passed it says since when
-- **Toggle**: ▲ keeps it expanded, ▼ collapses; or type `/clawd`
+- **Toggle**: it stays collapsed as a 30px strip until you click ▲ or run `/clawd`; click ▼ or run `/clawd` again to collapse it
 
 ### Install
 

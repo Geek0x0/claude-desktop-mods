@@ -151,6 +151,7 @@ test('费用来源：读取 session.usage，按 session.measure 更新并在无�
   })
   await $.session.start(START as never)
   await $.session.measure(MEASURE as never)
+  await $.command.run({ command: 'clawd', args: '' } as never)
   barWrites = 0
 
   const band = async () => String((await (await $.ui.mount(BAND)).findAll({ type: 'Svg' }))[1].props?.source)

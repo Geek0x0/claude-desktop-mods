@@ -1,6 +1,6 @@
 # usage-pet
 
-A usage band above the prompt in the **Code tab of Claude Desktop**: context, 5-hour limit, weekly limit and cache hit rate, plus an optional Fable weekly ring, with Clawd, a pixel pet who keeps you company while Claude works. Current version: **1.15.0**.
+A usage band above the prompt in the **Code tab of Claude Desktop**: context, 5-hour limit, weekly limit and cache hit rate, plus an optional Fable weekly ring, with Clawd, a pixel pet who keeps you company while Claude works. Current version: **1.15.1**.
 
 ![Light mode shows the expanded band in chill mode with sunglasses and a crown, including a $ badge and “Cost $4.27 This session” after Cache hit, plus a collapsed editing strip showing “Cost $4.27”. Dark mode shows work with a terminal icon and purple dither, near-limit amber and red rings, and a collapsed idle Clawd wearing a nightcap; every band has the Cost block after Cache hit](https://raw.githubusercontent.com/Geek0x0/claude-desktop-mods/main/assets/usage-pet-preview.png)
 
@@ -21,7 +21,7 @@ A usage band above the prompt in the **Code tab of Claude Desktop**: context, 5-
 - **Growth**: Clawd earns XP for every reply and levels up (sprout, bow tie, cap, crown). Hover for level, XP and streak, plus the last-7-days line while expanded. Achievements appear only on `/clawd-card`, and only those newly unlocked this session; no pop-ups, progress persists across sessions.
 - **Report card**: `/clawd-card` draws a card of the session (duration, turns, tool calls, files edited, tokens, cache hit, cost when available, level, achievements unlocked this session) and saves it as a PNG you can paste anywhere.
 - **Halloween** (Oct 25 to Nov 1): witch hat, pumpkin pail, ghost mode while Claude works, and trick-or-treat after each reply. Turn time-of-day, seasonal and holiday looks off by setting `seasonal` to `off` in `/config`.
-- **Collapses out of the way**: a 30px strip most of the time; expands for five seconds when the numbers change. `/clawd` or the ▲▼ button keeps it open.
+- **Collapses out of the way**: stays collapsed as a 30px strip until you click ▲ or run `/clawd` to expand it; click ▼ or run `/clawd` again to collapse it.
 - English and Chinese, light and dark appearance, macOS and Windows. The terminal shows context, 5-hour, weekly and optional Fable bars plus session cost when the host provides it, with no cache hit or Clawd; Remote Control, mobile and web show nothing.
 
 ## Install

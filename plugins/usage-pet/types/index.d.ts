@@ -43,6 +43,6 @@ export type Activity = { kind: ActivityKind; icon?: ToolIcon; reaction?: Reactio
 
 declare module 'claude-code' {
   interface PluginState {
-    'usage-pet': { bars: Bars; cache: CacheTotals; expanded: boolean; pinned: boolean; lang: 'zh' | 'en'; pet: Pet; report: Report; ask: number; warm: number; week: Week; activity: Activity }
+    'usage-pet': { bars: Bars; cache: CacheTotals; pinned: boolean; lang: 'zh' | 'en'; pet: Pet; report: Report; ask: number; warm: number; week: Week; activity: Activity }
   }
 }

@@ -56,8 +56,8 @@ export const T = {
     ttlFive: '5 分钟',
     working: 'Claude 正在干活',
     resting: 'Claude 在休息',
-    pinned: 'Clawd 信息栏：一直展开',
-    autoCollapse: 'Clawd 信息栏：自动收起（数据刷新时展开 5 秒）',
+    pinned: 'Clawd 信息栏：已展开；点 ▼ 收起',
+    autoCollapse: 'Clawd 信息栏：已收起；点 ▲ 展开',
     // 养成
     achievement: {
       'cache-99': ['缓存大师', '单轮缓存命中 99%'],
@@ -125,8 +125,8 @@ export const T = {
     ttlFive: '5 minutes',
     working: 'Claude is working',
     resting: 'Claude is resting',
-    pinned: 'Clawd band: always expanded',
-    autoCollapse: 'Clawd band: auto-collapse (expands for 5 s when usage refreshes)',
+    pinned: 'Clawd band: expanded; click ▼ to collapse',
+    autoCollapse: 'Clawd band: collapsed; click ▲ to expand',
     achievement: {
       'cache-99': ['Cache master', '99% cache hit in one turn'],
       'streak-3': ['Warming up', '3 days in a row'],

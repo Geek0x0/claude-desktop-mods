@@ -760,6 +760,7 @@ test('桌面：一张显式宽高、自带底色的 SVG；变化时有扫环、�
   const clock = mock.clock(on)
   on('session.measure', ($, e) => ({ changed: e.changed }))
   await $.session.measure(measure(42, 8, 63))
+  await $.command.run({ command: 'clawd', args: '' } as never)
 
   const ui = await $.ui.mount({ ...BAND(false), surface: 'desktop' })
   expect(JSON.stringify(await ui.drawn())).not.toContain('"Client"')
@@ -846,6 +847,7 @@ test('一分钟内 AbovePrompt 的 pose-only 重画复用 gauges source 字节�
 
 test('Clawd：干活时搬出笔记本，额度 ≥90% 冒汗', ZH, async ($, on) => {
   on('session.measure', ($, e) => ({ changed: e.changed }))
+  await $.command.run({ command: 'clawd', args: '' } as never)
   const idle = await $.ui.mount({ ...BAND(false), surface: 'desktop' })
   const busy = await $.ui.mount({ ...BAND(true), surface: 'desktop' })
   expect(String((await svgOf(idle)).props?.alt)).toContain('Claude 在休息')
@@ -873,6 +875,7 @@ test('缓存命中：按轮累计（读取 ÷ 读取+写入+未走缓存），�
   on('session.measure', ($, e) => ({ changed: e.changed }))
   on('turn.complete', ($, e) => ({ text: '', usage: e.usage }))
   await $.session.measure(measure(42, 8, 63))
+  await $.command.run({ command: 'clawd', args: '' } as never)
   const ui = await $.ui.mount({ ...BAND(false), surface: 'desktop' })
 
   // 第一轮 80/(80+10+10)=80%；第二轮 190/(190+0+10)=95%；累计 270/300=90%
@@ -888,7 +891,7 @@ test('缓存命中：按轮累计（读取 ÷ 读取+写入+未走缓存），�
   expect(String(svg.props?.source)).toContain('读取 270')
 })
 
-test('主回合：提示、读数、完成和七秒内计时器的 state.set 总量不超过八次且没有空写', ZH, async ($, on) => {
+test('主回合：提示、读数、完成和七秒内计时器的 state.set 总量不超过七次且没有空写', ZH, async ($, on) => {
   const clock = mock.clock(on, { now: new Date(2026, 9, 15, 12).getTime() })
   mock.store(on, {})
   const writes: { key: string; value: unknown; previous: unknown }[] = []
@@ -922,7 +925,8 @@ test('主回合：提示、读数、完成和七秒内计时器的 state.set 总
   await clock.advance(7000)
   await ui.redraw()
 
-  expect(writes.length).toBeLessThanOrEqual(8)
+  // 七次有效写入：bars（session.measure）、cache、warm、report、pet、bars（turn.complete）、week。
+  expect(writes.length).toBeLessThanOrEqual(7)
   expect(writes.every(write => JSON.stringify(write.value) !== JSON.stringify(write.previous))).toBe(true)
 })
 
@@ -930,6 +934,7 @@ test('排布均匀：左右留白相等，从预留工具图标后的 Clawd 边�
   on('session.measure', ($, e) => ({ changed: e.changed }))
   // 故意用长短差很多的文字：上下文副标题短，每周额度副标题长
   await $.session.measure(measure(42, 8, 63))
+  await $.command.run({ command: 'clawd', args: '' } as never)
   const ui = await $.ui.mount({ ...BAND(false), surface: 'desktop' })
   const src = String((await svgOf(ui)).props?.source)
   const blocks = [...src.matchAll(new RegExp(`<rect x="([\\d.]+)" y="0" width="([\\d.]+)" height="${H}" fill="transparent"\\/>`, 'g'))].map(m => [Number(m[1]), Number(m[2])])
@@ -950,6 +955,7 @@ test('100% 放进圆环：三位数去掉 %、换小字号', ZH, async ($, on) =
   on('turn.complete', ($, e) => ({ text: '', usage: e.usage }))
   await $.session.measure(measure(42, 8, 63))
   await $.turn.complete(turn(500, 0, 0))
+  await $.command.run({ command: 'clawd', args: '' } as never)
   const ui = await $.ui.mount({ ...BAND(false), surface: 'desktop' })
   const src = String((await svgOf(ui)).props?.source)
   expect(String((await svgOf(ui)).props?.alt)).toContain('缓存命中 100%')
@@ -958,22 +964,11 @@ test('100% 放进圆环：三位数去掉 %、换小字号', ZH, async ($, on) =
   expect(src).toContain('class="num sm"')
 })
 
-test('折叠：数据刷新展开 5 秒后收成细条；按钮和 /clawd 切换「一直展开」', ZH, async ($, on) => {
-  const clock = mock.clock(on)
+test('折叠：数据刷新保持细条；▲ 和 /clawd 展开，▼ 和 /clawd 收起', ZH, async ($, on) => {
   on('session.measure', ($, e) => ({ changed: e.changed }))
   await $.session.measure(measure(42, 8, 63))
   const ui = await $.ui.mount({ ...BAND(false), surface: 'desktop' })
 
-  // 刚刷新：展开
-  expect((await svgOf(ui)).props?.height).toBe(H)
-  expect((await ui.find({ key: 'toggle' }))?.props?.label).toBe('▼')
-
-  // 4.9 秒还展开着，5 秒后收成细条
-  await clock.advance(4900)
-  await ui.redraw()
-  expect((await svgOf(ui)).props?.height).toBe(H)
-  await clock.advance(200)
-  await ui.redraw()
   const mini = await svgOf(ui)
   expect(mini.props?.height).toBe(H_MINI)
   expect(String(mini.props?.source)).toContain(' mini"')
@@ -983,9 +978,8 @@ test('折叠：数据刷新展开 5 秒后收成细条；按钮和 /clawd 切换
   expect(String(mini.props?.source)).toContain('.mtrack{fill:#E8E5DC}')
   expect((await ui.find({ key: 'toggle' }))?.props?.label).toBe('▲')
 
-  // 按「展开」→ 一直展开，再等多久都不收
+  // 按「展开」→ 一直展开
   await ui.press({ key: 'toggle' })
-  await clock.advance(20000)
   await ui.redraw()
   expect((await svgOf(ui)).props?.height).toBe(H)
 
@@ -994,17 +988,13 @@ test('折叠：数据刷新展开 5 秒后收成细条；按钮和 /clawd 切换
   await ui.redraw()
   expect((await svgOf(ui)).props?.height).toBe(H_MINI)
 
-  // 新数据来了：自动展开，5 秒后又收
+  // 收起时有新读数仍保持细条
   await $.session.measure(measure(57, 8, 63))
-  await ui.redraw()
-  expect((await svgOf(ui)).props?.height).toBe(H)
-  await clock.advance(5100)
   await ui.redraw()
   expect((await svgOf(ui)).props?.height).toBe(H_MINI)
 
-  // /clawd：切到一直展开，再切回来
+  // /clawd：展开后保持展开，再次运行收起
   await $.command.run({ command: 'clawd', args: '' } as never)
-  await clock.advance(20000)
   await ui.redraw()
   expect((await svgOf(ui)).props?.height).toBe(H)
   await $.command.run({ command: 'clawd', args: '' } as never)
@@ -1013,12 +1003,9 @@ test('折叠：数据刷新展开 5 秒后收成细条；按钮和 /clawd 切换
 })
 
 test('细条排布均匀：左右留白相等，从预留工具图标后的 Clawd 边缘计算间距', ZH, async ($, on) => {
-  const clock = mock.clock(on)
   on('session.measure', ($, e) => ({ changed: e.changed }))
   await $.session.measure(measure(42, 8, 63))
   const ui = await $.ui.mount({ ...BAND(false), surface: 'desktop' })
-  await clock.advance(5100)
-  await ui.redraw()
   const src = String((await svgOf(ui)).props?.source)
   const items = [...src.matchAll(new RegExp(`<rect x="([\\d.]+)" y="0" width="([\\d.]+)" height="${H_MINI}" fill="transparent"\\/>`, 'g'))].map(m => [Number(m[1]), Number(m[2])])
   expect(items).toHaveLength(4)
@@ -1028,22 +1015,6 @@ test('细条排布均匀：左右留白相等，从预留工具图标后的 Claw
   for (const g of gaps) expect(near(g, gaps[0])).toBe(true)
   expect(src).toContain('transform="translate(14 ')
   expect(near(1068 - (items[3][0] + items[3][1]), 14)).toBe(true)
-})
-
-test('连续刷新：只认最后一次的 5 秒，早先的定时器不会提前收起', ZH, async ($, on) => {
-  const clock = mock.clock(on)
-  on('session.measure', ($, e) => ({ changed: e.changed }))
-  await $.session.measure(measure(42, 8, 63))
-  const ui = await $.ui.mount({ ...BAND(false), surface: 'desktop' })
-  await clock.advance(3000)
-  await $.session.measure(measure(50, 9, 63))
-  // 第一次刷新的定时器在第 5 秒到期；第二次在第 8 秒。第 5.5 秒应该还展开着
-  await clock.advance(2500)
-  await ui.redraw()
-  expect((await svgOf(ui)).props?.height).toBe(H)
-  await clock.advance(2600)
-  await ui.redraw()
-  expect((await svgOf(ui)).props?.height).toBe(H_MINI)
 })
 
 // ───────── 跟随系统语言 ─────────
@@ -1084,6 +1055,7 @@ async function startAuto(
 test('英文界面：language = en 时标签、重置时间、读屏描述都是英文', EN, async ($, on) => {
   on('session.measure', ($, e) => ({ changed: e.changed }))
   await $.session.measure(measure(42, 8, 63))
+  await $.command.run({ command: 'clawd', args: '' } as never)
   const ui = await $.ui.mount({ ...BAND(false), surface: 'desktop' })
   const svg = await svgOf(ui)
   const src = String(svg.props?.source)
@@ -1098,6 +1070,7 @@ test('英文界面：language = en 时标签、重置时间、读屏描述都是
 test('英文界面：四块仍然左右留白相等，从预留工具图标后的 Clawd 边缘计算间距', EN, async ($, on) => {
   on('session.measure', ($, e) => ({ changed: e.changed }))
   await $.session.measure(measure(42, 8, 63))
+  await $.command.run({ command: 'clawd', args: '' } as never)
   const ui = await $.ui.mount({ ...BAND(false), surface: 'desktop' })
   const src = String((await svgOf(ui)).props?.source)
   const blocks = [...src.matchAll(new RegExp(`<rect x="([\\d.]+)" y="0" width="([\\d.]+)" height="${H}" fill="transparent"\\/>`, 'g'))].map(m => [Number(m[1]), Number(m[2])])
@@ -1218,6 +1191,7 @@ test('放松模式：缓存命中 ≥90% 戴墨镜；同时额度告急则只冒
   on('turn.complete', ($, e) => ({ text: '', usage: e.usage }))
   await $.session.measure(measure(42, 8, 63))
   await $.turn.complete(turn(95, 0, 5))
+  await $.command.run({ command: 'clawd', args: '' } as never)
   const ui = await $.ui.mount({ ...BAND(false), surface: 'desktop' })
   expect(String((await svgOf(ui)).props?.source)).toMatch(/class="clawd[^"]* chill"/)
 
@@ -1234,6 +1208,7 @@ test('放松模式：缓存命中低于 90% 不戴墨镜', ZH, async ($, on) => 
   on('turn.complete', ($, e) => ({ text: '', usage: e.usage }))
   await $.session.measure(measure(42, 8, 63))
   await $.turn.complete(turn(80, 10, 10))
+  await $.command.run({ command: 'clawd', args: '' } as never)
   const ui = await $.ui.mount({ ...BAND(false), surface: 'desktop' })
   expect(String((await svgOf(ui)).props?.source)).not.toMatch(/class="clawd[^"]* chill"/)
 })
@@ -1243,6 +1218,7 @@ test('放松模式 + 干活：墨镜和干活两种状态同时挂在 Clawd 上�
   on('turn.complete', ($, e) => ({ text: '', usage: e.usage }))
   await $.session.measure(measure(42, 8, 63))
   await $.turn.complete(turn(95, 0, 5))
+  await $.command.run({ command: 'clawd', args: '' } as never)
   const ui = await $.ui.mount({ ...BAND(true), surface: 'desktop' })
   const src = String((await svgOf(ui)).props?.source)
   expect(src).toMatch(/class="clawd working[^"]* chill"/)
@@ -1280,6 +1256,7 @@ test('悬停换上的详情（如「84,000 tokens」）比副标题长时，这�
   on('turn.complete', ($, e) => ({ text: '', usage: e.usage }))
   await $.session.measure(measure(42, 8, 63))
   await $.turn.complete(turn(990000, 140000, 5000))
+  await $.command.run({ command: 'clawd', args: '' } as never)
   const src = String((await svgOf(await $.ui.mount({ ...BAND(false), surface: 'desktop' }))).props?.source)
   const blocks = [...src.matchAll(new RegExp(`<rect x="([\\d.]+)" y="0" width="([\\d.]+)" height="${H}" fill="transparent"\\/>`, 'g'))].map(m => [Number(m[1]), Number(m[2])])
   const details = [...src.matchAll(/class="sub2">([^<]*)</g)].map(m => m[1])
@@ -1293,11 +1270,11 @@ test('悬停换上的详情（如「84,000 tokens」）比副标题长时，这�
 })
 
 test('窗口变窄：信息栏宽度跟着收，加上右边按钮也不超过可用宽度（按钮不会被挤到下一行）；内容逐级收，不出右边界', EN, async ($, on) => {
-  const clock = mock.clock(on)
   on('session.measure', ($, e) => ({ changed: e.changed }))
   on('turn.complete', ($, e) => ({ text: '', usage: e.usage }))
   await $.session.measure(measure(42, 8, 63))
   await $.turn.complete(turn(990000, 140000, 5000))
+  await $.command.run({ command: 'clawd', args: '' } as never)
   const seen = new Set<string>()
   for (const cols of [140, 115, 105, 70, 58, 45, 40]) {
     const band = { ...BAND(false), props: { ...BAND(false).props, bodyColumns: cols }, viewport: { columns: cols, rows: 40 }, surface: 'desktop' as const }
@@ -1317,7 +1294,7 @@ test('窗口变窄：信息栏宽度跟着收，加上右边按钮也不超过�
   expect([...seen].sort()).toEqual(['compact', 'full', 'rings', 'stacked'])
 
   // 收起的细条同样不出右边界
-  await clock.advance(5100)
+  await $.command.run({ command: 'clawd', args: '' } as never)
   for (const cols of [140, 70, 58, 45]) {
     const band = { ...BAND(false), props: { ...BAND(false).props, bodyColumns: cols }, viewport: { columns: cols, rows: 40 }, surface: 'desktop' as const }
     const svg = await svgOf(await $.ui.mount(band))

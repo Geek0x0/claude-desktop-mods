@@ -6,6 +6,13 @@ export type Release = { version: string; notes: Record<Lang, string[]> }
 
 export const CHANGELOG: Release[] = [
   {
+    version: '1.15.1',
+    notes: {
+      zh: ['修复：用量数字变化时信息栏不再自动展开；点击 ▲ 或运行 /clawd 展开，点击 ▼ 或再次运行 /clawd 收起，并保留上次的展开选择'],
+      en: ['Fix: the band no longer expands when usage numbers change; click ▲ or run /clawd to expand, then click ▼ or run /clawd again to collapse, with your previous expanded choice carried over'],
+    },
+  },
+  {
     version: '1.15.0',
     notes: {
       zh: ['减少闪烁：Claude 快速切换步骤时合并姿势变化，每个姿势至少停留约 0.6 秒；Clawd 与圆环分开绘制，姿势变化不再重启圆环动画；工具图标始终预留位置，圆环不会随图标出现而移动；悬停圆环时 Clawd 不再转头看它'],

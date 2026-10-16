@@ -108,6 +108,7 @@ async function setup(
   })
   await $.session.start(START as never)
   await $.session.measure(MEASURE)
+  await $.command.run({ command: 'clawd', args: '' } as never)
 
   return { clock, network }
 }

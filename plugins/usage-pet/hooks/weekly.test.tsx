@@ -112,6 +112,7 @@ const clawdTitle = async ($: Harness[0]) => {
 
 test('主对话和子代理的每一轮都记，加上别的会话；10 天前那份账删掉', { options: { language: 'en' } }, async ($, on) => {
   const { data, deleted } = await setup($, on)
+  await $.command.run({ command: 'clawd', args: '' } as never)
   await $.turn.complete(TURN)
   await $.turn.complete({ ...TURN, turnId: 't2', agentId: 'sub-1' })
   // 5000（别的会话）+ 1040 × 2（主对话、子代理）= 7080 → 7k；少算任何一份都不是 7k
@@ -124,11 +125,12 @@ test('主对话和子代理的每一轮都记，加上别的会话；10 天前�
 })
 
 test('收起成细条时不写近 7 天（只在展开时写）', { options: { language: 'zh' } }, async ($, on) => {
-  const { clock } = await setup($, on)
+  await setup($, on)
+  await $.command.run({ command: 'clawd', args: '' } as never)
   await $.turn.complete(TURN)
   expect(await clawdTitle($)).toContain('近 7 天 6k tokens（所有会话，含子代理）')
-  // 自动展开 5 秒后收起
-  await clock.advance(6000)
+  // 用户再次运行 /clawd 后收成细条
+  await $.command.run({ command: 'clawd', args: '' } as never)
   const title = await clawdTitle($)
   expect(title).toContain('Clawd Lv.')
   expect(title).not.toContain('近 7 天')
@@ -146,6 +148,7 @@ test('很久没发消息：画的时候按当前时间截，别的会话那 5000
 
 test('记账不满 7 天：写明从哪天开始记', { options: { language: 'zh' } }, async ($, on) => {
   await setup($, on, NOW - 2 * DAY)
+  await $.command.run({ command: 'clawd', args: '' } as never)
   await $.turn.complete(TURN)
   expect(await clawdTitle($)).toContain('近 7 天 6k tokens（所有会话，含子代理，10 月 14 日起记录）')
 })
@@ -159,6 +162,7 @@ test('第一次记账时记下开始时间', { options: { language: 'en' } }, as
   on('command.register', ($, e) => ({ value: { command: e.name } }))
   on('turn.complete', ($, e) => ({ text: '', usage: e.usage }))
   await $.session.start({ cwd: '/tmp', surface: 'desktop', isInteractive: true } as never)
+  await $.command.run({ command: 'clawd', args: '' } as never)
   await $.turn.complete(TURN)
   expect(data.get(SINCE_KEY)).toBe(NOW)
   expect(await clawdTitle($)).toContain('Last 7 days: 1k tokens (all sessions, incl. subagents; counting since Oct 16)')

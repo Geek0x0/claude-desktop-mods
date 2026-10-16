@@ -35,7 +35,6 @@ let previousGaugeSvg: (Pick<BandSvgParts, 'gauges' | 'gaugesKey'> & { createdAt:
 
 const barsRef = { plugin: 'usage-pet', key: 'bars' } as const
 const cacheRef = { plugin: 'usage-pet', key: 'cache' } as const
-const expandedRef = { plugin: 'usage-pet', key: 'expanded' } as const
 const pinnedRef = { plugin: 'usage-pet', key: 'pinned' } as const
 const langRef = { plugin: 'usage-pet', key: 'lang' } as const
 const petRef = { plugin: 'usage-pet', key: 'pet' } as const
@@ -49,12 +48,10 @@ const barsAtom = atom(barsRef, { from: null, to: null } as Bars) as UsagePetAtom
 
 const cacheAtom = atom(cacheRef, { read: 0, write: 0, fresh: 0 } as CacheTotals) as UsagePetAtom<'cache', CacheTotals>
 
-// 展开 / 收起：数据刷新时自动展开 EXPAND_MS 后收起；pinned = 用户点了「展开」或 /clawd，一直展开
-const expandedAtom = atom(expandedRef, true) as UsagePetAtom<'expanded', boolean>
+// 展开 / 收起：只由用户通过按钮或 /clawd 切换；pinned 键保留以沿用已有用户选择
 const pinnedAtom = atom(pinnedRef, false) as UsagePetAtom<'pinned', boolean>
 // 界面语言：session.start 时定下来（/config 选了就用选的，auto 就跟随系统）
 const langAtom = atom(langRef, 'en' as Lang) as UsagePetAtom<'lang', Lang>
-const EXPAND_MS = 5000
 // 养成：跨会话的那份在 $.store 的 PET_KEY；这里留一份给信息栏画
 const petAtom = atom(petRef, NEW_PET as Pet) as UsagePetAtom<'pet', Pet>
 const NEW_REPORT: Report = { startedAt: 0, turns: 0, toolCalls: 0, files: [], output: 0, earned: [] }
@@ -133,7 +130,6 @@ function readUsagePetAtom($: EngineInterface, key: UsagePetAtomKey) {
   switch (key) {
     case 'bars': return $.state.get(barsRef)
     case 'cache': return $.state.get(cacheRef)
-    case 'expanded': return $.state.get(expandedRef)
     case 'pinned': return $.state.get(pinnedRef)
     case 'lang': return $.state.get(langRef)
     case 'pet': return $.state.get(petRef)
@@ -149,7 +145,6 @@ function writeUsagePetAtom($: EngineInterface, key: UsagePetAtomKey, value: unkn
   switch (key) {
     case 'bars': return $.state.set(barsRef, value as Bars, { ifVersion: version })
     case 'cache': return $.state.set(cacheRef, value as CacheTotals, { ifVersion: version })
-    case 'expanded': return $.state.set(expandedRef, value as boolean, { ifVersion: version })
     case 'pinned': return $.state.set(pinnedRef, value as boolean, { ifVersion: version })
     case 'lang': return $.state.set(langRef, value as Lang, { ifVersion: version })
     case 'pet': return $.state.set(petRef, value as Pet, { ifVersion: version })
@@ -498,7 +493,7 @@ async function finishToolCallActivity($: EngineInterface, burst: ToolBurst, call
   }
 }
 
-// 万圣节讨糖：最近一次答完的时间（0 = 不讨糖）。等自动展开收起后再开始讨，讨 ASK_WINDOW_MS 内有效
+// 万圣节讨糖：最近一次答完的时间（0 = 不讨糖）。延迟 6 秒后开始讨，ASK_WINDOW_MS 内有效
 const askAtom = atom(askRef, 0) as UsagePetAtom<'ask', number>
 // 缓存倒计时：主对话最近一次答完的时间（0 = 这个会话还没答过）。
 // 有效期：订阅（有 5 小时 / 每周额度读数）约 1 小时，API 密钥 5 分钟；每次请求重新计时。
@@ -513,15 +508,13 @@ const TTL_SUBSCRIPTION_MS = 60 * 60000
 const TTL_API_MS = 5 * 60000
 const FABLE_REFRESH_MS = 5 * 60000
 const FABLE_FETCH_TIMEOUT_MS = 10_000
-const ASK_DELAY_MS = EXPAND_MS + 1000
+const ASK_DELAY_MS = 6000
 const ASK_WINDOW_MS = 10 * 60000
 const PET_KEY = 'pet'
 const CARD_PANE = 'clawd-card'
 // 改文件的工具：战报里「改动文件」按它们的路径去重计数
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit'])
 const MAX_FILES = 500
-// 只让最后一次展开的定时器生效，免得早先的定时器提前收起
-let expandToken = 0
 // 展开 / 收起按钮占的宽度（像素），SVG 让出这一截
 const BUTTON_W = 44
 // 按钮用图标：信息栏往上长，▲ = 往上撑开，▼ = 往下收回。
@@ -702,16 +695,6 @@ async function langOf($: EngineInterface, choice: LangChoice): Promise<Lang> {
   return choice === 'zh' || choice === 'en' ? choice : read($, langAtom)
 }
 
-async function expandForAWhile($: EngineInterface) {
-  const token = ++expandToken
-  await updateIfChanged($, expandedAtom, () => true)
-  $.clock.after(EXPAND_MS, () => {
-    if (token === expandToken) {
-      void updateIfChanged($, expandedAtom, () => false)
-    }
-  })
-}
-
 async function record($: EngineInterface, snap: Omit<Snap, 'fable'> & { fable?: Window | null }, newSession = false) {
   const previous = await read($, barsAtom)
   const fable = snap.fable === null ? undefined : snap.fable ?? previous.to?.fable
@@ -723,7 +706,6 @@ async function record($: EngineInterface, snap: Omit<Snap, 'fable'> & { fable?: 
     return changed ? { from: bars.to, to: full } : bars
   })
   if (changed) {
-    await expandForAWhile($)
     $.clock.after(1300, () => void updateIfChanged($, barsAtom, bars => (sameSnap(bars.from, bars.to) ? bars : { from: bars.to, to: bars.to })))
   }
 }
@@ -747,7 +729,6 @@ async function updateFableOnLatestBars($: EngineInterface, fable: Window | null)
   })
   if (!changed) return
 
-  await expandForAWhile($)
   try {
     $.clock.after(1300, () => void updateIfChanged($, barsAtom, bars => (sameSnap(bars.from, bars.to) ? bars : { from: bars.to, to: bars.to })))
   } catch {
@@ -1059,7 +1040,7 @@ export const register: Register = (on, options) => {
     await safeBookkeeping($, 'session.start command registration failed', async () => {
       await $.command.register({
         name: 'clawd',
-        description: 'Clawd band: toggle always-expanded / auto-collapse · 在「一直展开」和「自动收起」之间切换',
+        description: 'Clawd band: expand / collapse · 展开 / 收起',
         immediate: true,
       })
       await $.command.register({ name: 'clawd-card', description: `${T.en.cardCommand} · ${T.zh.cardCommand}` })
@@ -1351,7 +1332,6 @@ export const register: Register = (on, options) => {
   on('command.run', { command: 'clawd' }, async $ => {
     const pinned = !(await read($, pinnedAtom))
     await updateIfChanged($, pinnedAtom, () => pinned)
-    await updateIfChanged($, expandedAtom, () => pinned)
 
     const t = T[await langOf($, choice)]
 
@@ -1400,7 +1380,7 @@ export const register: Register = (on, options) => {
           : hasCost ? MIN_BAND_W_WITH_COST_AND_ACTIVITY : MIN_BAND_W_WITH_ACTIVITY
         const width = Math.max(minimumWidth, e.props.bodyColumns * PX_PER_COLUMN - 8 - BUTTON_W)
         const pinned = await read($, pinnedAtom)
-        const isMini = !pinned && !(await read($, expandedAtom))
+        const isMini = !pinned
         // 近 7 天用量只在展开时写进 Clawd 的悬停提示：收起时是一条细条，不放
         const week = isMini ? undefined : weekLine(await read($, weekAtom), lang, now)
         const shown = week ? { ...pet, title: `${pet.title} · ${week}` } : pet
@@ -1416,13 +1396,10 @@ export const register: Register = (on, options) => {
         } else {
           previousGaugeSvg = { gaugesKey: parts.gaugesKey, gauges: gaugesSource, createdAt: now }
         }
-        // 收起时按「展开」= 一直展开；展开时按「收起」= 立刻收起并回到自动模式
-        // 按的那一刻再读状态，不用画的时候记下的 isMini（中间可能已经重画过）
+        // 按钮只切换用户选择的展开状态；按的那一刻重新读取，避免用旧的渲染状态
         const toggle = async () => {
-          expandToken++
-          const nowMini = !(await read($, pinnedAtom)) && !(await read($, expandedAtom))
-          await updateIfChanged($, pinnedAtom, () => nowMini)
-          await updateIfChanged($, expandedAtom, () => nowMini)
+          const expanded = !(await read($, pinnedAtom))
+          await updateIfChanged($, pinnedAtom, () => expanded)
         }
 
         return (

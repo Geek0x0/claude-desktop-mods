@@ -197,6 +197,7 @@ test('通知：会话开始、升级和解锁成就都不弹提示，等级和�
   await $.turn.complete(turn(9900, 0, 100))
   expect(toasts).toEqual([])
 
+  await $.command.run({ command: 'clawd', args: '' } as never)
   const band = await $.ui.mount(BAND)
   const bandSvg = String((await band.findAll({ type: 'Svg' }))[0].props?.source)
   expect(bandSvg).toContain('<title>Clawd Lv.2 · 经验 130 / 300')
@@ -210,6 +211,7 @@ test('通知：会话开始、升级和解锁成就都不弹提示，等级和�
 test('子代理的回合不涨经验', ZH, async ($, on) => {
   await start($, on, { pet: { xp: 95, turns: 0, streak: 0, achievements: [] } })
   await $.turn.complete({ ...turn(50, 0, 50), agentId: 'sub-1' })
+  await $.command.run({ command: 'clawd', args: '' } as never)
   const ui = await $.ui.mount(BAND)
   expect(String((await ui.findAll({ type: 'Svg' }))[0].props?.source)).toContain('<title>Clawd Lv.1 · 经验 95 / 100')
 })
@@ -235,6 +237,7 @@ test('子代理回合：七天显示的圆整数不变时不写周用量 atom', 
 
 test('主提示被后续钩子丢弃后：十分钟后仍进入睡眠', ZH, async ($, on) => {
   const { clock } = await start($, on, {}, undefined, undefined, true)
+  await $.command.run({ command: 'clawd', args: '' } as never)
   expect(await $.prompt.submit({ text: 'discard this', asUser: true } as never)).toEqual({ drop: 'discarded by test stand-in' })
 
   await clock.advance(600_000)
@@ -345,6 +348,7 @@ test('工具调用期间显示工具图标，完成后恢复工作字形并透�
       return { result: { marker: 'unchanged' } as never }
     })
   })
+  await $.command.run({ command: 'clawd', args: '' } as never)
   await clock.advance(600)
 
   const pending = $.tool.call({ tool: 'Bash', command: 'pwd' } as never)
@@ -390,6 +394,7 @@ test('并行工具调用：较早调用结束时保留最新图标，全部结�
       return { result: {} as never }
     })
   })
+  await $.command.run({ command: 'clawd', args: '' } as never)
   await clock.advance(600)
 
   const bash = $.tool.call({ tool: 'Bash', command: 'pwd' } as never)
@@ -524,6 +529,7 @@ test('权限请求：许可工具完成后立即清除感叹号，后续工具�
     on('classic.PermissionRequest', () => ({ value: permissionResult }))
   })
 
+  await $.command.run({ command: 'clawd', args: '' } as never)
   expect(await $.classic.PermissionRequest({ tool_name: 'Bash', tool_input: { command: 'sleep 1' } } as never)).toEqual({ value: permissionResult })
   await clock.advance(600)
 
@@ -574,6 +580,7 @@ test('权限请求：工具调用被拒绝时也清除它引起的感叹号', ZH
     })
   })
 
+  await $.command.run({ command: 'clawd', args: '' } as never)
   const bash = $.tool.call({ tool: 'Bash', command: 'pwd' } as never)
   await started
   expect(await $.classic.PermissionRequest({ tool_name: 'Bash', tool_input: { command: 'pwd' } } as never)).toEqual({ value: permissionResult })
@@ -610,6 +617,7 @@ test('问题和计划：工具调用显示问号或感叹号，调用结束时�
       return { result: { tool: e.tool } as never }
     }),
   )
+  await $.command.run({ command: 'clawd', args: '' } as never)
   await clock.advance(600)
 
   const question = $.tool.call({ tool: 'AskUserQuestion', questions: [] } as never)
@@ -653,6 +661,7 @@ test('问题和计划：工具调用显示问号或感叹号，调用结束时�
 test('上下文预计算：压缩事件原样透传，不唤醒睡眠状态', ZH, async ($, on) => {
   const compactResult = { messages: [{ role: 'user', text: 'summary', toolUses: [] }], tokensBefore: 100, tokensAfter: 50 }
   const { clock } = await start($, on, {}, on => on('session.compact', () => compactResult as never))
+  await $.command.run({ command: 'clawd', args: '' } as never)
   await clock.advance(600_000)
 
   const compact = await $.session.compact({
@@ -668,6 +677,7 @@ test('上下文预计算：压缩事件原样透传，不唤醒睡眠状态', ZH
 
 test('主回合完成：完成姿势停留六秒，中断和子代理不显示完成状态', ZH, async ($, on) => {
   const { clock } = await start($, on, {})
+  await $.command.run({ command: 'clawd', args: '' } as never)
   const ui = await $.ui.mount(BAND)
 
   await clock.advance(600)
@@ -686,6 +696,7 @@ test('主回合完成：完成姿势停留六秒，中断和子代理不显示�
 
 test('十分钟没有活动后进入睡眠，提示提交会唤醒 Clawd', ZH, async ($, on) => {
   const { clock } = await start($, on, {}, on => on('tool.call', () => ({ result: {} as never })))
+  await $.command.run({ command: 'clawd', args: '' } as never)
   const ui = await $.ui.mount(BAND)
 
   await clock.advance(599_999)
@@ -725,6 +736,7 @@ test('上下文压缩：期间显示压扁姿势，结束后恢复并透传压�
       return compactResult as never
     })
   })
+  await $.command.run({ command: 'clawd', args: '' } as never)
   await clock.advance(600)
 
   const compactInput: SessionCompactInput = {
@@ -760,6 +772,7 @@ test('测试工具结果：通过和失败显示六秒反应，安装命令不�
       return { result: {} as never }
     })
   })
+  await $.command.run({ command: 'clawd', args: '' } as never)
   await clock.advance(600)
   const ui = await $.ui.mount(BAND)
 
@@ -805,6 +818,7 @@ test('失误反应：工具错误显示叉叉，拒绝与子代理调用不显�
       e.tool === 'Read' ? { result: 'read failed' as never, isError: true } : { deny: 'blocked' },
     )
   })
+  await $.command.run({ command: 'clawd', args: '' } as never)
   const ui = await $.ui.mount(BAND)
 
   await $.tool.call({ tool: 'Read', file_path: '/tmp/missing' } as never)
@@ -831,6 +845,7 @@ test('失误反应：工具错误显示叉叉，拒绝与子代理调用不显�
 test('烦躁提示：插件代发的强烈文字原样透传但不计数', ZH, async ($, on) => {
   const forwarded: PromptSubmitInput[] = []
   const { clock } = await start($, on, {}, undefined, e => forwarded.push(e))
+  await $.command.run({ command: 'clawd', args: '' } as never)
   const ui = await $.ui.mount(BAND)
   const prompts = ['为什么又坏了？', '还是不行，继续试', '搞什么，还是不行']
   const attachments = [{ type: 'document' as const, filename: 'feedback.txt' }]
@@ -850,6 +865,7 @@ test('烦躁提示：插件代发的强烈文字原样透传但不计数', ZH, a
 
 test('烦躁识别关闭：tantrums=off 时仍透传提示词但不触发跺脚', { options: { language: 'zh', tantrums: ' OFF ' } }, async ($, on) => {
   await start($, on, {})
+  await $.command.run({ command: 'clawd', args: '' } as never)
   const prompts = ['为什么又这样', '还是不行', '搞什么']
 
   for (const text of prompts) {
@@ -862,6 +878,7 @@ test('烦躁识别关闭：tantrums=off 时仍透传提示词但不触发跺脚'
 
 test('节日与季节关闭：seasonal=off 时不画时段、季节或节日装扮', { options: { language: 'zh', seasonal: ' OFF ' } }, async ($, on) => {
   await start($, on, {})
+  await $.command.run({ command: 'clawd', args: '' } as never)
   const ui = await $.ui.mount(BAND)
   const src = String((await ui.findAll({ type: 'Svg' }))[0].props?.source)
   expect(src).not.toContain('class="mood-')
@@ -886,6 +903,7 @@ test('反应优先级：测试失败反应不会覆盖待处理的权限请求',
       return { result: { stdout: '1 failed', exitCode: 1 } as never }
     })
   })
+  await $.command.run({ command: 'clawd', args: '' } as never)
 
   const edit = $.tool.call({ tool: 'Edit', file_path: '/tmp/a', old_string: 'a', new_string: 'b' } as never)
   await editStarted
