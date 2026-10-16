@@ -6,6 +6,13 @@ export type Release = { version: string; notes: Record<Lang, string[]> }
 
 export const CHANGELOG: Release[] = [
   {
+    version: '1.13.2',
+    notes: {
+      zh: ['修复：子代理连续调用工具时信息栏会闪烁；同一图标不再重复重画，工具结束后稍等再恢复'],
+      en: ['Fix: the band flickered while subagents ran tools; the same icon no longer redraws, and the pose restores after a short delay'],
+    },
+  },
+  {
     version: '1.13.1',
     notes: {
       zh: ['修复：Claude 干活时费用徽章里的 $ 被文字描边糊住'],

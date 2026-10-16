@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { canReplaceActivity, iconForTool, isFrustrated, isFrustratedPrompt, reactionForToolResult, restoreActivity, updateTantrumWindow } from './activity'
+import { canReplaceActivity, iconForTool, isFrustrated, isFrustratedPrompt, reactionForToolResult, updateTantrumWindow } from './activity'
 
 test('工具图标：各工具家族使用对应像素图标，未知工具使用转圈图标', () => {
   expect(['Bash', 'PowerShell'].map(iconForTool)).toEqual(['terminal', 'terminal'])
@@ -20,27 +20,6 @@ test('活动优先级：高优先级状态保留，工作状态覆盖完成、�
   expect(canReplaceActivity({ kind: 'sleep' }, 'working')).toBe(true)
   expect(canReplaceActivity({ kind: 'idle' }, 'working')).toBe(true)
   expect(canReplaceActivity({ kind: 'working' }, 'idle')).toBe(false)
-})
-
-test('活动恢复：清掉失效 owner 并把 previous 链限制在八层', () => {
-  const stale = restoreActivity(
-    { kind: 'working', owner: 2, previous: { kind: 'working', owner: 1, previous: { kind: 'idle' } } },
-    owner => owner === 2,
-  )
-  expect(stale.previous?.kind).toBe('idle')
-
-  let activity: import('../types').Activity = { kind: 'idle' }
-  for (let owner = 0; owner < 16; owner++) {
-    activity = { kind: 'working', owner, previous: activity }
-  }
-  const bounded = restoreActivity(activity, () => true)
-  let depth = 1
-  let current = bounded
-  while (current.previous) {
-    depth++
-    current = current.previous
-  }
-  expect(depth <= 8).toBe(true)
 })
 
 test('测试命令：测试结果区分通过和失败，安装测试工具不算测试', () => {

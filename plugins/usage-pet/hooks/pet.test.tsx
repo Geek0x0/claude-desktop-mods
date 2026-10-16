@@ -145,6 +145,25 @@ test('子代理的回合不涨经验', ZH, async ($, on) => {
   expect(String((await ui.findAll({ type: 'Svg' }))[0].props?.source)).toContain('<title>Clawd Lv.1 · 经验 95 / 100')
 })
 
+test('子代理回合：七天显示的圆整数不变时不写周用量 atom', ZH, async ($, on) => {
+  const weekWrites: unknown[] = []
+  await start($, on, {}, on => {
+    on('session.id', () => ({ value: 'week-rounding' }))
+    on('state.set', ($, e, next) => {
+      if (e.key === 'week') weekWrites.push(e.value)
+
+      return next(e)
+    })
+  })
+
+  await $.turn.complete({ ...turn(0, 0, 8_410_000), agentId: 'sub-1' })
+  expect(weekWrites.length).toBe(1)
+  await $.turn.complete({ ...turn(0, 0, 100), agentId: 'sub-2' })
+  expect(weekWrites.length).toBe(1)
+  await $.turn.complete({ ...turn(0, 0, 100_000), agentId: 'sub-3' })
+  expect(weekWrites.length).toBe(2)
+})
+
 test('主提示被后续钩子丢弃后：十分钟后仍进入睡眠', ZH, async ($, on) => {
   const { clock } = await start($, on, {}, undefined, undefined, true)
   expect(await $.prompt.submit({ text: 'discard this', asUser: true } as never)).toEqual({ drop: 'discarded by test stand-in' })
@@ -250,7 +269,7 @@ test('工具调用期间显示工具图标，完成后恢复工作字形并透�
   let markStarted!: () => void
   const gate = new Promise<void>(resolve => (release = resolve))
   const started = new Promise<void>(resolve => (markStarted = resolve))
-  await start($, on, {}, on => {
+  const { clock } = await start($, on, {}, on => {
     on('tool.call', async () => {
       markStarted()
       await gate
@@ -272,6 +291,7 @@ test('工具调用期间显示工具图标，完成后恢复工作字形并透�
   release()
   expect(await pending).toEqual({ result: { marker: 'unchanged' } })
 
+  await clock.advance(300)
   const after = await $.ui.mount(workingBand as never)
   const afterSvg = String((await after.findAll({ type: 'Svg' }))[0].props?.source)
   expect(afterSvg).not.toContain('class="activity-icon terminal"')
@@ -287,7 +307,7 @@ test('并行工具调用：较早调用结束时保留最新图标，全部结�
   const readGate = new Promise<void>(resolve => (releaseRead = resolve))
   const bashStarted = new Promise<void>(resolve => (markBashStarted = resolve))
   const readStarted = new Promise<void>(resolve => (markReadStarted = resolve))
-  await start($, on, {}, on => {
+  const { clock } = await start($, on, {}, on => {
     on('tool.call', async ($, e) => {
       if (e.tool === 'Bash') {
         markBashStarted()
@@ -315,10 +335,84 @@ test('并行工具调用：较早调用结束时保留最新图标，全部结�
 
   releaseRead()
   await read
+  const beforeRestore = await $.ui.mount(workingBand as never)
+  expect(String((await beforeRestore.findAll({ type: 'Svg' }))[0].props?.source)).toContain('class="activity-icon magnifier"')
+
+  await clock.advance(300)
   const afterAll = await $.ui.mount(workingBand as never)
   const afterAllSvg = String((await afterAll.findAll({ type: 'Svg' }))[0].props?.source)
   expect(afterAllSvg).not.toContain('class="activity-icon magnifier"')
   expect(afterAllSvg).not.toContain('class="activity-icon terminal"')
+})
+
+test('子代理工具突发：十个同图标含重叠与快速连续调用只写一次工作态和一次延迟恢复', ZH, async ($, on) => {
+  const activityWrites: { value: { kind: string; icon?: string; owner?: number; previous?: unknown }; previous: unknown }[] = []
+  let releasePair!: () => void
+  let markPairStarted!: () => void
+  let started = 0
+  const pairGate = new Promise<void>(resolve => (releasePair = resolve))
+  const pairStarted = new Promise<void>(resolve => (markPairStarted = resolve))
+  const { clock } = await start($, on, {}, on => {
+    on('state.set', ($, e, next) => {
+      if (e.key === 'activity') activityWrites.push({ value: e.value as (typeof activityWrites)[number]['value'], previous: e.previous })
+
+      return next(e)
+    })
+    on('tool.call', async () => {
+      started++
+      if (started <= 2) {
+        if (started === 2) markPairStarted()
+        await pairGate
+      }
+
+      return { result: {} as never }
+    })
+  })
+  activityWrites.length = 0
+
+  const overlapping = [0, 1].map(i => $.tool.call({ tool: 'Bash', command: `printf ${i}`, agentId: 'sub-1' } as never))
+  await pairStarted
+  expect(activityWrites.length).toBe(1)
+  expect(activityWrites[0]?.value.kind).toBe('working')
+  expect(activityWrites[0]?.value.icon).toBe('terminal')
+  expect(activityWrites[0]?.value.owner).toBe(undefined)
+  expect(activityWrites[0]?.value.previous).toBe(undefined)
+
+  releasePair()
+  await Promise.all(overlapping)
+  for (let i = 2; i < 10; i++) {
+    await $.tool.call({ tool: 'Bash', command: `printf ${i}`, agentId: 'sub-1' } as never)
+  }
+  expect(activityWrites.length).toBe(1)
+
+  await clock.advance(300)
+  expect(activityWrites.length).toBe(2)
+  expect(activityWrites[1]?.value.kind).toBe('idle')
+  expect(activityWrites.every(write => JSON.stringify(write.value) !== JSON.stringify(write.previous))).toBe(true)
+})
+
+test('子代理工具突发：切换图标只在可见图标改变时写，结束后三百毫秒统一恢复', ZH, async ($, on) => {
+  const activityWrites: { value: { kind: string; icon?: string }; previous: unknown }[] = []
+  const { clock } = await start($, on, {}, on => {
+    on('state.set', ($, e, next) => {
+      if (e.key === 'activity') activityWrites.push({ value: e.value as (typeof activityWrites)[number]['value'], previous: e.previous })
+
+      return next(e)
+    })
+    on('tool.call', () => ({ result: {} as never }))
+  })
+  activityWrites.length = 0
+
+  for (const tool of ['Bash', 'Read', 'Bash', 'Bash', 'Read']) {
+    await $.tool.call({ tool, agentId: 'sub-1' } as never)
+  }
+
+  expect(activityWrites.map(write => write.value.icon)).toEqual(['terminal', 'magnifier', 'terminal', 'magnifier'])
+  expect(activityWrites.every(write => write.value.kind === 'working')).toBe(true)
+  await clock.advance(300)
+  expect(activityWrites.length).toBe(5)
+  expect(activityWrites[4]?.value.kind).toBe('idle')
+  expect(activityWrites.every(write => JSON.stringify(write.value) !== JSON.stringify(write.previous))).toBe(true)
 })
 
 test('权限请求：只观察并透传结果，悬而未决时不会被在途工具图标覆盖', ZH, async ($, on) => {

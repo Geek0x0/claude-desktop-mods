@@ -192,7 +192,7 @@ test('样式分块：普通展开不带细条、倒计时或万圣节样式，�
 })
 
 test('工具活动：展开图标替代浮动字形，细条仅在图标和首个读数之间留得下间距时显示', () => {
-  const activity: Activity = { kind: 'working', icon: 'terminal', owner: 1 }
+  const activity: Activity = { kind: 'working', icon: 'terminal' }
   const expanded = bandSvg(EMPTY_BARS, true, 1100, false, 'zh', undefined, undefined, activity)
   const expandedAtMin = bandSvg(EMPTY_BARS, true, MIN_BAND_W_WITH_ACTIVITY, false, 'zh', undefined, undefined, activity)
   const mini = bandSvg(EMPTY_BARS, true, 1100, true, 'zh', undefined, undefined, activity)
@@ -323,13 +323,13 @@ test('时段和节日装扮：帽子优先级正确，细条保留帽子与咖�
 })
 
 test('浅色像素装饰：近白图块保留深色填色并提供浅色对比类', () => {
-  const spinner = bandSvg(EMPTY_BARS, false, 1100, false, 'zh', undefined, undefined, { kind: 'working', icon: 'spinner', owner: 1 })
+  const spinner = bandSvg(EMPTY_BARS, false, 1100, false, 'zh', undefined, undefined, { kind: 'working', icon: 'spinner' })
   expect(spinner).toContain('class="activity-pixel pixel-w"')
   expect(spinner).toContain('.activity-pixel.pixel-w{fill:#F0EEE6}')
   expect(spinner).toContain('.activity-pixel.pixel-w,.activity-pixel.pixel-s{fill:#4D4A43}')
   expect(spinner).toContain('.activity-pixel.pixel-t{fill:#377C60}')
   expect(spinner).not.toContain('fill="#F0EEE6"')
-  const miniSpinner = bandSvg(EMPTY_BARS, false, 1100, true, 'zh', undefined, undefined, { kind: 'working', icon: 'spinner', owner: 1 })
+  const miniSpinner = bandSvg(EMPTY_BARS, false, 1100, true, 'zh', undefined, undefined, { kind: 'working', icon: 'spinner' })
   expect(miniSpinner).toContain('class="activity-pixel pixel-w"')
 
   const sleeping = bandSvg(EMPTY_BARS, false, 1100, false, 'zh', undefined, undefined, { kind: 'sleep' })
@@ -411,7 +411,7 @@ test('浅色像素装饰：近白图块保留深色填色并提供浅色对比�
 test('活动和反应覆盖时段、季节与节日装扮，睡眠仍可显示', () => {
   const pet = { level: 10, title: 'Clawd Lv.10', mood: moodAt(new Date(2026, 11, 25, 8))! }
   const active: { isWorking: boolean; activity: Activity }[] = [
-    { isWorking: true, activity: { kind: 'working', icon: 'terminal', owner: 1 } },
+    { isWorking: true, activity: { kind: 'working', icon: 'terminal' } },
     { isWorking: false, activity: { kind: 'needs-you', icon: 'bang' } },
     { isWorking: false, activity: { kind: 'compacting' } },
     { isWorking: false, activity: { kind: 'reaction', reaction: 'oops', icon: 'cross' } },
@@ -451,7 +451,7 @@ test('SVG 尺寸：五环变化、工作图标和万圣节倒计时装扮均控�
   const idleSnap = snap(100)
   const idle = bandSvg({ from: idleSnap, to: idleSnap } as unknown as Bars, false, 1400)
   const halloweenMood = { level: 6, title: 'Clawd Lv.6', halloween: true, askAgo: 0, mood: moodAt(new Date(2026, 9, 31, 8)) }
-  const working = bandSvg(moving, true, 1400, false, 'zh', halloweenMood, undefined, { kind: 'working', icon: 'terminal', owner: 1 })
+  const working = bandSvg(moving, true, 1400, false, 'zh', halloweenMood, undefined, { kind: 'working', icon: 'terminal' })
   const decorated = bandSvg(moving, false, 1400, false, 'zh', halloweenMood, { remainMs: 3600000, ttlMs: 3600000 })
 
   expect(working).toContain('class="activity-icon terminal"')

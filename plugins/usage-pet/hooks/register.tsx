@@ -20,7 +20,7 @@ import {
   type PetView,
   tokensText,
 } from './band'
-import { canReplaceActivity, iconForTool, isFrustratedPrompt, reactionForToolResult, restoreActivity as pruneActivity, updateTantrumWindow } from './activity'
+import { canReplaceActivity, iconForTool, isFrustratedPrompt, reactionForToolResult, updateTantrumWindow } from './activity'
 import { CARD_H, CARD_W, type CardData, cardAlt, cardSvg } from './card'
 import { type Lang, type LangChoice, langFromTags, parseAppleLanguages, T, weekday } from './i18n'
 import { moodAt } from './mood'
@@ -29,6 +29,8 @@ import { addTurn, isStale, LEDGER_PREFIX, mergeLedgers, partialSince, SINCE_KEY,
 
 type UsagePetAtomKey = keyof PluginState['usage-pet'] & string
 type UsagePetAtom<K extends UsagePetAtomKey, T> = Atom<T> & { readonly ref: StateRef<'usage-pet', K> }
+type ActivityFrame = Activity & { owner?: number; previous?: ActivityFrame }
+type ToolBurst = { owner: number; calls: Set<number>; frame?: ActivityFrame; timer?: Timer; generation: number }
 
 const barsRef = { plugin: 'usage-pet', key: 'bars' } as const
 const cacheRef = { plugin: 'usage-pet', key: 'cache' } as const
@@ -57,8 +59,13 @@ const petAtom = atom(petRef, NEW_PET as Pet) as UsagePetAtom<'pet', Pet>
 const NEW_REPORT: Report = { startedAt: 0, turns: 0, toolCalls: 0, files: [], output: 0, earned: [] }
 const reportAtom = atom(reportRef, NEW_REPORT) as UsagePetAtom<'report', Report>
 const activityAtom = atom(activityRef, { kind: 'idle' } as Activity) as UsagePetAtom<'activity', Activity>
+const MAX_ACTIVITY_DEPTH = 8
+const TOOL_RESTORE_MS = 300
+let activityFrame: ActivityFrame = { kind: 'idle' }
 let activityOwner = 0
 const activeActivityOwners = new Set<number>()
+let toolCallOwner = 0
+let toolBurst: ToolBurst | undefined
 const SLEEP_AFTER_MS = 10 * 60000
 const DONE_MS = 6000
 const REACTION_MS: Record<ReactionKind, number> = { 'test-pass': 6000, 'test-fail': 6000, oops: 3000, tantrum: 8000 }
@@ -68,10 +75,6 @@ let sleepGeneration = 0
 let lastActivityAt = 0
 let mainTurnActive = false
 let tantrumTimes: number[] = [] // Keep timestamps only; submitted prompt text is never retained.
-
-function restoreActivity(activity: Activity | undefined): Activity {
-  return pruneActivity(activity, owner => activeActivityOwners.has(owner))
-}
 
 function debugError($: EngineInterface, label: string, error: unknown) {
   try {
@@ -153,11 +156,54 @@ async function updateIfChanged<K extends UsagePetAtomKey, T>(
   }
 }
 
+function capActivityFrame(frame: ActivityFrame | undefined, depth = MAX_ACTIVITY_DEPTH): ActivityFrame {
+  if (!frame || depth <= 0) return { kind: 'idle' }
+  const { previous, ...current } = frame
+  if (!previous || depth <= 1) return current
+
+  return { ...current, previous: capActivityFrame(previous, depth - 1) }
+}
+
+function restoreActivity(frame: ActivityFrame | undefined, depth = MAX_ACTIVITY_DEPTH): ActivityFrame {
+  if (!frame || depth <= 0) return { kind: 'idle' }
+
+  let head: ActivityFrame | undefined = frame
+  let skipped = 0
+  while (head && skipped < depth && (head.kind === 'needs-you' || (head.owner !== undefined && !activeActivityOwners.has(head.owner)))) {
+    head = head.previous
+    skipped++
+  }
+  if (!head || skipped >= depth) return { kind: 'idle' }
+
+  const { previous, ...current } = head
+  if (!previous || depth <= 1) return current
+
+  return { ...current, previous: restoreActivity(previous, depth - 1) }
+}
+
+function visibleActivity(frame: ActivityFrame): Activity {
+  return {
+    kind: frame.kind,
+    ...(frame.icon !== undefined ? { icon: frame.icon } : {}),
+    ...(frame.reaction !== undefined ? { reaction: frame.reaction } : {}),
+  }
+}
+
+function publishActivity($: EngineInterface) {
+  return updateIfChanged($, activityAtom, () => visibleActivity(activityFrame))
+}
+
+function setActivityFrame($: EngineInterface, frame: ActivityFrame) {
+  activityFrame = capActivityFrame(frame)
+
+  return publishActivity($)
+}
+
 function isPromptDropped(result: unknown): boolean {
   return typeof result === 'object' && result !== null && 'drop' in result
 }
 
-function previousActivity(current: Activity): Activity {
+function previousActivity(current: ActivityFrame): ActivityFrame {
   return restoreActivity(current.kind === 'needs-you' || current.kind === 'done' || current.kind === 'sleep' ? current.previous : current)
 }
 
@@ -178,14 +224,10 @@ async function armSleepTimer($: EngineInterface, since = lastActivityAt) {
       if (mainTurnActive) {
         return
       }
-      void updateIfChanged($, activityAtom, current => {
-        const currentActivity = current.kind === 'needs-you' ? current : restoreActivity(current)
-        if (generation !== sleepGeneration || mainTurnActive || !canReplaceActivity(currentActivity, 'sleep')) {
-          return currentActivity
-        }
+      const current = activityFrame.kind === 'needs-you' ? activityFrame : restoreActivity(activityFrame)
+      if (generation !== sleepGeneration || mainTurnActive || !canReplaceActivity(current, 'sleep')) return
 
-        return { kind: 'sleep', previous: previousActivity(currentActivity) }
-      })
+      void setActivityFrame($, { kind: 'sleep', previous: previousActivity(current) })
     })
   } catch {
     sleepTimer = undefined
@@ -199,32 +241,21 @@ async function noteActivity($: EngineInterface) {
 
 async function needsYou($: EngineInterface, icon: 'bang' | 'question'): Promise<number | undefined> {
   const owner = ++activityOwner
-  let applied = false
-  await updateIfChanged($, activityAtom, current => {
-    const previous = previousActivity(current)
-    if (!canReplaceActivity(previous, 'needs-you')) {
-      return previous
-    }
-    applied = true
+  const previous = previousActivity(activityFrame)
+  if (!canReplaceActivity(previous, 'needs-you')) return undefined
 
-    return { kind: 'needs-you', icon, owner, previous: restoreActivity(previous) }
-  })
+  await setActivityFrame($, { kind: 'needs-you', icon, owner, previous: restoreActivity(previous) })
 
-  return applied ? owner : undefined
+  return owner
 }
 
 async function clearNeedsYou($: EngineInterface, owner: number): Promise<boolean> {
-  let cleared = false
-  await updateIfChanged($, activityAtom, current => {
-    if (current.kind !== 'needs-you' || current.owner !== owner) {
-      return current
-    }
-    cleared = true
+  const current = activityFrame
+  if (current.kind !== 'needs-you' || current.owner !== owner) return false
 
-    return restoreActivity(current.previous)
-  })
+  await setActivityFrame($, restoreActivity(current.previous))
 
-  return cleared
+  return true
 }
 
 async function noteFrustration($: EngineInterface): Promise<boolean> {
@@ -238,85 +269,155 @@ async function noteFrustration($: EngineInterface): Promise<boolean> {
 async function showReaction($: EngineInterface, reaction: ReactionKind) {
   const owner = ++activityOwner
   activeActivityOwners.add(owner)
-  let applied = false
   const icon: Activity['icon'] = reaction === 'test-pass' ? 'check' : reaction === 'tantrum' ? undefined : 'cross'
-
-  try {
-    await updateIfChanged($, activityAtom, stored => {
-      const current = stored.kind === 'needs-you' ? stored : restoreActivity(stored)
-      if (!canReplaceActivity(current, 'reaction')) {
-        return current
-      }
-      const previous = restoreActivity(current.kind === 'reaction' ? current.previous : current)
-      applied = true
-
-      return { kind: 'reaction', reaction, icon, owner, previous }
-    })
-  } finally {
-    if (!applied) {
-      activeActivityOwners.delete(owner)
-    }
+  const current = activityFrame.kind === 'needs-you' ? activityFrame : restoreActivity(activityFrame)
+  if (!canReplaceActivity(current, 'reaction')) {
+    activeActivityOwners.delete(owner)
+    return
   }
+  const previous = restoreActivity(current.kind === 'reaction' ? current.previous : current)
+  await setActivityFrame($, { kind: 'reaction', reaction, icon, owner, previous })
 
-  if (!applied) return
   try {
     $.clock.after(REACTION_MS[reaction], () => {
       activeActivityOwners.delete(owner)
-      void updateIfChanged($, activityAtom, current =>
-        current.kind === 'reaction' && current.owner === owner ? restoreActivity(current.previous) : current,
-      )
+      if (activityFrame.kind === 'reaction' && activityFrame.owner === owner) void setActivityFrame($, restoreActivity(activityFrame.previous))
     })
   } catch {
     activeActivityOwners.delete(owner)
-    await updateIfChanged($, activityAtom, current =>
-      current.kind === 'reaction' && current.owner === owner ? restoreActivity(current.previous) : current,
-    )
+    if (activityFrame.kind === 'reaction' && activityFrame.owner === owner) await setActivityFrame($, restoreActivity(activityFrame.previous))
   }
 }
 
 async function completeActivity($: EngineInterface, aborted: boolean) {
+  clearSettledToolBurst()
   if (aborted) {
-    await updateIfChanged($, activityAtom, current => {
-      const previous = previousActivity(current)
-      return canReplaceActivity(previous, 'idle') ? { kind: 'idle' } : previous
-    })
+    const previous = previousActivity(activityFrame)
+    await setActivityFrame($, canReplaceActivity(previous, 'idle') ? { kind: 'idle' } : previous)
     return
   }
 
   const owner = ++activityOwner
   activeActivityOwners.add(owner)
-  let applied = false
-  try {
-    await updateIfChanged($, activityAtom, current => {
-      const previous = previousActivity(current)
-      if (!canReplaceActivity(previous, 'done')) {
-        return previous
-      }
-      applied = true
-
-      return { kind: 'done', owner, previous: restoreActivity(previous) }
-    })
-  } finally {
-    if (!applied) {
-      activeActivityOwners.delete(owner)
-    }
+  const previous = previousActivity(activityFrame)
+  if (!canReplaceActivity(previous, 'done')) {
+    activeActivityOwners.delete(owner)
+    return
   }
-  if (applied) {
-    try {
-      $.clock.after(DONE_MS, () => {
-        activeActivityOwners.delete(owner)
-        void updateIfChanged($, activityAtom, current =>
-          current.kind === 'done' && current.owner === owner ? restoreActivity(current.previous) : current,
-        )
-      })
-    } catch {
+  await setActivityFrame($, { kind: 'done', owner, previous: restoreActivity(previous) })
+
+  try {
+    $.clock.after(DONE_MS, () => {
       activeActivityOwners.delete(owner)
-      await updateIfChanged($, activityAtom, current =>
-        current.kind === 'done' && current.owner === owner ? restoreActivity(current.previous) : current,
-      )
-    }
+      if (activityFrame.kind === 'done' && activityFrame.owner === owner) void setActivityFrame($, restoreActivity(activityFrame.previous))
+    })
+  } catch {
+    activeActivityOwners.delete(owner)
+    if (activityFrame.kind === 'done' && activityFrame.owner === owner) await setActivityFrame($, restoreActivity(activityFrame.previous))
   }
 }
+
+function cancelToolRestore(burst: ToolBurst) {
+  burst.generation++
+  try {
+    burst.timer?.cancel()
+  } catch {
+    // A timer may have fired while a new call was starting; the generation guards its callback.
+  }
+  burst.timer = undefined
+}
+
+function removeActivityOwner(frame: ActivityFrame, owner: number): ActivityFrame {
+  if (frame.owner === owner) return restoreActivity(frame.previous)
+  if (!frame.previous) return frame
+
+  const previous = removeActivityOwner(frame.previous, owner)
+  return previous === frame.previous ? frame : { ...frame, previous }
+}
+
+function clearSettledToolBurst() {
+  const burst = toolBurst
+  if (!burst || burst.calls.size > 0) return
+
+  cancelToolRestore(burst)
+  toolBurst = undefined
+  activeActivityOwners.delete(burst.owner)
+  activityFrame = removeActivityOwner(activityFrame, burst.owner)
+}
+
+async function restoreToolBurst($: EngineInterface, burst: ToolBurst, generation: number) {
+  if (toolBurst !== burst || burst.generation !== generation || burst.calls.size > 0) return
+
+  burst.timer = undefined
+  toolBurst = undefined
+  activeActivityOwners.delete(burst.owner)
+  activityFrame = removeActivityOwner(activityFrame, burst.owner)
+  await publishActivity($)
+  await armSleepTimer($, lastActivityAt)
+}
+
+async function startToolCallActivity(
+  $: EngineInterface,
+  tool: string,
+  agentId: string | undefined,
+  pendingPermission: { tool: string; owner: number } | undefined,
+  onStart: (burst: ToolBurst, call: number) => void,
+): Promise<{ burst: ToolBurst; call: number }> {
+  let burst = toolBurst
+  if (!burst) {
+    burst = { owner: ++activityOwner, calls: new Set<number>(), generation: 0 }
+    toolBurst = burst
+  }
+  cancelToolRestore(burst)
+  const call = ++toolCallOwner
+  burst.calls.add(call)
+  onStart(burst, call)
+
+  if (pendingPermission && activityFrame.kind === 'needs-you' && activityFrame.owner === pendingPermission.owner && pendingPermission.tool !== tool) {
+    return { burst, call }
+  }
+
+  const icon = iconForTool(tool)
+  if (burst.frame) {
+    if (activityFrame.kind === 'working' && activityFrame.owner === burst.owner && activityFrame.icon !== icon) {
+      burst.frame = { ...activityFrame, icon }
+      await setActivityFrame($, burst.frame)
+    }
+
+    return { burst, call }
+  }
+
+  const current = activityFrame
+  const previous =
+    agentId === undefined
+      ? previousActivity(current)
+      : current.kind === 'sleep' || current.kind === 'done'
+        ? restoreActivity(current.previous)
+        : restoreActivity(current)
+  if (!canReplaceActivity(previous, 'working')) return { burst, call }
+
+  activeActivityOwners.add(burst.owner)
+  burst.frame = { kind: 'working', icon, owner: burst.owner, previous: restoreActivity(previous) }
+  await setActivityFrame($, burst.frame)
+
+  return { burst, call }
+}
+
+async function finishToolCallActivity($: EngineInterface, burst: ToolBurst, call: number) {
+  if (toolBurst !== burst) return
+  burst.calls.delete(call)
+  if (burst.calls.size > 0) return
+
+  const generation = ++burst.generation
+  try {
+    burst.timer = $.clock.after(TOOL_RESTORE_MS, () => {
+      void restoreToolBurst($, burst, generation).catch(error => debugError($, 'tool activity restore failed', error))
+    })
+  } catch {
+    await restoreToolBurst($, burst, generation)
+  }
+}
+
 // 万圣节讨糖：最近一次答完的时间（0 = 不讨糖）。等自动展开收起后再开始讨，讨 ASK_WINDOW_MS 内有效
 const askAtom = atom(askRef, 0) as UsagePetAtom<'ask', number>
 // 缓存倒计时：主对话最近一次答完的时间（0 = 这个会话还没答过）。
@@ -830,7 +931,10 @@ export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     mainTurnActive = false
     pendingPermission = undefined
+    if (toolBurst) cancelToolRestore(toolBurst)
+    toolBurst = undefined
     activeActivityOwners.clear()
+    activityFrame = { kind: 'idle' }
     await safeBookkeeping($, 'session.start bookkeeping failed', async () => {
       refreshFable($, fableState)
       // 先定语言；读不出来就英文
@@ -875,7 +979,7 @@ export const register: Register = (on, options) => {
       }
 
       tantrumTimes = []
-      await updateIfChanged($, activityAtom, () => ({ kind: 'idle' }))
+      await setActivityFrame($, { kind: 'idle' })
       await noteActivity($)
     })
 
@@ -888,7 +992,7 @@ export const register: Register = (on, options) => {
     pendingPermission = undefined
     await safeBookkeeping($, 'prompt.submit bookkeeping failed', async () => {
       await noteActivity($)
-      await updateIfChanged($, activityAtom, previousActivity)
+      await setActivityFrame($, previousActivity(activityFrame))
       if (isMainPrompt && tantrumsEnabled && isFrustratedPrompt(e.text, e.origin.kind) && (await noteFrustration($))) {
         await showReaction($, 'tantrum')
       }
@@ -1008,9 +1112,9 @@ export const register: Register = (on, options) => {
   on('tool.call', async ($, e, next) => {
     const needsIcon =
       e.agentId === undefined ? (e.tool === 'AskUserQuestion' ? 'question' : e.tool === 'ExitPlanMode' ? 'bang' : undefined) : undefined
-    const owner = ++activityOwner
     let needsOwner: number | undefined
-    let applied = false
+    let burst: ToolBurst | undefined
+    let burstCall: number | undefined
     let ran!: Awaited<ReturnType<typeof next>>
     await safeBookkeeping($, 'tool.call bookkeeping failed', async () => {
       await noteActivity($)
@@ -1019,43 +1123,23 @@ export const register: Register = (on, options) => {
         pendingPermission = undefined
       }
       if (needsIcon) {
-        const current = await read($, activityAtom)
+        const current = activityFrame
         if (!(pendingPermission && current.kind === 'needs-you' && current.owner === pendingPermission.owner)) {
           needsOwner = await needsYou($, needsIcon)
         }
         return
       }
 
-      activeActivityOwners.add(owner)
-      await updateIfChanged($, activityAtom, current => {
-        if (pendingPermission && current.kind === 'needs-you' && current.owner === pendingPermission.owner && pendingPermission.tool !== e.tool) {
-          return current
-        }
-        const previous =
-          e.agentId === undefined
-            ? previousActivity(current)
-            : current.kind === 'sleep' || current.kind === 'done'
-              ? restoreActivity(current.previous)
-              : restoreActivity(current)
-        const normalizedPrevious = restoreActivity(previous)
-        if (!canReplaceActivity(normalizedPrevious, 'working')) {
-          return normalizedPrevious
-        }
-        applied = true
-
-        return { kind: 'working', icon: iconForTool(e.tool), owner, previous: normalizedPrevious }
+      await startToolCallActivity($, e.tool, e.agentId, pendingPermission, (startedBurst, startedCall) => {
+        burst = startedBurst
+        burstCall = startedCall
       })
     })
     try {
       ran = await next(e)
     } finally {
       await safeBookkeeping($, 'tool.call cleanup failed', async () => {
-        activeActivityOwners.delete(owner)
-        if (applied) {
-          await updateIfChanged($, activityAtom, current =>
-            current.kind === 'working' && current.owner === owner ? restoreActivity(current.previous) : current,
-          )
-        }
+        if (burst && burstCall !== undefined) await finishToolCallActivity($, burst, burstCall)
         if (needsOwner !== undefined) {
           await clearNeedsYou($, needsOwner)
         }
@@ -1094,29 +1178,24 @@ export const register: Register = (on, options) => {
     let result!: Awaited<ReturnType<typeof next>>
     await safeBookkeeping($, 'session.compact bookkeeping failed', async () => {
       await noteActivity($)
-      activeActivityOwners.add(owner)
-      await updateIfChanged($, activityAtom, current => {
-        const previous =
-          current.kind === 'needs-you'
-            ? current
-            : restoreActivity(current.kind === 'done' || current.kind === 'sleep' ? current.previous : current)
-        if (!canReplaceActivity(previous, 'compacting')) {
-          return previous
-        }
-        applied = true
+      const current = activityFrame
+      const previous =
+        current.kind === 'needs-you'
+          ? current
+          : restoreActivity(current.kind === 'done' || current.kind === 'sleep' ? current.previous : current)
+      if (!canReplaceActivity(previous, 'compacting')) return
 
-        return { kind: 'compacting', owner, previous }
-      })
+      applied = true
+      activeActivityOwners.add(owner)
+      await setActivityFrame($, { kind: 'compacting', owner, previous })
     })
     try {
       result = await next(e)
     } finally {
       await safeBookkeeping($, 'session.compact cleanup failed', async () => {
         activeActivityOwners.delete(owner)
-        if (applied) {
-          await updateIfChanged($, activityAtom, current =>
-            current.kind === 'compacting' && current.owner === owner ? restoreActivity(current.previous) : current,
-          )
+        if (applied && activityFrame.kind === 'compacting' && activityFrame.owner === owner) {
+          await setActivityFrame($, restoreActivity(activityFrame.previous))
         }
         await armSleepTimer($, lastActivityAt)
       })

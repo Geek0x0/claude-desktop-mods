@@ -4,29 +4,6 @@ export const ACTIVITY_PRIORITY: readonly ActivityKind[] = ['needs-you', 'reactio
 
 const rank = (kind: ActivityKind) => ACTIVITY_PRIORITY.indexOf(kind)
 
-export const MAX_ACTIVITY_DEPTH = 8
-
-export function restoreActivity(
-  activity: Activity | undefined,
-  isOwnerActive: (owner: number) => boolean,
-  maxDepth = MAX_ACTIVITY_DEPTH,
-): Activity {
-  if (!activity || maxDepth <= 0) return { kind: 'idle' }
-
-  let head: Activity | undefined = activity
-  let skipped = 0
-  while (head && skipped < maxDepth && (head.kind === 'needs-you' || (head.owner !== undefined && !isOwnerActive(head.owner)))) {
-    head = head.previous
-    skipped++
-  }
-  if (!head || skipped >= maxDepth) return { kind: 'idle' }
-
-  const { previous, ...current } = head
-  if (!previous || maxDepth <= 1) return current as Activity
-
-  return { ...current, previous: restoreActivity(previous, isOwnerActive, maxDepth - 1) }
-}
-
 export function canReplaceActivity(current: Activity, next: ActivityKind): boolean {
   return rank(current.kind) >= rank(next)
 }

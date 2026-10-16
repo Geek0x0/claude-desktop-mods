@@ -37,7 +37,8 @@ export type WeekTotals = { total: number; fresh: number; write: number; read: nu
 export type ToolIcon = 'terminal' | 'pencil' | 'magnifier' | 'globe' | 'bolt' | 'mini' | 'spinner' | 'bang' | 'question' | 'check' | 'cross'
 export type ActivityKind = 'needs-you' | 'reaction' | 'compacting' | 'working' | 'done' | 'sleep' | 'idle'
 export type ReactionKind = 'test-pass' | 'test-fail' | 'oops' | 'tantrum'
-export type Activity = { kind: ActivityKind; icon?: ToolIcon; reaction?: ReactionKind; owner?: number; previous?: Activity }
+// The atom contains only fields used by the renderer. Ownership and restore stacks live in register.tsx.
+export type Activity = { kind: ActivityKind; icon?: ToolIcon; reaction?: ReactionKind }
 
 declare module 'claude-code' {
   interface PluginState {
