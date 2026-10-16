@@ -36,12 +36,6 @@ const svgOf = async (ui: { findAll: (q: { type: 'Svg' }) => Promise<{ props?: Re
 
 const EMPTY_BARS = { from: null, to: null }
 
-function fingerprint(source: string): number {
-  let hash = 2166136261
-  for (let i = 0; i < source.length; i++) hash = Math.imul(hash ^ source.charCodeAt(i), 16777619)
-  return hash >>> 0
-}
-
 test('干活时：展开和细条都有紫色像素背景，且背景在读数和 Clawd 之前', ZH, async () => {
   for (const mini of [false, true]) {
     const source = bandSvg(EMPTY_BARS, true, 1100, mini)
@@ -119,11 +113,82 @@ test('浅色外观：工作底纹隐藏，不叠加深色描边或标签颜色',
   expect(source).not.toContain('@media (prefers-color-scheme:light){.mlab,.sub,.pct,.dim{')
 })
 
-test('休息时：不画紫色像素背景，SVG 保持原样', ZH, async () => {
+test('休息时：不画紫色像素背景，Clawd 保持待机外观', ZH, async () => {
   const source = bandSvg(EMPTY_BARS, false, 1100)
   expect(source).not.toContain('ultra-dither')
-  expect(source.length).toBe(18967)
-  expect(fingerprint(source)).toBe(2498379622)
+  expect(source).toContain('viewBox="0 0 1100 80"')
+  expect(source).toContain('class="clawd"')
+  expect(source).toContain('class="hop idle"')
+  expect(source).toContain('class="shadow idle"')
+  expect(source).not.toContain('class="clawd working')
+  expect(source).not.toContain('@keyframes od')
+})
+
+test('滚动数字：静止位只画一个数字，只有发生变化的位带滚轮和裁切', () => {
+  const snap = (context: number, session = 8, weekly = 63) => ({
+    contextPercent: context,
+    contextTokens: context * 2000,
+    contextWindow: 200000,
+    session: { percent: session },
+    weekly: { percent: weekly },
+    cache: { rate: 92, read: 900000, write: 50000, fresh: 50000, turnRate: 92 },
+  })
+  const stable = bandSvg({ from: snap(42), to: snap(42) } as unknown as Bars, false, 1100)
+  const moving = bandSvg({ from: snap(41), to: snap(42) } as unknown as Bars, false, 1100)
+
+  expect(stable).not.toContain('<clipPath id="cod')
+  expect(stable).not.toContain('@keyframes od')
+  expect(moving.match(/<clipPath id="cod/g)?.length).toBe(1)
+  expect(moving).toContain('@keyframes odc1{')
+  expect(moving).not.toContain('@keyframes ods')
+})
+
+test('缓存倒计时：共用定位样式，六十分钟精确显示，长 TTL 最多六十个分钟步进', () => {
+  const bars = {
+    from: null,
+    to: {
+      contextPercent: 42,
+      contextTokens: 84000,
+      contextWindow: 200000,
+      session: { percent: 8 },
+      weekly: { percent: 63 },
+      cache: { rate: 92, read: 900000, write: 50000, fresh: 50000, turnRate: 92 },
+    },
+  } as unknown as Bars
+  const sixty = bandSvg(bars, false, 1100, false, 'zh', undefined, { remainMs: 60 * 60000, ttlMs: 60 * 60000 })
+  const long = bandSvg(bars, false, 1100, false, 'zh', undefined, { remainMs: 24 * 60 * 60000, ttlMs: 24 * 60 * 60000 })
+  const sixtyGroup = sixty.match(/<g class="tm" transform="translate\([^"]+\)" style="font-size:9px">([\s\S]*?)<\/g>/)
+  const longGroup = long.match(/<g class="tm" transform="translate\([^"]+\)" style="font-size:9px">([\s\S]*?)<\/g>/)
+  const sixtyPosition = sixty.match(/<g class="tm" transform="translate\(([\d.]+) ([\d.]+)\)" style="font-size:9px">/)
+
+  expect(sixtyGroup).not.toBeNull()
+  expect(sixtyPosition).not.toBeNull()
+  expect((sixtyGroup?.[1].match(/<text\b/g) ?? []).length).toBe(61)
+  expect(sixtyGroup?.[1]).toContain('>60分</text>')
+  expect(sixtyGroup?.[1]).toContain('>1分</text>')
+  expect(sixtyGroup?.[1]).toContain('>已过期</text>')
+  expect(sixtyGroup?.[1]).not.toMatch(/<text[^>]*\s[xy]=/)
+  expect((longGroup?.[1].match(/<text\b/g) ?? []).length).toBe(62)
+  expect(longGroup?.[1]).toContain('>1440分</text>')
+  expect(longGroup?.[1]).toContain('>60分</text>')
+})
+
+test('样式分块：普通展开不带细条、倒计时或万圣节样式，按需渲染才追加', () => {
+  const plain = bandSvg(EMPTY_BARS, false, 1100)
+  const mini = bandSvg(EMPTY_BARS, false, 1100, true)
+  const timer = bandSvg(EMPTY_BARS, false, 1100, false, 'zh', undefined, { remainMs: 60000, ttlMs: 60000 })
+  const halloween = bandSvg(EMPTY_BARS, false, 1100, false, 'zh', { level: 2, title: 'Clawd', halloween: true })
+
+  expect(plain).toContain('.num{font-size:12px;')
+  expect(plain).not.toContain('.mlab{font-size:13px;')
+  expect(plain).not.toContain('.tm{font-weight:600;')
+  expect(plain).not.toContain('@keyframes beg{')
+  expect(mini).toContain('.mlab{font-size:13px;')
+  expect(mini).not.toContain('.num{font-size:12px;')
+  expect(timer).toContain('.tm{font-weight:600;')
+  expect(timer).toContain('@media (prefers-color-scheme:light){.tm,.tm.cold{fill:#C2603F}')
+  expect(halloween).toContain('@keyframes beg{')
+  expect(halloween).toContain('@media (prefers-color-scheme:light){.hw-q{fill:#C2603F}')
 })
 
 test('工具活动：展开图标替代浮动字形，细条仅在图标和首个读数之间留得下间距时显示', () => {
@@ -273,6 +338,11 @@ test('浅色像素装饰：近白图块保留深色填色并提供浅色对比�
   expect(sleeping).toContain('.sleep-z-pixel{fill:#4D4A43}')
   expect(sleeping).not.toContain('fill="#F0EEE6"')
 
+  const stressed = bandSvg({ from: null, to: { session: { percent: 95 } } } as unknown as Bars, false, 1100)
+  expect(stressed).toContain('class="sweat"')
+  expect(stressed).toContain('.sweat{fill:#8FD0FF}')
+  expect(stressed).toContain('.sweat{fill:#2D7FB8}')
+
   const tantrum = bandSvg(EMPTY_BARS, false, 1100, false, 'zh', undefined, undefined, { kind: 'reaction', reaction: 'tantrum' })
   expect(tantrum).toContain('class="steam-pixel-light"')
   expect(tantrum).toContain('.tantrum-steam .steam-pixel-light{fill:#D4D1C9}')
@@ -365,6 +435,32 @@ test('干活时：1100px 信息栏的 SVG 源码远低于宿主限制', ZH, asyn
   const mini = bandSvg(EMPTY_BARS, true, 1100, true)
   expect(expanded.length).toBeLessThan(131072)
   expect(mini.length).toBeLessThan(131072)
+})
+
+test('SVG 尺寸：五环变化、工作图标和万圣节倒计时装扮均控制在四万五千字符内', () => {
+  const snap = (n: number) => ({
+    contextPercent: n,
+    contextTokens: n * 2000,
+    contextWindow: 200000,
+    session: { percent: n, resetsAt: '2026-10-15T16:00:00.000Z' },
+    weekly: { percent: Math.min(100, n + 8), resetsAt: '2026-10-20T12:00:00.000Z' },
+    fable: { percent: Math.min(100, n + 14), resetsAt: '2026-10-20T12:00:00.000Z' },
+    cache: { rate: 92, read: 900000, write: 50000, fresh: 50000, turnRate: 92 },
+  })
+  const moving = { from: snap(49), to: snap(100) } as unknown as Bars
+  const idleSnap = snap(100)
+  const idle = bandSvg({ from: idleSnap, to: idleSnap } as unknown as Bars, false, 1400)
+  const halloweenMood = { level: 6, title: 'Clawd Lv.6', halloween: true, askAgo: 0, mood: moodAt(new Date(2026, 9, 31, 8)) }
+  const working = bandSvg(moving, true, 1400, false, 'zh', halloweenMood, undefined, { kind: 'working', icon: 'terminal', owner: 1 })
+  const decorated = bandSvg(moving, false, 1400, false, 'zh', halloweenMood, { remainMs: 3600000, ttlMs: 3600000 })
+
+  expect(working).toContain('class="activity-icon terminal"')
+  expect(working).toContain('class="ultra-dither"')
+  expect(decorated).toContain('id="hwtimer"')
+  expect(decorated).toContain('class="mood-coffee"')
+  expect(decorated).toContain('class="tm"')
+  expect(decorated).toContain('Fable')
+  expect(Math.max(idle.length, working.length, decorated.length)).toBeLessThan(45000)
 })
 
 test('终端：直接画三个读数（不用 Client），数字、token 和进度条都在', ZH, async ($, on) => {
@@ -472,6 +568,44 @@ test('缓存命中：按轮累计（读取 ÷ 读取+写入+未走缓存），�
   expect(String(svg.props?.source)).toContain('缓存命中')
   expect(String(svg.props?.source)).toContain('本轮 95%')
   expect(String(svg.props?.source)).toContain('读取 270')
+})
+
+test('主回合：提示、读数、完成和七秒内计时器的 state.set 总量不超过八次且没有空写', ZH, async ($, on) => {
+  const clock = mock.clock(on, { now: new Date(2026, 9, 15, 12).getTime() })
+  mock.store(on, {})
+  const writes: { key: string; value: unknown; previous: unknown }[] = []
+  on('state.set', ($, e, next) => {
+    writes.push({ key: e.key, value: e.value, previous: e.previous })
+
+    return next(e)
+  })
+  on('session.id', () => ({ value: 'main-turn' }))
+  on('session.start', ($, e) => ({ cwd: e.cwd }))
+  on('session.usage', () => ({ value: { startedAt: 0, context: { window: 200000, tokens: 80000, percent: 40 }, rateLimits: [] } }))
+  on('session.measure', ($, e) => ({ changed: e.changed }))
+  on('prompt.submit', ($, e) => ({ text: e.text, origin: e.origin }))
+  on('turn.complete', ($, e) => ({ text: '', usage: e.usage }))
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  on('session.authorize', () => ({ value: null }))
+  await $.session.start(START as never)
+  const ui = await $.ui.mount({ ...BAND(false), surface: 'desktop' })
+  writes.length = 0
+
+  await $.prompt.submit({ text: 'continue', asUser: true } as never)
+  await $.session.measure(measure(42, 8, 63))
+  await $.turn.complete({
+    answer: 'ok',
+    durationMs: 1000,
+    isAborted: false,
+    turnId: 'write-count',
+    reason: 'answer',
+    usage: { model: 'claude-opus-5-5', input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
+  } as never)
+  await clock.advance(7000)
+  await ui.redraw()
+
+  expect(writes.length).toBeLessThanOrEqual(8)
+  expect(writes.every(write => JSON.stringify(write.value) !== JSON.stringify(write.previous))).toBe(true)
 })
 
 test('排布均匀：左右留白相等，Clawd 与四块之间五段间距相等', ZH, async ($, on) => {

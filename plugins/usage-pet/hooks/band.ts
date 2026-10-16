@@ -316,7 +316,9 @@ const TIMER_SIZE = 9
 // 标题右边的缓存倒计时留宽：最长的那一档（60m / 60分 / cold / 已过期）
 let timerLang: Lang = 'zh'
 const timerWidth = (g: Gauge, size: number) =>
-  g.timerMs === undefined ? 0 : 6 + Math.max(textWidth(T[timerLang].cacheLeft(60), size), textWidth(T[timerLang].cacheCold, size))
+  g.timerMs === undefined
+    ? 0
+    : 6 + Math.max(textWidth(T[timerLang].cacheLeft(Math.max(60, Math.ceil(g.timerMs / 60000))), size), textWidth(T[timerLang].cacheCold, size))
 const contentWidth = (g: Gauge) =>
   RING_W + RING_LABEL_GAP + Math.max(textWidth(g.label, LAB_SIZE) + timerWidth(g, TIMER_SIZE), textWidth(g.sub, SUB_SIZE), textWidth(g.detail, SUB_SIZE))
 
@@ -326,28 +328,31 @@ const contentWidth = (g: Gauge) =>
 function cacheTimerSvg(x: number, baseline: number, remainMs: number, lang: Lang, size: number, beside: number): string {
   const t = T[lang]
   const y = (baseline - (beside - size) * 0.36).toFixed(2)
-  const at = (ms: number) => `${Math.max(0, ms / 1000).toFixed(2)}s`
+  const at = (ms: number) => `${Math.max(0, ms / 1000).toFixed(2).replace(/\.?0+$/, '')}s`
   const style = `font-size:${size}px`
   if (remainMs <= 0) {
     return `<text x="${x.toFixed(1)}" y="${y}" class="tm cold" style="${style}">${t.cacheCold}</text>`
   }
   const total = Math.ceil(remainMs / 60000)
-  const minutes = Array.from({ length: total }, (_, k) => {
-    const m = total - k
-    const begin = at(remainMs - m * 60000)
-    const end = at(remainMs - (m - 1) * 60000)
+  const steps = Math.min(total, MAX_TIMER_MINUTES)
+  const coarseStart = total > MAX_TIMER_MINUTES ? total : 0
+  const minutes = Array.from({ length: steps }, (_, k) => {
+    const m = steps - k
+    const startMs = remainMs - m * 60000
+    const durationMs = m === total ? remainMs - (m - 1) * 60000 : 60000
 
-    return (
-      `<text x="${x.toFixed(1)}" y="${y}" class="tm${m <= 5 ? ' warn' : ''}" style="${style}" opacity="0">` +
-      `<set attributeName="opacity" to="1" begin="${begin}" end="${end}"/>${t.cacheLeft(m)}</text>`
-    )
+    return `<text${m <= 5 ? ' class="warn"' : ''} opacity="0"><set attributeName="opacity" to="1" begin="${at(startMs)}" dur="${at(durationMs)}"/>${t.cacheLeft(m)}</text>`
   }).join('')
+  const coarse = coarseStart
+    ? `<text opacity="1"><set attributeName="opacity" to="0" begin="${at(remainMs - MAX_TIMER_MINUTES * 60000)}" fill="freeze"/>${t.cacheLeft(coarseStart)}</text>`
+    : ''
+  const cold = `<text class="cold" opacity="0"><set attributeName="opacity" to="1" begin="${at(remainMs)}" fill="freeze"/>${t.cacheCold}</text>`
 
-  return (
-    minutes +
-    `<text x="${x.toFixed(1)}" y="${y}" class="tm cold" style="${style}" opacity="0"><set attributeName="opacity" to="1" begin="${at(remainMs)}" fill="freeze"/>${t.cacheCold}</text>`
-  )
+  return `<g class="tm" transform="translate(${x.toFixed(1)} ${y})" style="${style}">${coarse}${minutes}${cold}</g>`
 }
+
+// At most 60 timed minute labels plus one coarse label and the expired label.
+const MAX_TIMER_MINUTES = 60
 
 // 窗口窄的时候逐级收：full（圆环 + 标题 + 副标题）→ compact（圆环 + 标题）→ stacked（圆环上移、小字标题放在圆环下面）
 // → rings（只有圆环）。收掉的文字都还在每块的悬停提示（<title>）里。
@@ -415,20 +420,21 @@ function odometer(g: Gauge, i: number, cx: number, cy: number, isChanged: boolea
       const was = fromDigits[k] === ' ' ? 10 : Number(fromDigits[k])
       const x = left + k * dig
       const name = `od${g.id}${k}`
-      if (isChanged && was !== d) {
-        css.push(
-          `@keyframes ${name}{from{transform:translateY(${-was * LINE}px)}to{transform:translateY(${-d * LINE}px)}}` +
-            `.${name}{animation:${name} ${0.75 + k * 0.12}s ${OUT} ${(i * 0.06).toFixed(2)}s both}`,
-        )
+      if (!isChanged || was === d) {
+        return `<text x="${(x + dig / 2).toFixed(1)}" y="${cy + NUM_BASELINE}" text-anchor="middle" class="num${isWide ? ' sm' : ''}">${d}</text>`
       }
+      css.push(
+        `@keyframes ${name}{from{transform:translateY(${-was * LINE}px)}to{transform:translateY(${-d * LINE}px)}}` +
+          `.${name}{animation:${name} ${0.75 + k * 0.12}s ${OUT} ${(i * 0.06).toFixed(2)}s both}`,
+      )
       const strip = Array.from(
         { length: 10 },
-        (_, n) => `<text x="${(x + dig / 2).toFixed(1)}" y="${cy + NUM_BASELINE + n * LINE}" text-anchor="middle" class="num${isWide ? ' sm' : ''}">${n}</text>`,
+        (_, n) => `<text y="${cy + NUM_BASELINE + n * LINE}">${n}</text>`,
       ).join('')
 
       return (
         `<clipPath id="c${name}"><rect x="${(x - 1).toFixed(1)}" y="${cy - NUM_CLIP_H / 2}" width="${dig + 2}" height="${NUM_CLIP_H}"/></clipPath>` +
-        `<g clip-path="url(#c${name})"><g class="${name}" style="transform:translateY(${-d * LINE}px)">${strip}</g></g>`
+        `<g clip-path="url(#c${name})"><g transform="translate(${(x + dig / 2).toFixed(1)} 0)"><g class="${name}" style="transform:translateY(${-d * LINE}px)"><g class="num${isWide ? ' sm' : ''}" text-anchor="middle">${strip}</g></g></g></g>`
       )
     })
     .join('')
@@ -468,7 +474,7 @@ function gauge(g: Gauge, i: number, x: number, w: number, isChanged: boolean, is
     `stroke-dasharray="${C.toFixed(2)}" style="stroke-dashoffset:${off(g.to)}" opacity="${visible ? 1 : 0}"/>`
 
   return (
-    `<g class="g${isFirst ? ' enter' : ''}" style="animation-delay:${(i * 0.06).toFixed(2)}s">` +
+    `<g class="g${isFirst ? ' enter' : ''}"${isFirst ? ` style="animation-delay:${(i * 0.06).toFixed(2)}s"` : ''}>` +
     `<title>${g.title}</title>` +
     `<rect x="${x}" y="0" width="${w.toFixed(1)}" height="${H}" fill="transparent"/>` +
     `<g class="ring">` +
@@ -829,19 +835,6 @@ function clawd(
 
 const STYLE =
   `:root{color-scheme:light dark;background:transparent}text{font-family:-apple-system,"SF Pro Text","PingFang SC","Segoe UI","Microsoft YaHei UI","Microsoft YaHei",sans-serif}` +
-  `.num{font-size:${NUM_SIZE}px;font-weight:700;fill:#F4F2EC;font-variant-numeric:tabular-nums}.num.dim{fill:#6E6C66}.num.sm{font-size:${NUM_SMALL_SIZE}px}` +
-  `.pct{font-size:${PCT_SIZE}px;font-weight:600;fill:#9C9A93}` +
-  `.lab{font-size:${LAB_SIZE}px;font-weight:500;fill:#ECEAE4;letter-spacing:.2px}.lab.stk{font-size:${STACKED_LABEL}px;letter-spacing:0}` +
-  `.sub,.sub2{font-size:${SUB_SIZE}px;fill:#8C8A84;font-variant-numeric:tabular-nums;transition:opacity .22s ease,filter .22s ease}` +
-  `.sub2{opacity:0;filter:blur(2px);fill:#C9C6BE}` +
-  `.track{fill:none;stroke:#2C2B29;stroke-width:${RING_STROKE}}` +
-  `.arc,.glow{fill:none;stroke-width:${RING_STROKE};stroke-linecap:round}` +
-  `.glow{stroke-width:${RING_STROKE + 1};filter:url(#blur);opacity:.5}.glow.danger{animation:dpulse 1.6s ease-in-out infinite}` +
-  `.ring{transform-box:fill-box;transform-origin:center;transition:transform .4s ${SPRING}}` +
-  `.g{transform-box:fill-box}.g.enter{animation:rise .55s ${OUT} both}` +
-  `.chip{font-size:9.5px;font-weight:700;opacity:0;animation:chip 1.8s ${OUT} .25s both}` +
-  `.chip.ok{fill:#F3B18F}.chip.warn{fill:#FFCB7A}.chip.danger{fill:#FF8F7A}` +
-  `@media (hover:hover){.g:hover .ring{transform:scale(1.09)}.g:hover .sub{opacity:0;filter:blur(2px)}.g:hover .sub2{opacity:1;filter:blur(0)}}` +
   // Clawd
   `.clawd *{transform-box:fill-box}` +
   `.hop,.breath,.tremble{transform-origin:50% 100%}` +
@@ -859,41 +852,19 @@ const STYLE =
   `.chill .breath{animation-duration:5s}.chill .hop.idle{animation-duration:14s}` +
   `.working .armL{animation:tap .24s ease-in-out infinite alternate}.working .armR{animation:tap .24s ease-in-out .12s infinite alternate}` +
   `.working .legA,.working .legB{opacity:0}` +
-  `.pace{transform-origin:center}.mini.working .pace{animation:pace 3.2s ease-in-out infinite}` +
-  `.mini.working .legA,.mini.working .legB{opacity:1}.mini.working .legA{animation:step .3s ease-in-out infinite alternate}.mini.working .legB{animation:step .3s ease-in-out .15s infinite alternate}` +
-  `.mlab{font-size:${MINI_LABEL_SIZE}px;fill:#8C8A84}.mval{font-size:${MINI_VALUE_SIZE}px;font-weight:700;fill:#ECEAE4;font-variant-numeric:tabular-nums}.mtrack{fill:#2C2B29}.mfill.danger{animation:mpulse 1.6s ease-in-out infinite}` +
-  `@keyframes pace{0%{transform:none}46%{transform:translateX(10px)}50%{transform:translateX(10px) scaleX(-1)}96%{transform:scaleX(-1)}100%{transform:none}}` +
-  `@keyframes mpulse{0%,100%{opacity:.6}50%{opacity:1}}` +
-  `@keyframes step{from{transform:none}to{transform:translateY(-.9px)}}` +
   `.logo{transform-origin:center;animation:glow 2.4s ease-in-out infinite}` +
-  `.glyph{font-size:2.3px;font-weight:700;fill:#F0EEE6;opacity:0;animation:float 2.4s ${OUT} infinite}` +
   `.spark-spin{transform-origin:center;animation:spin 2.2s linear infinite}.spark-pulse{transform-origin:center;animation:pulse 1.1s ease-in-out infinite}` +
   `.aura{opacity:0;transform-origin:center}.working .aura{animation:aura 2.4s ease-in-out infinite}` +
-  `.stressed .tremble{animation:tremble .16s linear infinite}.sweat{animation:drip 1.5s ease-in infinite}` +
+  `.stressed .tremble{animation:tremble .16s linear infinite}` +
   `.heart{opacity:0;transform-origin:center}` +
   `@media (hover:hover){.clawd:hover .hop{animation:bounce .55s cubic-bezier(.3,.7,.4,1) infinite}` +
   `.clawd:hover .shadow{animation:bshadow .55s cubic-bezier(.3,.7,.4,1) infinite}` +
   `.clawd:hover .eyes,.clawd:hover .shades{opacity:0;animation:none}.clawd:hover .happy{opacity:1}.clawd:hover .cheek{opacity:.9}` +
   `.clawd:hover .heart{animation:heart 1.35s ${OUT} infinite}}` +
   `#hit,#hit2,#hit3{cursor:pointer}` +
-  // 缓存倒计时：平时淡橙，剩 5 分钟内橙黄，过期灰
-  `.tm{font-weight:600;fill:#F3B18F;font-variant-numeric:tabular-nums}.tm.warn{fill:#FFCB7A}.tm.cold{fill:#6E6C66;font-weight:500}` +
-  // 万圣节：干活时南瓜桶收起来（手要敲电脑）；讨糖时桶摇、问号上下跳、青筋一跳一跳、头顶冒烟（细条太矮，问号和青筋会出上沿，不画）
-  `.working .hw-pail{opacity:0}.mini .hw-q,.mini .hw-vein{display:none}` +
-  `.hw-beg{transform-origin:50% 0;animation:beg .45s ease-in-out infinite alternate}` +
-  `.hw-q{font-size:3.2px;font-weight:800;fill:#F2C14E;animation:qbob .8s ease-in-out infinite alternate}` +
-  `.hw-vein{animation:vein .5s ease-in-out infinite alternate}` +
-  `.hw-steam{opacity:0;transform-origin:center;animation:steam 1s ease-out infinite}` +
-  `@keyframes beg{from{transform:rotate(-9deg)}to{transform:translateY(-.5px) rotate(9deg)}}` +
-  `@keyframes qbob{from{transform:none}to{transform:translateY(-.7px)}}` +
-  `@keyframes vein{from{transform:scale(.8)}to{transform:scale(1.15)}}` +
-  `@keyframes steam{0%{opacity:0;transform:scale(.4)}30%{opacity:.8}100%{opacity:0;transform:translateY(-2.6px) scale(1.3)}}` +
   // keyframes
   `@keyframes shadesCycle{0%,50%{transform:none}56%,80%{transform:translateY(-1.9px)}86%,100%{transform:none}}` +
   `@keyframes eyesPeek{0%,52%{opacity:0}56%,80%{opacity:1}84%,100%{opacity:0}}` +
-  `@keyframes rise{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}` +
-  `@keyframes chip{0%{opacity:0;transform:translateY(4px)}18%{opacity:1;transform:none}75%{opacity:1}100%{opacity:0;transform:translateY(-6px)}}` +
-  `@keyframes dpulse{0%,100%{opacity:.35}50%{opacity:.9}}` +
   `@keyframes breath{0%,100%{transform:scale(1,1)}50%{transform:scale(1.03,.955)}}` +
   `@keyframes idlehop{0%,86%,100%{transform:none}88%{transform:scale(1.1,.88)}92%{transform:translateY(-3px) scale(.94,1.08)}96%{transform:scale(1.07,.93)}98%{transform:scale(.98,1.02)}}` +
   `@keyframes hop{0%{transform:scale(1.12,.86)}35%{transform:translateY(-3.6px) scale(.93,1.09)}65%{transform:scale(1.08,.92)}82%{transform:scale(.98,1.03)}100%{transform:none}}` +
@@ -906,23 +877,68 @@ const STYLE =
   `@keyframes focus{0%,70%{transform:translate(0,.55px)}76%,92%{transform:translate(.5px,-.1px)}100%{transform:translate(0,.55px)}}` +
   `@keyframes tap{from{transform:none}to{transform:translateY(-.8px)}}` +
   `@keyframes glow{0%,100%{opacity:.55;transform:scale(.92)}50%{opacity:1;transform:scale(1.08)}}` +
-  `@keyframes float{0%{opacity:0;transform:translate(0,1px) scale(.7)}18%{opacity:.9;transform:translate(.3px,-1px) scale(1)}100%{opacity:0;transform:translate(1.2px,-8px) scale(.9)}}` +
   `@keyframes spin{to{transform:rotate(360deg)}}` +
   `@keyframes pulse{0%,100%{transform:scale(.85)}50%{transform:scale(1.15)}}` +
   `@keyframes aura{0%,100%{opacity:.15;transform:scale(.92)}50%{opacity:.4;transform:scale(1.06)}}` +
   `@keyframes tremble{0%,100%{transform:none}25%{transform:translateX(.14px)}75%{transform:translateX(-.14px)}}` +
-  `@keyframes drip{0%{opacity:0;transform:none}20%{opacity:1}100%{opacity:0;transform:translateY(2.4px)}}` +
   `@keyframes heart{0%{opacity:0;transform:scale(.4)}20%{opacity:1;transform:scale(1)}100%{opacity:0;transform:translate(var(--dx),-5px) scale(.8)}}` +
   `@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}` +
+  // 阴影和渐变在展开、细条共用
+  `@media (prefers-color-scheme:light){` +
+  `.shadow{opacity:.16}@keyframes idleshadow{0%,86%,100%{transform:none;opacity:.16}92%{transform:scale(.6);opacity:.08}}` +
+  `#grad-ok stop+stop{stop-color:#EC9A78}#grad-warn stop+stop{stop-color:#F2B04E}#grad-danger stop+stop{stop-color:#F2705C}}`
+
+const EXPANDED_STYLE =
+  `.num{font-size:${NUM_SIZE}px;font-weight:700;fill:#F4F2EC;font-variant-numeric:tabular-nums}.num.dim{fill:#6E6C66}.num.sm{font-size:${NUM_SMALL_SIZE}px}` +
+  `.pct{font-size:${PCT_SIZE}px;font-weight:600;fill:#9C9A93}` +
+  `.lab{font-size:${LAB_SIZE}px;font-weight:500;fill:#ECEAE4;letter-spacing:.2px}.lab.stk{font-size:${STACKED_LABEL}px;letter-spacing:0}` +
+  `.sub,.sub2{font-size:${SUB_SIZE}px;fill:#8C8A84;font-variant-numeric:tabular-nums;transition:opacity .22s ease,filter .22s ease}` +
+  `.sub2{opacity:0;filter:blur(2px);fill:#C9C6BE}` +
+  `.track{fill:none;stroke:#2C2B29;stroke-width:${RING_STROKE}}` +
+  `.arc,.glow{fill:none;stroke-width:${RING_STROKE};stroke-linecap:round}` +
+  `.glow{stroke-width:${RING_STROKE + 1};filter:url(#blur);opacity:.5}.glow.danger{animation:dpulse 1.6s ease-in-out infinite}` +
+  `.ring{transform-box:fill-box;transform-origin:center;transition:transform .4s ${SPRING}}` +
+  `.g{transform-box:fill-box}.g.enter{animation:rise .55s ${OUT} both}` +
+  `.chip{font-size:9.5px;font-weight:700;opacity:0;animation:chip 1.8s ${OUT} .25s both}` +
+  `.chip.ok{fill:#F3B18F}.chip.warn{fill:#FFCB7A}.chip.danger{fill:#FF8F7A}` +
+  `@media (hover:hover){.g:hover .ring{transform:scale(1.09)}.g:hover .sub{opacity:0;filter:blur(2px)}.g:hover .sub2{opacity:1;filter:blur(0)}}` +
+  `.glyph{font-size:2.3px;font-weight:700;fill:#F0EEE6;opacity:0;animation:float 2.4s ${OUT} infinite}` +
+  `@keyframes rise{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}` +
+  `@keyframes chip{0%{opacity:0;transform:translateY(4px)}18%{opacity:1;transform:none}75%{opacity:1}100%{opacity:0;transform:translateY(-6px)}}` +
+  `@keyframes dpulse{0%,100%{opacity:.35}50%{opacity:.9}}` +
+  `@keyframes float{0%{opacity:0;transform:translate(0,1px) scale(.7)}18%{opacity:.9;transform:translate(.3px,-1px) scale(1)}100%{opacity:0;transform:translate(1.2px,-8px) scale(.9)}}` +
   `.sep{stroke:#2A2927}` +
-  // 浅色外观：文字换深色、轨道和分隔线换浅灰、阴影变淡；Clawd 本体颜色不变
   `@media (prefers-color-scheme:light){` +
   `.num{fill:#1F1E1D}.num.dim{fill:#B4B1A8}.pct{fill:#8A877E}.lab{fill:#2D2C2A}.sub{fill:#77746C}.sub2{fill:#46443F}` +
-  `.track{stroke:#E8E5DC}.mtrack{fill:#E8E5DC}.sep{stroke:#E5E2D9}.mlab{fill:#77746C}.mval{fill:#2D2C2A}` +
-  `.glow{opacity:.3}.chip.ok{fill:#C2603F}.chip.warn{fill:#B26E12}.chip.danger{fill:#D2392B}` +
-  `.shadow{opacity:.16}@keyframes idleshadow{0%,86%,100%{transform:none;opacity:.16}92%{transform:scale(.6);opacity:.08}}` +
-  `.glyph{fill:#6B6862}.sweat{fill:#3D9BE0}.hw-q{fill:#C2603F}.tm{fill:#C2603F}.tm.warn{fill:#B26E12}.tm.cold{fill:#B4B1A8}` +
-  `#grad-ok stop+stop{stop-color:#EC9A78}#grad-warn stop+stop{stop-color:#F2B04E}#grad-danger stop+stop{stop-color:#F2705C}}`
+  `.track{stroke:#E8E5DC}.sep{stroke:#E5E2D9}.glow{opacity:.3}.chip.ok{fill:#C2603F}.chip.warn{fill:#B26E12}.chip.danger{fill:#D2392B}.glyph{fill:#6B6862}` +
+  `}`
+
+const MINI_STYLE =
+  `.pace{transform-origin:center}.mini.working .pace{animation:pace 3.2s ease-in-out infinite}` +
+  `.mini.working .legA,.mini.working .legB{opacity:1}.mini.working .legA{animation:step .3s ease-in-out infinite alternate}.mini.working .legB{animation:step .3s ease-in-out .15s infinite alternate}` +
+  `.mlab{font-size:${MINI_LABEL_SIZE}px;fill:#8C8A84}.mval{font-size:${MINI_VALUE_SIZE}px;font-weight:700;fill:#ECEAE4;font-variant-numeric:tabular-nums}.mtrack{fill:#2C2B29}.mfill.danger{animation:mpulse 1.6s ease-in-out infinite}` +
+  `@keyframes pace{0%{transform:none}46%{transform:translateX(10px)}50%{transform:translateX(10px) scaleX(-1)}96%{transform:scaleX(-1)}100%{transform:none}}` +
+  `@keyframes mpulse{0%,100%{opacity:.6}50%{opacity:1}}` +
+  `@keyframes step{from{transform:none}to{transform:translateY(-.9px)}}` +
+  `@media (prefers-color-scheme:light){.mtrack{fill:#E8E5DC}.mlab{fill:#77746C}.mval{fill:#2D2C2A}}`
+
+const TIMER_STYLE =
+  `.tm{font-weight:600;fill:#F3B18F;font-variant-numeric:tabular-nums}.tm .warn{fill:#FFCB7A}.tm.cold,.tm .cold{fill:#6E6C66;font-weight:500}` +
+  `@media (prefers-color-scheme:light){.tm,.tm.cold{fill:#C2603F}.tm .warn{fill:#B26E12}.tm .cold{fill:#B4B1A8}}`
+
+const HALLOWEEN_STYLE =
+  // 万圣节：干活时南瓜桶收起来（手要敲电脑）；讨糖时桶摇、问号上下跳、青筋一跳一跳、头顶冒烟（细条太矮，问号和青筋会出上沿，不画）
+  `.working .hw-pail{opacity:0}.mini .hw-q,.mini .hw-vein{display:none}` +
+  `.hw-beg{transform-origin:50% 0;animation:beg .45s ease-in-out infinite alternate}` +
+  `.hw-q{font-size:3.2px;font-weight:800;fill:#F2C14E;animation:qbob .8s ease-in-out infinite alternate}` +
+  `.hw-vein{animation:vein .5s ease-in-out infinite alternate}` +
+  `.hw-steam{opacity:0;transform-origin:center;animation:steam 1s ease-out infinite}` +
+  `@keyframes beg{from{transform:rotate(-9deg)}to{transform:translateY(-.5px) rotate(9deg)}}` +
+  `@keyframes qbob{from{transform:none}to{transform:translateY(-.7px)}}` +
+  `@keyframes vein{from{transform:scale(.8)}to{transform:scale(1.15)}}` +
+  `@keyframes steam{0%{opacity:0;transform:scale(.4)}30%{opacity:.8}100%{opacity:0;transform:translateY(-2.6px) scale(1.3)}}` +
+  `.halloween-paper{fill:#F4F2EC}.halloween-neutral{fill:#C9C6BE}.halloween-pink{fill:#F7909F}.halloween-gold{fill:#F2C14E}.halloween-orange{fill:#F28C28}.halloween-blue{fill:#5FB0F0}` +
+  `@media (prefers-color-scheme:light){.hw-q{fill:#C2603F}.halloween-paper{fill:#514E47}.halloween-neutral{fill:#77746C}.halloween-pink{fill:#A74254}.halloween-pink[opacity=".55"]{opacity:1}.halloween-gold{fill:#8A5B00}.halloween-orange{fill:#B65B00}.halloween-blue{fill:#276F9F}}`
 
 const ACTIVITY_STYLE =
   `.activity-icon{shape-rendering:crispEdges}` +
@@ -963,10 +979,10 @@ const MOOD_STYLE =
   `@media (prefers-color-scheme:light){.mood-gold,.mood-sun-highlight{fill:#8A5B00}.mood-petal-pink{fill:#A74254}.mood-autumn-coral{fill:#A84F35}.mood-autumn-amber{fill:#8A4F0A}.mood-autumn-russet{fill:#C2603F}.mood-blue{fill:#3C6F92}.mood-coral{fill:#A84F35}.mood-paper-white{fill:#514E47}.mood-snow-bright{fill:#5B6B79}.mood-snow-cool{fill:#647B8E}.mood-coffee-cup{fill:#5A4638}.mood-coffee-handle{stroke:#5A4638}.mood-steam{stroke:#6B6862}}` +
   `.mood-particles,.mood-sun,.mood-fireworks{shape-rendering:crispEdges}.mood-particle{transform-origin:center;animation:mood-fall 8s ease-in-out infinite}.mood-firework{transform-origin:center;animation:mood-firework 3.6s ease-in-out infinite alternate}` +
   `@keyframes mood-fall{from{opacity:.25;transform:translateY(-1px)}20%{opacity:1}to{opacity:.35;transform:translateY(2.5px)}}@keyframes mood-firework{0%,100%{opacity:.45;transform:scale(.8)}50%{opacity:1;transform:scale(1.1)}}@keyframes mood-steam{0%,100%{opacity:.35;transform:translateY(0)}50%{opacity:.8;transform:translateY(-.7px)}}`
-const HALLOWEEN_PIXEL_STYLE =
-  `.halloween-paper{fill:#F4F2EC}.halloween-neutral{fill:#C9C6BE}.halloween-pink{fill:#F7909F}.halloween-gold{fill:#F2C14E}.halloween-orange{fill:#F28C28}.halloween-blue{fill:#5FB0F0}` +
-  `@media (prefers-color-scheme:light){.halloween-paper{fill:#514E47}.halloween-neutral{fill:#77746C}.halloween-pink{fill:#A74254}.halloween-pink[opacity=".55"]{opacity:1}.halloween-gold{fill:#8A5B00}.halloween-orange{fill:#B65B00}.halloween-blue{fill:#276F9F}}`
-const SWEAT_STYLE = `.sweat{fill:#8FD0FF}@media (prefers-color-scheme:light){.sweat{fill:#2D7FB8}}`
+const SWEAT_STYLE =
+  `.sweat{fill:#8FD0FF}.sweat{animation:drip 1.5s ease-in infinite}` +
+  `@keyframes drip{0%{opacity:0;transform:none}20%{opacity:1}100%{opacity:0;transform:translateY(2.4px)}}` +
+  `@media (prefers-color-scheme:light){.sweat{fill:#2D7FB8}}`
 
 function activityStyle(activity?: Activity, showIcon = true): string {
   if (!activity || activity.kind === 'idle') return ''
@@ -1082,6 +1098,7 @@ function miniSvg(gauges: Gauge[], isWorking: boolean, isStressed: boolean, width
   const items = iconItems ?? layouts.find(list => fits(list)) ?? compact
   const activityReserve = showActivityIcon ? MINI_ACTIVITY_RESERVE : 0
   const mood = moodForClawd(isWorking, activity, pet)
+  const hasTimer = gauges.some(g => g.timerMs !== undefined)
   const layoutWidth = MINI_LAYOUT_W + activityReserve
   const gap = Math.max(24, (width - 2 * MINI_X - layoutWidth - items.reduce((a, b) => a + b.w, 0)) / items.length)
   let x = MINI_X + layoutWidth + gap
@@ -1107,7 +1124,7 @@ function miniSvg(gauges: Gauge[], isWorking: boolean, isStressed: boolean, width
 
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${H_MINI}" width="${width}" height="${H_MINI}" style="color-scheme:light dark;background:transparent">` +
-    `<style>${STYLE}${activityStyle(activity, showActivityIcon)}${isStressed ? SWEAT_STYLE : ''}${mood ? MOOD_STYLE : ''}${pet?.halloween ? HALLOWEEN_PIXEL_STYLE : ''}${isWorking ? DITHER_STYLE : ''}</style>` +
+    `<style>${STYLE}${MINI_STYLE}${activityStyle(activity, showActivityIcon)}${isStressed ? SWEAT_STYLE : ''}${mood ? MOOD_STYLE : ''}${pet?.halloween ? HALLOWEEN_STYLE : ''}${hasTimer ? TIMER_STYLE : ''}${isWorking ? DITHER_STYLE : ''}</style>` +
     DEFS +
     (isWorking ? ditherSvg(width, H_MINI) : '') +
     `<g class="gauges">${parts.join('')}</g>` +
@@ -1198,10 +1215,10 @@ export function bandSvg(bars: Bars, isWorking: boolean, width: number, mini = fa
       timerMs: timer?.remainMs,
     },
   ]
-
   if (mini) {
     return miniSvg(gauges, isWorking, isStressed, width, isChill, pet, lang, displayActivity)
   }
+  const hasTimer = gauges.some(g => g.timerMs !== undefined)
 
   // 按内容实际宽度排：左右留白相等（都是 CLAWD_X），Clawd 与每块之间的间距相等
   const hasActivityIcon = displayActivity?.icon !== undefined
@@ -1225,7 +1242,7 @@ export function bandSvg(bars: Bars, isWorking: boolean, width: number, mini = fa
 
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${H}" width="${width}" height="${H}" style="color-scheme:light dark;background:transparent">` +
-    `<style>${STYLE}${activityStyle(displayActivity)}${isStressed ? SWEAT_STYLE : ''}${mood ? MOOD_STYLE : ''}${pet?.halloween ? HALLOWEEN_PIXEL_STYLE : ''}${css.join('')}${isWorking ? DITHER_STYLE : ''}</style>` +
+    `<style>${STYLE}${EXPANDED_STYLE}${activityStyle(displayActivity)}${isStressed ? SWEAT_STYLE : ''}${mood ? MOOD_STYLE : ''}${pet?.halloween ? HALLOWEEN_STYLE : ''}${hasTimer ? TIMER_STYLE : ''}${css.join('')}${isWorking ? DITHER_STYLE : ''}</style>` +
     DEFS +
     (isWorking ? ditherSvg(width, H) : '') +
     `<g class="gauges">${seps}${blocks}</g>` +

@@ -8,7 +8,17 @@ const BARS: Bars = {
   to: { contextPercent: 20, contextTokens: 40000, contextWindow: 200000, session: { percent: 30 }, weekly: { percent: 40 }, cache: { rate: 92, read: 900, write: 50, fresh: 50 } },
 }
 const HOUR = 3600000
-const visibleFrom = (svg: string, label: string) => svg.match(new RegExp(`<set attributeName="opacity" to="1" begin="([\\d.]+)s" end="([\\d.]+)s"/>${label}<`))
+const visibleFrom = (svg: string, label: string) => {
+  const match = svg.match(new RegExp(`<text(?: class="warn")? opacity="0"><set attributeName="opacity" to="1" begin="([\\d.]+)s" dur="([\\d.]+)s"/>${label}</text>`))
+  if (!match) return undefined
+
+  const start = Number(match[1])
+  return [match[0], start.toFixed(2), (start + Number(match[2])).toFixed(2)]
+}
+const coldAt = (svg: string) => {
+  const match = svg.match(/<text class="cold" opacity="0"><set attributeName="opacity" to="1" begin="([\d.]+)s" fill="freeze"\/>/)
+  return match?.[1] === undefined ? undefined : Number(match[1]).toFixed(2)
+}
 
 // ───────── 纯函数：怎么画 ─────────
 
@@ -18,9 +28,10 @@ test('缓存倒计时：标题右边按分钟轮流显示，剩 5 分钟内变�
   expect(visibleFrom(svg, '50m')?.slice(1)).toEqual(['0.00', '60.00'])
   expect(visibleFrom(svg, '49m')?.slice(1)).toEqual(['60.00', '120.00'])
   // 最后一分钟：橙黄，2940–3000 秒
-  expect(svg).toMatch(/class="tm warn"[^>]*opacity="0"><set attributeName="opacity" to="1" begin="2940.00s" end="3000.00s"\/>1m</)
-  expect(svg).not.toMatch(/class="tm warn"[^>]*>[^<]*<set[^>]*\/>6m</)
-  expect(svg).toContain('<set attributeName="opacity" to="1" begin="3000.00s" fill="freeze"/>cold<')
+  expect(visibleFrom(svg, '1m')?.[0]).toContain('class="warn"')
+  expect(visibleFrom(svg, '1m')?.slice(1)).toEqual(['2940.00', '3000.00'])
+  expect(visibleFrom(svg, '6m')?.[0]).not.toContain('class="warn"')
+  expect(coldAt(svg)).toBe('3000.00')
   expect(svg).toContain('The cache stays warm for about 1 hour')
 })
 
@@ -39,10 +50,12 @@ test('缓存倒计时：Claude 干活时、还没答过时不显示', () => {
 
 test('缓存倒计时：这一块按「标题 + 倒计时」留宽，不压到后面的分隔线', () => {
   const svg = bandSvg(BARS, false, 1100, false, 'en', undefined, { remainMs: HOUR, ttlMs: HOUR })
-  // 倒计时文字的 x 在缓存那一块里（块是最后一块，后面没有分隔线，检查不出右边界）
+  // 共享组的原点就是倒计时文字的位置（块是最后一块，后面没有分隔线，检查不出右边界）
   // 字比标题小，按中线对齐：底线比标题（y=37）高 (14-9)×0.36 = 1.8px
-  const x = Number(svg.match(/<text x="([\d.]+)" y="35.20" class="tm/)?.[1])
+  const timerPosition = svg.match(/<g class="tm" transform="translate\(([\d.]+) ([\d.]+)\)" style="font-size:9px">/)
+  const x = Number(timerPosition?.[1])
   const lab = Number(svg.match(/<text x="([\d.]+)" y="37" class="lab">Cache hit</)?.[1])
+  expect(timerPosition?.[2]).toBe('35.20')
   expect(x).toBeGreaterThan(lab + 40)
   // 最宽的一档是「cold」：4 个小写字母 × 0.58 × 9px ≈ 20.9px；右边要留出和左边一样的 22px
   expect(x + 4 * 0.58 * 9).toBeLessThanOrEqual(1100 - 22)
@@ -101,11 +114,11 @@ test('订阅（有额度读数）：答完一轮后按 1 小时倒计时；过 2
   await $.turn.complete(TURN)
   const fresh = await bandSource($)
   expect(visibleFrom(fresh, '60m')?.[1]).toBe('0.00')
-  expect(fresh).toContain('begin="3600.00s" fill="freeze"/>cold<')
+  expect(coldAt(fresh)).toBe('3600.00')
   await clock.advance(20 * 60000)
   const later = await bandSource($)
   expect(visibleFrom(later, '40m')?.[1]).toBe('0.00')
-  expect(later).toContain('begin="2400.00s" fill="freeze"/>cold<')
+  expect(coldAt(later)).toBe('2400.00')
 })
 
 test('API 密钥（没有额度读数）：只有 5 分钟', { options: { language: 'en' } }, async ($, on) => {
@@ -113,7 +126,7 @@ test('API 密钥（没有额度读数）：只有 5 分钟', { options: { langua
   await $.turn.complete(TURN)
   const svg = await bandSource($)
   expect(visibleFrom(svg, '5m')?.[1]).toBe('0.00')
-  expect(svg).toContain('begin="300.00s" fill="freeze"/>cold<')
+  expect(coldAt(svg)).toBe('300.00')
 })
 
 test('子代理的回合不重置倒计时（它们的缓存和主对话分开）', { options: { language: 'en' } }, async ($, on) => {

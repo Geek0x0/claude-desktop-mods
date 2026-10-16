@@ -1,5 +1,5 @@
-import { atom, read, update } from 'claude-code'
-import type { EngineInterface, ModelUsage, Register, SessionContextUsage, SessionRateLimit, Timer } from 'claude-code'
+import { atom, read } from 'claude-code'
+import type { Atom, EngineInterface, ModelUsage, PluginState, Register, SessionContextUsage, SessionRateLimit, StateRef, Timer } from 'claude-code'
 
 import type { Activity, Bars, CacheStat, CacheTotals, Pet, ReactionKind, Report, Snap, Week, Window } from '../types'
 import {
@@ -22,21 +22,36 @@ import { moodAt } from './mood'
 import { mergePetProgress, type Achievement, isHalloween, levelOf, NEW_PET, normalize, onTurn, threshold } from './pet'
 import { addTurn, isStale, LEDGER_PREFIX, mergeLedgers, partialSince, SINCE_KEY, sumWeek, toLedger } from './weekly'
 
-const barsAtom = atom({ plugin: 'usage-pet', key: 'bars' } as const, { from: null, to: null } as Bars)
+type UsagePetAtomKey = keyof PluginState['usage-pet'] & string
+type UsagePetAtom<K extends UsagePetAtomKey, T> = Atom<T> & { readonly ref: StateRef<'usage-pet', K> }
 
-const cacheAtom = atom({ plugin: 'usage-pet', key: 'cache' } as const, { read: 0, write: 0, fresh: 0 } as CacheTotals)
+const barsRef = { plugin: 'usage-pet', key: 'bars' } as const
+const cacheRef = { plugin: 'usage-pet', key: 'cache' } as const
+const expandedRef = { plugin: 'usage-pet', key: 'expanded' } as const
+const pinnedRef = { plugin: 'usage-pet', key: 'pinned' } as const
+const langRef = { plugin: 'usage-pet', key: 'lang' } as const
+const petRef = { plugin: 'usage-pet', key: 'pet' } as const
+const reportRef = { plugin: 'usage-pet', key: 'report' } as const
+const activityRef = { plugin: 'usage-pet', key: 'activity' } as const
+const askRef = { plugin: 'usage-pet', key: 'ask' } as const
+const warmRef = { plugin: 'usage-pet', key: 'warm' } as const
+const weekRef = { plugin: 'usage-pet', key: 'week' } as const
+
+const barsAtom = atom(barsRef, { from: null, to: null } as Bars) as UsagePetAtom<'bars', Bars>
+
+const cacheAtom = atom(cacheRef, { read: 0, write: 0, fresh: 0 } as CacheTotals) as UsagePetAtom<'cache', CacheTotals>
 
 // 展开 / 收起：数据刷新时自动展开 EXPAND_MS 后收起；pinned = 用户点了「展开」或 /clawd，一直展开
-const expandedAtom = atom({ plugin: 'usage-pet', key: 'expanded' } as const, true)
-const pinnedAtom = atom({ plugin: 'usage-pet', key: 'pinned' } as const, false)
+const expandedAtom = atom(expandedRef, true) as UsagePetAtom<'expanded', boolean>
+const pinnedAtom = atom(pinnedRef, false) as UsagePetAtom<'pinned', boolean>
 // 界面语言：session.start 时定下来（/config 选了就用选的，auto 就跟随系统）
-const langAtom = atom({ plugin: 'usage-pet', key: 'lang' } as const, 'en' as Lang)
+const langAtom = atom(langRef, 'en' as Lang) as UsagePetAtom<'lang', Lang>
 const EXPAND_MS = 5000
 // 养成：跨会话的那份在 $.store 的 PET_KEY；这里留一份给信息栏画
-const petAtom = atom({ plugin: 'usage-pet', key: 'pet' } as const, NEW_PET as Pet)
+const petAtom = atom(petRef, NEW_PET as Pet) as UsagePetAtom<'pet', Pet>
 const NEW_REPORT: Report = { startedAt: 0, turns: 0, toolCalls: 0, files: [], output: 0, earned: [] }
-const reportAtom = atom({ plugin: 'usage-pet', key: 'report' } as const, NEW_REPORT)
-const activityAtom = atom({ plugin: 'usage-pet', key: 'activity' } as const, { kind: 'idle' } as Activity)
+const reportAtom = atom(reportRef, NEW_REPORT) as UsagePetAtom<'report', Report>
+const activityAtom = atom(activityRef, { kind: 'idle' } as Activity) as UsagePetAtom<'activity', Activity>
 let activityOwner = 0
 const activeActivityOwners = new Set<number>()
 const SLEEP_AFTER_MS = 10 * 60000
@@ -69,6 +84,70 @@ async function safeBookkeeping($: EngineInterface, label: string, run: () => Pro
   }
 }
 
+function deepEqual(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) return true
+  if (left === null || right === null || typeof left !== 'object' || typeof right !== 'object') return false
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return Array.isArray(left) && Array.isArray(right) && left.length === right.length && left.every((item, index) => deepEqual(item, right[index]))
+  }
+
+  const leftRecord = left as Record<string, unknown>
+  const rightRecord = right as Record<string, unknown>
+  const keys = Object.keys(leftRecord).filter(key => leftRecord[key] !== undefined)
+  const rightKeys = Object.keys(rightRecord).filter(key => rightRecord[key] !== undefined)
+  if (keys.length !== rightKeys.length) return false
+
+  return keys.every(key => Object.prototype.hasOwnProperty.call(rightRecord, key) && deepEqual(leftRecord[key], rightRecord[key]))
+}
+
+function readUsagePetAtom($: EngineInterface, key: UsagePetAtomKey) {
+  switch (key) {
+    case 'bars': return $.state.get(barsRef)
+    case 'cache': return $.state.get(cacheRef)
+    case 'expanded': return $.state.get(expandedRef)
+    case 'pinned': return $.state.get(pinnedRef)
+    case 'lang': return $.state.get(langRef)
+    case 'pet': return $.state.get(petRef)
+    case 'report': return $.state.get(reportRef)
+    case 'activity': return $.state.get(activityRef)
+    case 'ask': return $.state.get(askRef)
+    case 'warm': return $.state.get(warmRef)
+    case 'week': return $.state.get(weekRef)
+  }
+}
+
+function writeUsagePetAtom($: EngineInterface, key: UsagePetAtomKey, value: unknown, version: number) {
+  switch (key) {
+    case 'bars': return $.state.set(barsRef, value as Bars, { ifVersion: version })
+    case 'cache': return $.state.set(cacheRef, value as CacheTotals, { ifVersion: version })
+    case 'expanded': return $.state.set(expandedRef, value as boolean, { ifVersion: version })
+    case 'pinned': return $.state.set(pinnedRef, value as boolean, { ifVersion: version })
+    case 'lang': return $.state.set(langRef, value as Lang, { ifVersion: version })
+    case 'pet': return $.state.set(petRef, value as Pet, { ifVersion: version })
+    case 'report': return $.state.set(reportRef, value as Report, { ifVersion: version })
+    case 'activity': return $.state.set(activityRef, value as Activity, { ifVersion: version })
+    case 'ask': return $.state.set(askRef, value as number, { ifVersion: version })
+    case 'warm': return $.state.set(warmRef, value as number, { ifVersion: version })
+    case 'week': return $.state.set(weekRef, value as Week, { ifVersion: version })
+  }
+}
+
+async function updateIfChanged<K extends UsagePetAtomKey, T>(
+  $: EngineInterface,
+  target: UsagePetAtom<K, T>,
+  change: (current: T) => T,
+): Promise<T> {
+  while (true) {
+    const { value, version } = await readUsagePetAtom($, target.ref.key)
+    const current = (value === undefined ? target.initial : value) as T
+    const next = change(current)
+    if (deepEqual(current, next)) return current
+
+    const result = await writeUsagePetAtom($, target.ref.key, next, version)
+    if (result.isSet) return next
+  }
+}
+
 function isPromptDropped(result: unknown): boolean {
   return typeof result === 'object' && result !== null && 'drop' in result
 }
@@ -94,7 +173,7 @@ async function armSleepTimer($: EngineInterface, since = lastActivityAt) {
       if (mainTurnActive) {
         return
       }
-      void update($, activityAtom, current => {
+      void updateIfChanged($, activityAtom, current => {
         const currentActivity = current.kind === 'needs-you' ? current : restoreActivity(current)
         if (generation !== sleepGeneration || mainTurnActive || !canReplaceActivity(currentActivity, 'sleep')) {
           return currentActivity
@@ -116,7 +195,7 @@ async function noteActivity($: EngineInterface) {
 async function needsYou($: EngineInterface, icon: 'bang' | 'question'): Promise<number | undefined> {
   const owner = ++activityOwner
   let applied = false
-  await update($, activityAtom, current => {
+  await updateIfChanged($, activityAtom, current => {
     const previous = previousActivity(current)
     if (!canReplaceActivity(previous, 'needs-you')) {
       return previous
@@ -131,7 +210,7 @@ async function needsYou($: EngineInterface, icon: 'bang' | 'question'): Promise<
 
 async function clearNeedsYou($: EngineInterface, owner: number): Promise<boolean> {
   let cleared = false
-  await update($, activityAtom, current => {
+  await updateIfChanged($, activityAtom, current => {
     if (current.kind !== 'needs-you' || current.owner !== owner) {
       return current
     }
@@ -158,7 +237,7 @@ async function showReaction($: EngineInterface, reaction: ReactionKind) {
   const icon: Activity['icon'] = reaction === 'test-pass' ? 'check' : reaction === 'tantrum' ? undefined : 'cross'
 
   try {
-    await update($, activityAtom, stored => {
+    await updateIfChanged($, activityAtom, stored => {
       const current = stored.kind === 'needs-you' ? stored : restoreActivity(stored)
       if (!canReplaceActivity(current, 'reaction')) {
         return current
@@ -178,13 +257,13 @@ async function showReaction($: EngineInterface, reaction: ReactionKind) {
   try {
     $.clock.after(REACTION_MS[reaction], () => {
       activeActivityOwners.delete(owner)
-      void update($, activityAtom, current =>
+      void updateIfChanged($, activityAtom, current =>
         current.kind === 'reaction' && current.owner === owner ? restoreActivity(current.previous) : current,
       )
     })
   } catch {
     activeActivityOwners.delete(owner)
-    await update($, activityAtom, current =>
+    await updateIfChanged($, activityAtom, current =>
       current.kind === 'reaction' && current.owner === owner ? restoreActivity(current.previous) : current,
     )
   }
@@ -192,7 +271,7 @@ async function showReaction($: EngineInterface, reaction: ReactionKind) {
 
 async function completeActivity($: EngineInterface, aborted: boolean) {
   if (aborted) {
-    await update($, activityAtom, current => {
+    await updateIfChanged($, activityAtom, current => {
       const previous = previousActivity(current)
       return canReplaceActivity(previous, 'idle') ? { kind: 'idle' } : previous
     })
@@ -203,7 +282,7 @@ async function completeActivity($: EngineInterface, aborted: boolean) {
   activeActivityOwners.add(owner)
   let applied = false
   try {
-    await update($, activityAtom, current => {
+    await updateIfChanged($, activityAtom, current => {
       const previous = previousActivity(current)
       if (!canReplaceActivity(previous, 'done')) {
         return previous
@@ -221,27 +300,27 @@ async function completeActivity($: EngineInterface, aborted: boolean) {
     try {
       $.clock.after(DONE_MS, () => {
         activeActivityOwners.delete(owner)
-        void update($, activityAtom, current =>
+        void updateIfChanged($, activityAtom, current =>
           current.kind === 'done' && current.owner === owner ? restoreActivity(current.previous) : current,
         )
       })
     } catch {
       activeActivityOwners.delete(owner)
-      await update($, activityAtom, current =>
+      await updateIfChanged($, activityAtom, current =>
         current.kind === 'done' && current.owner === owner ? restoreActivity(current.previous) : current,
       )
     }
   }
 }
 // 万圣节讨糖：最近一次答完的时间（0 = 不讨糖）。等自动展开收起后再开始讨，讨 ASK_WINDOW_MS 内有效
-const askAtom = atom({ plugin: 'usage-pet', key: 'ask' } as const, 0)
+const askAtom = atom(askRef, 0) as UsagePetAtom<'ask', number>
 // 缓存倒计时：主对话最近一次答完的时间（0 = 这个会话还没答过）。
 // 有效期：订阅（有 5 小时 / 每周额度读数）约 1 小时，API 密钥 5 分钟；每次请求重新计时。
 // 从「答完」算会比真正的过期时间晚一点（有效期从最后一次请求开始算），所以界面上只到分钟
-const warmAtom = atom({ plugin: 'usage-pet', key: 'warm' } as const, 0)
+const warmAtom = atom(warmRef, 0) as UsagePetAtom<'warm', number>
 // 近 7 天用量：所有会话的账按小时合并的一份，答完一轮、会话开始时从 $.store 重新合并。
 // 留的是按小时的明细不是合计：很久不发消息时，画的时候按当前时间截，数字照样往前滚
-const weekAtom = atom({ plugin: 'usage-pet', key: 'week' } as const, { hours: {}, since: 0 } as Week)
+const weekAtom = atom(weekRef, { hours: {}, since: 0 } as Week) as UsagePetAtom<'week', Week>
 // 同一个会话里主对话和子代理可能同时答完：记账排队一个一个来，免得两次读写交错丢数
 let ledgerQueue: Promise<unknown> = Promise.resolve()
 const TTL_SUBSCRIPTION_MS = 60 * 60000
@@ -438,10 +517,10 @@ async function langOf($: EngineInterface, choice: LangChoice): Promise<Lang> {
 
 async function expandForAWhile($: EngineInterface) {
   const token = ++expandToken
-  await update($, expandedAtom, () => true)
+  await updateIfChanged($, expandedAtom, () => true)
   $.clock.after(EXPAND_MS, () => {
     if (token === expandToken) {
-      void update($, expandedAtom, () => false)
+      void updateIfChanged($, expandedAtom, () => false)
     }
   })
 }
@@ -450,17 +529,21 @@ async function record($: EngineInterface, snap: Omit<Snap, 'fable'> & { fable?: 
   const previous = await read($, barsAtom)
   const fable = snap.fable === null ? undefined : snap.fable ?? previous.to?.fable
   const full: Snap = { ...snap, fable, cache: cacheStat(await read($, cacheAtom)) }
-  const isChanged = !sameSnap(previous.to, full)
-  await update($, barsAtom, bars => (sameSnap(bars.to, full) ? bars : { from: bars.to, to: full }))
-  if (isChanged) {
+  let changed = false
+  await updateIfChanged($, barsAtom, bars => {
+    changed = !sameSnap(bars.to, full)
+    return changed ? { from: bars.to, to: full } : bars
+  })
+  if (changed) {
     await expandForAWhile($)
+    $.clock.after(1300, () => void updateIfChanged($, barsAtom, bars => (sameSnap(bars.from, bars.to) ? bars : { from: bars.to, to: bars.to })))
   }
-  $.clock.after(1300, () => void update($, barsAtom, bars => (sameSnap(bars.from, bars.to) ? bars : { from: bars.to, to: bars.to })))
 }
 
 async function updateFableOnLatestBars($: EngineInterface, fable: Window | null) {
   let changed = false
-  await update($, barsAtom, bars => {
+  await updateIfChanged($, barsAtom, bars => {
+    changed = false
     if (!bars.to) {
       return bars
     }
@@ -478,7 +561,7 @@ async function updateFableOnLatestBars($: EngineInterface, fable: Window | null)
 
   await expandForAWhile($)
   try {
-    $.clock.after(1300, () => void update($, barsAtom, bars => (sameSnap(bars.from, bars.to) ? bars : { from: bars.to, to: bars.to })))
+    $.clock.after(1300, () => void updateIfChanged($, barsAtom, bars => (sameSnap(bars.from, bars.to) ? bars : { from: bars.to, to: bars.to })))
   } catch {
     // The current Fable value is already on bars; the settle animation timer is optional.
   }
@@ -550,7 +633,13 @@ async function logTurn($: EngineInterface, u: ModelUsage, now: number) {
 }
 
 // 把所有会话的账加起来；8 天没记过账的别的会话顺手删掉
-async function refreshWeek($: EngineInterface, now: number) {
+async function updateWeekDisplay($: EngineInterface, next: Week, now: number) {
+  await updateIfChanged($, weekAtom, current =>
+    (['zh', 'en'] as const).every(lang => weekLine(current, lang, now) === weekLine(next, lang, now)) ? current : next,
+  )
+}
+
+async function refreshWeek($: EngineInterface, now: number, updateDisplay = true): Promise<Week> {
   const own = await ledgerKey($)
   const ledgers = []
   for (const key of await $.store.keys()) {
@@ -565,7 +654,9 @@ async function refreshWeek($: EngineInterface, now: number) {
     }
   }
   const week: Week = { hours: mergeLedgers(ledgers), since: Number(await $.store.get(SINCE_KEY)) || 0 }
-  await update($, weekAtom, () => week)
+  if (updateDisplay) await updateWeekDisplay($, week, now)
+
+  return week
 }
 
 // 「近 7 天 8.4M tokens（…）」；还没记到账就不写
@@ -631,10 +722,10 @@ async function growPet($: EngineInterface, rate: number | undefined) {
   const latest = normalize(await $.store.get(PET_KEY))
   const pet = mergePetProgress(updated, latest)
   await $.store.set(PET_KEY, pet)
-  await update($, petAtom, () => pet)
+  await updateIfChanged($, petAtom, () => pet)
   for (const ev of events) {
     if (ev.kind === 'achievement' && !latest.achievements.includes(ev.id)) {
-      await update($, reportAtom, r => ({ ...r, earned: [...r.earned, ev.id] }))
+      await updateIfChanged($, reportAtom, r => ({ ...r, earned: [...r.earned, ev.id] }))
     }
   }
 }
@@ -740,15 +831,15 @@ export const register: Register = (on, options) => {
       } catch (err) {
         $.ui.log(`usage-pet: language detection failed: ${String(err)}`, { to: 'debug' })
       }
-      await update($, langAtom, () => lang)
+      await updateIfChanged($, langAtom, () => lang)
       // 养成数据从 store 读进来；战报从这个会话第一次加载开始计时（重载插件不重置）
       try {
         const pet = normalize(await $.store.get(PET_KEY))
-        await update($, petAtom, () => pet)
+        await updateIfChanged($, petAtom, () => pet)
       } catch (err) {
         $.ui.log(`usage-pet: 读养成数据失败：${String(err)}`, { to: 'debug' })
       }
-      await update($, reportAtom, r => (r.startedAt ? r : { ...r, startedAt: Date.now() }))
+      await updateIfChanged($, reportAtom, r => (r.startedAt ? r : { ...r, startedAt: Date.now() }))
       await $.command.register({
         name: 'clawd',
         description: 'Clawd band: toggle always-expanded / auto-collapse · 在「一直展开」和「自动收起」之间切换',
@@ -760,7 +851,7 @@ export const register: Register = (on, options) => {
       const last = u.context.breakdown?.apiUsage
       const totals = await read($, cacheAtom)
       if (last && totals.read + totals.write + totals.fresh === 0) {
-        await update($, cacheAtom, () => ({
+        await updateIfChanged($, cacheAtom, () => ({
           read: last.cache_read_input_tokens,
           write: last.cache_creation_input_tokens,
           fresh: last.input_tokens,
@@ -775,7 +866,7 @@ export const register: Register = (on, options) => {
       }
 
       tantrumTimes = []
-      await update($, activityAtom, () => ({ kind: 'idle' }))
+      await updateIfChanged($, activityAtom, () => ({ kind: 'idle' }))
       await noteActivity($)
     })
 
@@ -788,7 +879,7 @@ export const register: Register = (on, options) => {
     pendingPermission = undefined
     await safeBookkeeping($, 'prompt.submit bookkeeping failed', async () => {
       await noteActivity($)
-      await update($, activityAtom, previousActivity)
+      await updateIfChanged($, activityAtom, previousActivity)
       if (isMainPrompt && tantrumsEnabled && isFrustratedPrompt(e.text, e.origin.kind) && (await noteFrustration($))) {
         await showReaction($, 'tantrum')
       }
@@ -844,6 +935,9 @@ export const register: Register = (on, options) => {
       pendingPermission = undefined
     }
     let sleepTimerArmed = false
+    let weekToDisplay: Week | undefined
+    let weekAt: number | undefined
+    let shouldRecordBars = false
     await safeBookkeeping($, 'turn.complete bookkeeping failed', async () => {
       refreshFable($, fableState)
       const u = e.usage
@@ -853,29 +947,27 @@ export const register: Register = (on, options) => {
         if (u) {
           await logTurn($, u, now)
         }
-        await refreshWeek($, now)
+        weekToDisplay = await refreshWeek($, now, false)
+        weekAt = now
       } catch (err) {
         $.ui.log(`usage-pet: 记近 7 天用量失败：${String(err)}`, { to: 'debug' })
       }
       if (e.agentId === undefined && u) {
-        await update($, cacheAtom, c => ({
+        await updateIfChanged($, cacheAtom, c => ({
           read: c.read + u.cache_read_input_tokens,
           write: c.write + u.cache_creation_input_tokens,
           fresh: c.fresh + u.input_tokens,
           turnRate: turnRate(u) ?? c.turnRate,
         }))
-        const bars = await read($, barsAtom)
-        if (bars.to) {
-          await record($, { ...bars.to, fable: fableState.value === undefined ? bars.to.fable : fableState.value })
-        }
+        shouldRecordBars = (await read($, barsAtom)).to !== null
       }
       if (e.agentId === undefined) {
         const doneAt = await clockNow($)
-        await update($, warmAtom, () => doneAt)
-        await update($, reportAtom, r => ({ ...r, turns: r.turns + 1, output: r.output + (u?.output_tokens ?? 0) }))
+        await updateIfChanged($, warmAtom, () => doneAt)
+        await updateIfChanged($, reportAtom, r => ({ ...r, turns: r.turns + 1, output: r.output + (u?.output_tokens ?? 0) }))
         const now = await clockNow($)
         if (seasonal && isHalloween(new Date(now)) && !e.isAborted) {
-          await update($, askAtom, () => now)
+          await updateIfChanged($, askAtom, () => now)
         }
         try {
           await growPet($, u ? turnRate(u) : undefined)
@@ -885,6 +977,15 @@ export const register: Register = (on, options) => {
         await completeActivity($, e.isAborted || e.reason === 'aborted')
         await noteActivity($)
         sleepTimerArmed = true
+      }
+      if (e.agentId === undefined && shouldRecordBars) {
+        const bars = await read($, barsAtom)
+        if (bars.to) {
+          await record($, { ...bars.to, fable: fableState.value === undefined ? bars.to.fable : fableState.value })
+        }
+      }
+      if (weekToDisplay && weekAt !== undefined) {
+        await updateWeekDisplay($, weekToDisplay, weekAt)
       }
     })
     if (e.agentId === undefined && !sleepTimerArmed) {
@@ -917,7 +1018,7 @@ export const register: Register = (on, options) => {
       }
 
       activeActivityOwners.add(owner)
-      await update($, activityAtom, current => {
+      await updateIfChanged($, activityAtom, current => {
         if (pendingPermission && current.kind === 'needs-you' && current.owner === pendingPermission.owner && pendingPermission.tool !== e.tool) {
           return current
         }
@@ -942,7 +1043,7 @@ export const register: Register = (on, options) => {
       await safeBookkeeping($, 'tool.call cleanup failed', async () => {
         activeActivityOwners.delete(owner)
         if (applied) {
-          await update($, activityAtom, current =>
+          await updateIfChanged($, activityAtom, current =>
             current.kind === 'working' && current.owner === owner ? restoreActivity(current.previous) : current,
           )
         }
@@ -957,7 +1058,7 @@ export const register: Register = (on, options) => {
       if (!('deny' in ran && ran.deny !== undefined)) {
         const input = e as unknown as { command?: unknown; file_path?: unknown; notebook_path?: unknown }
         const path = EDIT_TOOLS.has(e.tool) ? (input.file_path ?? input.notebook_path) : undefined
-        await update($, reportAtom, r => ({
+        await updateIfChanged($, reportAtom, r => ({
           ...r,
           toolCalls: r.toolCalls + 1,
           files: typeof path === 'string' && !r.files.includes(path) && r.files.length < MAX_FILES ? [...r.files, path] : r.files,
@@ -985,7 +1086,7 @@ export const register: Register = (on, options) => {
     await safeBookkeeping($, 'session.compact bookkeeping failed', async () => {
       await noteActivity($)
       activeActivityOwners.add(owner)
-      await update($, activityAtom, current => {
+      await updateIfChanged($, activityAtom, current => {
         const previous =
           current.kind === 'needs-you'
             ? current
@@ -1004,7 +1105,7 @@ export const register: Register = (on, options) => {
       await safeBookkeeping($, 'session.compact cleanup failed', async () => {
         activeActivityOwners.delete(owner)
         if (applied) {
-          await update($, activityAtom, current =>
+          await updateIfChanged($, activityAtom, current =>
             current.kind === 'compacting' && current.owner === owner ? restoreActivity(current.previous) : current,
           )
         }
@@ -1039,8 +1140,8 @@ export const register: Register = (on, options) => {
 
   on('command.run', { command: 'clawd' }, async $ => {
     const pinned = !(await read($, pinnedAtom))
-    await update($, pinnedAtom, () => pinned)
-    await update($, expandedAtom, () => pinned)
+    await updateIfChanged($, pinnedAtom, () => pinned)
+    await updateIfChanged($, expandedAtom, () => pinned)
 
     const t = T[await langOf($, choice)]
 
@@ -1098,8 +1199,8 @@ export const register: Register = (on, options) => {
         const toggle = async () => {
           expandToken++
           const nowMini = !(await read($, pinnedAtom)) && !(await read($, expandedAtom))
-          await update($, pinnedAtom, () => nowMini)
-          await update($, expandedAtom, () => nowMini)
+          await updateIfChanged($, pinnedAtom, () => nowMini)
+          await updateIfChanged($, expandedAtom, () => nowMini)
         }
 
         return (

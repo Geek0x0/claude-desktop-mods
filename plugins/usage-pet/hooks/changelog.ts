@@ -6,6 +6,13 @@ export type Release = { version: string; notes: Record<Lang, string[]> }
 
 export const CHANGELOG: Release[] = [
   {
+    version: '1.12.2',
+    notes: {
+      zh: ['更流畅：每轮对话的重画从约 11 次减到约 8 次，动画不再被反复打断；信息栏图形体积减小约 30%，外观不变'],
+      en: ['Smoother: about 8 band redraws per turn instead of 11, so animations restart less; the band SVG is about 30% smaller with no visible change'],
+    },
+  },
+  {
     version: '1.12.1',
     notes: {
       zh: ['修复：Clawd 不再卡在“等你”或停不下来不睡觉；插件出错也不会挡住消息、权限和工具；浅色模式下的小图标看得清；测试、报错和烦躁反应少了误报'],
