@@ -6,6 +6,13 @@ export type Release = { version: string; notes: Record<Lang, string[]> }
 
 export const CHANGELOG: Release[] = [
   {
+    version: '1.13.1',
+    notes: {
+      zh: ['修复：Claude 干活时费用徽章里的 $ 被文字描边糊住'],
+      en: ['Fix: the $ in the cost badge was smeared by the text outline while Claude works'],
+    },
+  },
+  {
     version: '1.13.0',
     notes: {
       zh: ['新增本会话费用读数：与 /cost 显示的 API 等价费用一致；订阅用户看到的是估算，不是账单。'],

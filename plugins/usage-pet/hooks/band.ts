@@ -1062,7 +1062,7 @@ const ditherPath = (cells: number[]) =>
 const DITHER_STYLE =
   `@media (prefers-color-scheme:dark){` +
   `.ultra-dither{opacity:.4}` +
-  `.gauges text{paint-order:stroke;stroke:#1C1B1A;stroke-width:3px;stroke-linejoin:round}` +
+  `.gauges text{paint-order:stroke;stroke:#1C1B1A;stroke-width:3px;stroke-linejoin:round}.gauges .cost-glyph{stroke:none}` +
   `.mlab,.sub,.pct,.dim{fill:#E5E5E5}` +
   `.ultra-dither .layer-0{opacity:.8;animation:ultra-dither-twinkle-0 1.2s ease-in-out -.4s infinite alternate}` +
   `.ultra-dither .layer-1{opacity:.8;animation:ultra-dither-twinkle-1 2s ease-in-out -1.1s infinite alternate}` +
