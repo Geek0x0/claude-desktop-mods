@@ -2,9 +2,9 @@
 
 A usage band above the prompt in the **Code tab of Claude Desktop**: context, 5-hour limit, weekly limit and cache hit rate, plus an optional Fable weekly ring, with Clawd, a pixel pet who keeps you company while Claude works. Current version: **1.16.1**.
 
-![Light mode shows the expanded band in chill mode with sunglasses and a crown, including a $ badge and “Cost $4.27 This session” after Cache hit, plus a collapsed editing strip showing “Cost $4.27”. Dark mode shows work with a terminal icon and purple dither, near-limit amber and red rings, and a collapsed idle Clawd wearing a nightcap; every band has the Cost block after Cache hit](https://raw.githubusercontent.com/Geek0x0/claude-desktop-mods/main/assets/usage-pet-preview.png)
+![Light mode shows the expanded band in chill mode with sunglasses and a crown, a small auto-compact tick on the Context ring, and the Cost block after Cache hit; a collapsed editing strip appears below. Dark mode shows work with a terminal icon, purple dither and a purple “×2” subagent badge, near-limit amber and red rings, and a collapsed idle Clawd wearing a nightcap](https://raw.githubusercontent.com/Geek0x0/claude-desktop-mods/main/assets/usage-pet-preview.png)
 
-![A grid of Clawd's looks, each shown expanded and collapsed: idle, working with a terminal icon, needs you (!), question (?), done, sleep, compacting, tests pass, tests fail, oops, tantrum, morning coffee, night cap, autumn, winter, Christmas and New Year](https://raw.githubusercontent.com/Geek0x0/claude-desktop-mods/main/assets/usage-pet-looks.png)
+![A grid of Clawd's looks, each shown expanded and collapsed: idle, working with a terminal icon, needs you (!), question (?), done, sleep, compacting, tests pass, tests fail, oops, tantrum, morning coffee, night cap, autumn, winter, Christmas, New Year and subagents ×2 working with a terminal icon and a ×2 badge](https://raw.githubusercontent.com/Geek0x0/claude-desktop-mods/main/assets/usage-pet-looks.png)
 
 > Unofficial fan project. Not affiliated with or endorsed by Anthropic. Clawd is Anthropic's mascot; the pixel version here is fan-made.
 

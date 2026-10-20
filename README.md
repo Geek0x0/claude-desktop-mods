@@ -3,7 +3,7 @@
 为 **Claude 桌面 App 的 Code 页** 做的 mod（Claude Code 插件）。
 Mods for the **Code tab of the Claude Desktop app**.
 
-![Working with the terminal tool icon and purple pixel dither, editing with a pencil icon, Claude asks a question with a blinking “?”, then after the reply Clawd is happy as the rings count up with +N% chips. A Cost block with a $ badge stays after Cache hit, changing from $3.86 to $4.27; idle shows the “60m” cache countdown](assets/usage-pet-demo.gif)
+![Working with the terminal icon and purple pixel dither; a purple “×2” subagent badge appears beside Clawd while two subagents run, and “×1” appears with the pencil icon. Claude asks a question with a blinking “?”; after the reply Clawd is happy as the rings count up with +N% chips. The Context ring has a tick at the auto-compact point; the Cost block changes from $3.86 to $4.27; idle shows the “60m” cache countdown](assets/usage-pet-demo.gif)
 
 > **让 AI 代理帮你装？/ Installing with an AI agent?** 让它在终端运行下面两行 · Have it run these two commands in a shell:
 >
@@ -30,9 +30,9 @@ Forked from [manson341349-beep/claude-desktop-mods](https://github.com/manson341
 | --- | --- |
 | [`usage-pet`](plugins/usage-pet) | 输入框上方的用量信息栏 + Clawd 像素桌宠 · A usage band above the prompt with Clawd, an animated pixel pet |
 
-![Light mode shows the expanded band in chill mode with sunglasses and a crown, including a $ badge and “Cost $4.27 This session” after Cache hit, plus a collapsed editing strip showing “Cost $4.27”. Dark mode shows work with a terminal icon and purple dither, near-limit amber and red rings, and a collapsed idle Clawd wearing a nightcap; each band has the Cost block after Cache hit](assets/usage-pet-preview.png)
+![Light mode shows the expanded band in chill mode with sunglasses and a crown, a small auto-compact tick on the Context ring, and the Cost block after Cache hit; a collapsed editing strip appears below. Dark mode shows work with a terminal icon, purple dither and a purple “×2” subagent badge, near-limit amber and red rings, and a collapsed idle Clawd wearing a nightcap](assets/usage-pet-preview.png)
 
-![A grid of Clawd's looks, each shown expanded and collapsed: idle, working with a terminal icon, needs you (!), question (?), done, sleep, compacting, tests pass, tests fail, oops, tantrum, morning coffee, night cap, autumn, winter, Christmas and New Year](assets/usage-pet-looks.png)
+![A grid of Clawd's looks, each shown expanded and collapsed: idle, working with a terminal icon, needs you (!), question (?), done, sleep, compacting, tests pass, tests fail, oops, tantrum, morning coffee, night cap, autumn, winter, Christmas, New Year and subagents ×2 working with a terminal icon and a ×2 badge](assets/usage-pet-looks.png)
 
 ---
 
