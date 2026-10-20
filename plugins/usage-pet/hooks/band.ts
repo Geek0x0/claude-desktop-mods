@@ -1247,13 +1247,14 @@ function escapeXml(text: string): string {
 }
 
 function agentBadgeSvg(count: number, mini: boolean): string {
-  const x = mini ? 91 : 94
-  const y = mini ? 8 : 52
-  const width = mini ? 17 : 24
-  const height = mini ? 13 : 15
+  // 细条里 Clawd 干活时会走到 x≈92，工具图标跟着走（占 y≈0–16），徽章放在图标下面的右下角；展开时同样离 Clawd 本体（右缘 x=94）远一点
+  const x = mini ? 95 : 98
+  const y = mini ? 18 : 52
+  const width = mini ? 14 : 21
+  const height = mini ? 11 : 14
   const label = count > 99 ? '99+' : String(count)
   // 「×99+」比胶囊宽，字号缩小才放得下
-  const fontSize = (mini ? 8.5 : 10) * (label.length > 2 ? 0.75 : 1)
+  const fontSize = (mini ? 7.5 : 9) * (label.length > 2 ? 0.75 : 1)
   const textY = (y + height / 2 + fontSize * 0.36).toFixed(2)
 
   return (

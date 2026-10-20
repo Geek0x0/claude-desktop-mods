@@ -6,6 +6,13 @@ export type Release = { version: string; notes: Record<Lang, string[]> }
 
 export const CHANGELOG: Release[] = [
   {
+    version: '1.16.1',
+    notes: {
+      zh: ['修复：「×N」子代理徽章位置调整：收起时移到工具图标下方，Clawd 行走时不再与他或图标重叠；展开时徽章略微缩小并右移'],
+      en: ['Fix: reposition the "×N" subagent badge; in the collapsed strip it sits below the tool icon without overlapping Clawd or the icon as he walks, and in the expanded band it is slightly smaller and further right'],
+    },
+  },
+  {
     version: '1.16.0',
     notes: {
       zh: ['子代理运行时，展开的信息栏和收起细条中的 Clawd 旁都会显示紫色「×N」徽章；悬停可查看各子代理的类型和简述，超过 99 显示「99+」，无人运行时隐藏（仅桌面信息栏）'],
