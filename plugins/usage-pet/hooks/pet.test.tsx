@@ -216,6 +216,82 @@ test('子代理的回合不涨经验', ZH, async ($, on) => {
   expect(String((await ui.findAll({ type: 'Svg' }))[0].props?.source)).toContain('<title>Clawd Lv.1 · 经验 95 / 100')
 })
 
+test('agent.spawn 和子代理工具调用刷新徽标，回合结束后移除并列出已转义的悬停行', ZH, async ($, on) => {
+  let listed: { id: string; type: string; description: string; status: string }[] = []
+  const spawnResult = { model: 'claude-sonnet-4', agentId: 'sub-1' }
+  const description = `read <root> & "config" ${'x'.repeat(50)}`
+  const { clock } = await start($, on, {}, on => {
+    on('agent.list', () => ({ value: listed }))
+    on('agent.spawn', () => spawnResult)
+    on('tool.call', () => ({ result: {} as never }))
+  })
+  await clock.advance(0)
+
+  listed = [{ id: 'sub-1', type: 'Explore <fast>', description, status: 'running' }]
+  expect(await $.agent.spawn({ prompt: 'Inspect the project' } as never)).toEqual(spawnResult)
+  await $.tool.call({ tool: 'Read', agentId: 'sub-1' } as never)
+  await clock.advance(1000)
+
+  await $.command.run({ command: 'clawd', args: '' } as never)
+  const shown = await $.ui.mount(BAND)
+  const shownSource = String((await shown.findAll({ type: 'Svg' }))[0].props?.source)
+  expect(shownSource).toContain('class="agent-count"')
+  expect(shownSource).toContain('子代理：1 个运行中')
+  const expectedRow = `● Explore &lt;fast&gt; · read &lt;root&gt; &amp; &quot;config&quot; ${'x'.repeat(24)}…`
+  expect(shownSource).toContain(expectedRow)
+
+  listed = [{ id: 'sub-1', type: 'Explore <fast>', description, status: 'completed' }]
+  await $.turn.complete({ ...turn(0, 0, 0), agentId: 'sub-1' } as never)
+  await clock.advance(1000)
+  const hidden = await $.ui.mount(BAND)
+  const hiddenSource = String((await hidden.findAll({ type: 'Svg' }))[0].props?.source)
+  expect(hiddenSource).not.toContain('class="agent-count"')
+  expect(hiddenSource).not.toContain('子代理：1 个运行中')
+})
+
+test('agent.list 失败时保留空状态且不影响会话启动', ZH, async ($, on) => {
+  const { clock } = await start($, on, {}, on => {
+    on('agent.list', () => {
+      throw new Error('agent list unavailable')
+    })
+  })
+  await clock.advance(0)
+
+  const ui = await $.ui.mount(BAND)
+  const source = String((await ui.findAll({ type: 'Svg' }))[0].props?.source)
+  expect(source).not.toContain('class="agent-count"')
+  expect(source).not.toContain('Subagents:')
+})
+
+test('快速子代理工具调用每秒最多刷新两次且只写入变化后的徽标状态', ZH, async ($, on) => {
+  const listed = [{ id: 'sub-1', type: 'Explore', description: 'inspect files', status: 'running' }]
+  const agentWrites: unknown[] = []
+  let listCalls = 0
+  const { clock } = await start($, on, {}, on => {
+    on('agent.list', () => {
+      listCalls++
+      return { value: listed }
+    })
+    on('state.set', ($, e, next) => {
+      if (e.key === 'agents') agentWrites.push(e.value)
+
+      return next(e)
+    })
+    on('tool.call', () => ({ result: {} as never }))
+  })
+  await clock.advance(0)
+  const callsAtStart = listCalls
+  agentWrites.length = 0
+
+  for (let index = 0; index < 10; index++) {
+    await $.tool.call({ tool: 'Read', file_path: `/tmp/${index}`, agentId: 'sub-1' } as never)
+  }
+  await clock.advance(1000)
+
+  expect(listCalls - callsAtStart).toBeLessThanOrEqual(2)
+  expect(agentWrites.length).toBeLessThanOrEqual(2)
+})
+
 test('子代理回合：七天显示的圆整数不变时不写周用量 atom', ZH, async ($, on) => {
   const weekWrites: unknown[] = []
   const { clock } = await start($, on, {}, on => {

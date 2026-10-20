@@ -103,6 +103,33 @@ test('姿势变化只改变 Clawd SVG，读数数据改变时才改变 gauges SV
   expect(changed.gauges).not.toBe(calm.gauges)
 })
 
+test('运行中子代理徽标只画在 Clawd 上，并在零个时保持 SVG 字节不变', () => {
+  const now = new Date(2026, 9, 10, 14).getTime()
+  for (const mini of [false, true]) {
+    const current = bandSvgParts(EMPTY_BARS, false, 1100, mini, 'zh', undefined, undefined, undefined, now)
+    const zero = bandSvgParts(EMPTY_BARS, false, 1100, mini, 'zh', undefined, undefined, undefined, now, 0)
+    const active = bandSvgParts(EMPTY_BARS, false, 1100, mini, 'zh', undefined, undefined, undefined, now, 3)
+    const x = mini ? 91 : 94
+    const y = mini ? 8 : 52
+    const width = mini ? 17 : 24
+    const height = mini ? 13 : 15
+
+    expect(zero).toEqual(current)
+    expect(x + width).toBeLessThanOrEqual(mini ? 109 : 120)
+    expect(active.clawd).toContain(`<g class="agent-count"><rect x="${x}" y="${y}" width="${width}" height="${height}"`)
+    expect(active.clawd).toContain('×3')
+    expect(active.clawd).not.toContain('×0')
+    expect(active.clawd).toContain('fill:#7C6AE0;stroke:#1C1B1A;stroke-opacity:.35')
+    expect(active.clawd).toContain('fill:#6A58D6')
+    expect(active.clawd).toContain(`font-size="${mini ? 8.5 : 10}"`)
+    expect(active.gauges).toBe(current.gauges)
+    expect(active.gauges).not.toContain('agent-count')
+    expect(Math.max(active.clawd.length, active.gauges.length)).toBeLessThan(45000)
+  }
+
+  expect(bandSvgParts(EMPTY_BARS, false, 1100, false, 'zh', undefined, undefined, undefined, now, 120).clawd).toContain('×99+')
+})
+
 test('resetsAt 的显示分钟变化不改变 gauges memo key，但 bars 变化会改变', () => {
   const now = new Date(2026, 9, 10, 14).getTime()
   const bars = {

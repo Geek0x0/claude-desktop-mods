@@ -56,6 +56,7 @@ export const T = {
     ttlFive: '5 分钟',
     working: 'Claude 正在干活',
     resting: 'Claude 在休息',
+    agentsRunning: (n: number) => `子代理：${n} 个运行中`,
     pinned: 'Clawd 信息栏：已展开；点 ▼ 收起',
     autoCollapse: 'Clawd 信息栏：已收起；点 ▲ 展开',
     // 养成
@@ -125,6 +126,7 @@ export const T = {
     ttlFive: '5 minutes',
     working: 'Claude is working',
     resting: 'Claude is resting',
+    agentsRunning: (n: number) => `Subagents: ${n} running`,
     pinned: 'Clawd band: expanded; click ▼ to collapse',
     autoCollapse: 'Clawd band: collapsed; click ▲ to expand',
     achievement: {

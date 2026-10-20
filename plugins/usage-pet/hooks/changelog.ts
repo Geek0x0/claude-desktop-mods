@@ -6,6 +6,13 @@ export type Release = { version: string; notes: Record<Lang, string[]> }
 
 export const CHANGELOG: Release[] = [
   {
+    version: '1.16.0',
+    notes: {
+      zh: ['子代理运行时，展开的信息栏和收起细条中的 Clawd 旁都会显示紫色「×N」徽章；悬停可查看各子代理的类型和简述，超过 99 显示「99+」，无人运行时隐藏（仅桌面信息栏）'],
+      en: ['While subagents run, a purple "×N" badge appears beside Clawd in both the expanded band and collapsed strip; hover Clawd to see each subagent’s type and short description, with "99+" above 99 and no badge when none are running (desktop band only)'],
+    },
+  },
+  {
     version: '1.15.2',
     notes: {
       zh: ['修复：窗口较窄时，圆形 $ 费用徽章中的金额现在居中对齐；字号略微增大，$ 与金额也会垂直居中排列'],

@@ -1,7 +1,7 @@
 import { atom, read } from 'claude-code'
 import type { Atom, EngineInterface, ModelUsage, PluginState, Register, SessionContextUsage, SessionRateLimit, StateRef, Timer } from 'claude-code'
 
-import type { Activity, Bars, CacheStat, CacheTotals, Pet, ReactionKind, Report, SessionCost, Snap, Week, Window } from '../types'
+import type { Activity, AgentState, Bars, CacheStat, CacheTotals, Pet, ReactionKind, Report, SessionCost, Snap, Week, Window } from '../types'
 import {
   bandAlt,
   bandSvgParts,
@@ -40,6 +40,7 @@ const langRef = { plugin: 'usage-pet', key: 'lang' } as const
 const petRef = { plugin: 'usage-pet', key: 'pet' } as const
 const reportRef = { plugin: 'usage-pet', key: 'report' } as const
 const activityRef = { plugin: 'usage-pet', key: 'activity' } as const
+const agentsRef = { plugin: 'usage-pet', key: 'agents' } as const
 const askRef = { plugin: 'usage-pet', key: 'ask' } as const
 const warmRef = { plugin: 'usage-pet', key: 'warm' } as const
 const weekRef = { plugin: 'usage-pet', key: 'week' } as const
@@ -57,9 +58,23 @@ const petAtom = atom(petRef, NEW_PET as Pet) as UsagePetAtom<'pet', Pet>
 const NEW_REPORT: Report = { startedAt: 0, turns: 0, toolCalls: 0, files: [], output: 0, earned: [] }
 const reportAtom = atom(reportRef, NEW_REPORT) as UsagePetAtom<'report', Report>
 const activityAtom = atom(activityRef, { kind: 'idle' } as Activity) as UsagePetAtom<'activity', Activity>
+const EMPTY_AGENTS: AgentState = { count: 0, rows: [] }
+const agentsAtom = atom(agentsRef, EMPTY_AGENTS) as UsagePetAtom<'agents', AgentState>
 const MAX_ACTIVITY_DEPTH = 8
 const TOOL_RESTORE_MS = 300
 const MIN_POSE_MS = 600
+const AGENT_REFRESH_MS = 1000
+const AGENT_POLL_MS = 5000
+const MAX_AGENT_ROWS = 6
+// 子代理状态只保存展示字段；刷新请求合并，避免每次工具调用都重绘。
+let agentRefreshTimer: Timer | undefined
+let agentPollTimer: Timer | undefined
+let agentRefreshRunning = false
+let agentRefreshInFlight = false
+let agentRefreshQueued = false
+let agentGeneration = 0
+let lastAgentRefreshAt: number | undefined
+let runningAgentCount = 0
 let activityFrame: ActivityFrame = { kind: 'idle' }
 let activityOwner = 0
 const activeActivityOwners = new Set<number>()
@@ -135,6 +150,7 @@ function readUsagePetAtom($: EngineInterface, key: UsagePetAtomKey) {
     case 'pet': return $.state.get(petRef)
     case 'report': return $.state.get(reportRef)
     case 'activity': return $.state.get(activityRef)
+    case 'agents': return $.state.get(agentsRef)
     case 'ask': return $.state.get(askRef)
     case 'warm': return $.state.get(warmRef)
     case 'week': return $.state.get(weekRef)
@@ -150,6 +166,7 @@ function writeUsagePetAtom($: EngineInterface, key: UsagePetAtomKey, value: unkn
     case 'pet': return $.state.set(petRef, value as Pet, { ifVersion: version })
     case 'report': return $.state.set(reportRef, value as Report, { ifVersion: version })
     case 'activity': return $.state.set(activityRef, value as Activity, { ifVersion: version })
+    case 'agents': return $.state.set(agentsRef, value as AgentState, { ifVersion: version })
     case 'ask': return $.state.set(askRef, value as number, { ifVersion: version })
     case 'warm': return $.state.set(warmRef, value as number, { ifVersion: version })
     case 'week': return $.state.set(weekRef, value as Week, { ifVersion: version })
@@ -871,6 +888,122 @@ async function clockNow($: EngineInterface): Promise<number> {
   }
 }
 
+function cancelAgentRefreshTimer($: EngineInterface, label: string) {
+  const timer = agentRefreshTimer
+  agentRefreshTimer = undefined
+  try {
+    timer?.cancel()
+  } catch (error) {
+    debugError($, label, error)
+  }
+}
+
+function cancelAgentPollTimer($: EngineInterface, label: string) {
+  const timer = agentPollTimer
+  agentPollTimer = undefined
+  try {
+    timer?.cancel()
+  } catch (error) {
+    debugError($, label, error)
+  }
+}
+
+function resetAgentRefresh($: EngineInterface) {
+  agentGeneration++
+  agentRefreshQueued = false
+  lastAgentRefreshAt = undefined
+  runningAgentCount = 0
+  // 保留正在执行的互斥标记，等旧请求收尾后再刷新新会话。
+  cancelAgentRefreshTimer($, 'session.start 子代理刷新计时器取消失败')
+  cancelAgentPollTimer($, 'session.start 子代理轮询计时器取消失败')
+}
+
+function scheduleAgentPoll($: EngineInterface) {
+  if (runningAgentCount === 0 || agentPollTimer) return
+  const generation = agentGeneration
+  try {
+    agentPollTimer = $.clock.after(AGENT_POLL_MS, () => {
+      if (generation !== agentGeneration) return
+      agentPollTimer = undefined
+      requestAgentRefresh($)
+    })
+  } catch (error) {
+    debugError($, '设置子代理轮询计时器失败', error)
+  }
+}
+
+async function refreshAgents($: EngineInterface, generation: number) {
+  const listed = await $.agent.list()
+  if (!Array.isArray(listed) || generation !== agentGeneration) return
+
+  const running = listed.filter(agent => agent.status === 'running')
+  const next: AgentState = {
+    count: running.length,
+    rows: running.slice(0, MAX_AGENT_ROWS).map(agent => ({
+      type: agent.type.replace(/\s+/g, ' ').trim(),
+      description: agent.description.replace(/\s+/g, ' ').trim(),
+    })),
+  }
+  await updateIfChanged($, agentsAtom, current => (generation === agentGeneration ? next : current))
+  if (generation !== agentGeneration) return
+
+  runningAgentCount = next.count
+  if (runningAgentCount > 0) {
+    scheduleAgentPoll($)
+  } else {
+    cancelAgentPollTimer($, '子代理结束后的轮询计时器取消失败')
+  }
+}
+
+async function pumpAgentRefresh($: EngineInterface) {
+  if (agentRefreshRunning || agentRefreshTimer || !agentRefreshQueued) return
+  agentRefreshRunning = true
+  let waitingForTimer = false
+  try {
+    const now = await clockNow($)
+    if (!agentRefreshQueued) return
+    const delay = lastAgentRefreshAt === undefined ? 0 : AGENT_REFRESH_MS - (now - lastAgentRefreshAt)
+    if (delay > 0) {
+      const generation = agentGeneration
+      try {
+        agentRefreshTimer = $.clock.after(delay, () => {
+          if (generation !== agentGeneration) return
+          agentRefreshTimer = undefined
+          requestAgentRefresh($)
+        })
+      } catch (error) {
+        debugError($, '设置子代理刷新计时器失败', error)
+      }
+      waitingForTimer = true
+
+      return
+    }
+
+    agentRefreshQueued = false
+    agentRefreshInFlight = true
+    lastAgentRefreshAt = now
+    try {
+      await refreshAgents($, agentGeneration)
+    } catch (error) {
+      debugError($, '读取运行中子代理失败', error)
+    } finally {
+      agentRefreshInFlight = false
+    }
+  } finally {
+    agentRefreshRunning = false
+    if (agentRefreshQueued && !agentRefreshTimer && !waitingForTimer && !agentRefreshInFlight) {
+      requestAgentRefresh($)
+    } else if (!agentRefreshQueued && !agentRefreshInFlight) {
+      scheduleAgentPoll($)
+    }
+  }
+}
+
+function requestAgentRefresh($: EngineInterface) {
+  agentRefreshQueued = true
+  void safeBookkeeping($, '安排子代理刷新失败', () => pumpAgentRefresh($))
+}
+
 // now 来自 $.clock.now()：测试里能把日期拨到万圣节前后
 function petView(pet: Pet, lang: Lang, halloween = false, askSince = 0, now = 0, seasonal = true): PetView {
   const level = levelOf(pet.xp)
@@ -881,6 +1014,12 @@ function petView(pet: Pet, lang: Lang, halloween = false, askSince = 0, now = 0,
   const mood = moodAt(new Date(now), seasonal)
 
   return { level, title: askAgo === undefined ? title : `${T[lang].askCandy} · ${title}`, halloween, askAgo, ...(mood ? { mood } : {}) }
+}
+
+function truncateAgentDescription(description: string): string {
+  const chars = Array.from(description)
+
+  return chars.length > 48 ? `${chars.slice(0, 47).join('')}…` : description
 }
 
 // 每答完一轮：从 store 读最新的（别的会话可能也在涨经验），算完写回，升级 / 成就弹提示
@@ -992,6 +1131,10 @@ export const register: Register = (on, options) => {
 
   on('session.start', async ($, e, next) => {
     const detectionGeneration = ++langDetectionGeneration
+    resetAgentRefresh($)
+    await safeBookkeeping($, 'session.start 子代理状态重置失败', async () => {
+      await updateIfChanged($, agentsAtom, () => EMPTY_AGENTS)
+    })
     compactThresholdSnapshot = undefined
     mainTurnActive = false
     pendingPermission = undefined
@@ -1080,7 +1223,17 @@ export const register: Register = (on, options) => {
       await noteActivity($)
     })
 
-    return next(e)
+    const result = await next(e)
+    requestAgentRefresh($)
+
+    return result
+  })
+
+  on('agent.spawn', async ($, e, next) => {
+    const result = await next(e)
+    requestAgentRefresh($)
+
+    return result
   })
 
   on('prompt.submit', async ($, e, next) => {
@@ -1202,11 +1355,19 @@ export const register: Register = (on, options) => {
       await safeBookkeeping($, 'turn.complete sleep timer recovery failed', async () => armSleepTimer($, lastActivityAt))
     }
 
-    return next(e)
+    let result!: Awaited<ReturnType<typeof next>>
+    try {
+      result = await next(e)
+    } finally {
+      requestAgentRefresh($)
+    }
+
+    return result
   })
 
   // 战报：工具调用次数（含子代理），改过的文件按路径去重；被拦下的不算
   on('tool.call', async ($, e, next) => {
+    if (e.agentId !== undefined) requestAgentRefresh($)
     const needsIcon =
       e.agentId === undefined ? (e.tool === 'AskUserQuestion' ? 'question' : e.tool === 'ExitPlanMode' ? 'bang' : undefined) : undefined
     const activityOwnerAtStart = activityOwner
@@ -1370,6 +1531,7 @@ export const register: Register = (on, options) => {
         // 桌面端的 Client 在 2.1.286 上一律 10 秒超时（缺 CSP nonce，同见 #99211），所以桌面只用 Svg
         const { Box, Button, Svg } = $.ui.resolve(e)
         const activity = await read($, activityAtom)
+        const agents = await read($, agentsAtom)
         // 不设大下限：以前最少 560px，窗口窄时信息栏比可用宽度还宽，按钮就被挤到下一行。
         // 窄了由 bandSvgParts 自己逐级收（去副标题 → 只剩圆环），按钮始终在同一行右侧
         // Clawd 工具图标的空间始终保留，避免姿势变化挪动圆环
@@ -1383,8 +1545,27 @@ export const register: Register = (on, options) => {
         const isMini = !pinned
         // 近 7 天用量只在展开时写进 Clawd 的悬停提示：收起时是一条细条，不放
         const week = isMini ? undefined : weekLine(await read($, weekAtom), lang, now)
-        const shown = week ? { ...pet, title: `${pet.title} · ${week}` } : pet
-        const parts = bandSvgParts(bars, e.props.isWorking, width, isMini, lang, shown, cacheTimer(await read($, warmAtom), bars, now), activity, now)
+        const titleLines = [week ? `${pet.title} · ${week}` : pet.title]
+        if (agents.count > 0) {
+          titleLines.push(T[lang].agentsRunning(agents.count))
+          titleLines.push(
+            ...agents.rows.map(row => `● ${row.type} · ${truncateAgentDescription(row.description)}`),
+          )
+          if (agents.count > agents.rows.length) titleLines.push(`+${agents.count - agents.rows.length} …`)
+        }
+        const shown = agents.count > 0 || week ? { ...pet, title: titleLines.join('\n') } : pet
+        const parts = bandSvgParts(
+          bars,
+          e.props.isWorking,
+          width,
+          isMini,
+          lang,
+          shown,
+          cacheTimer(await read($, warmAtom), bars, now),
+          activity,
+          now,
+          agents.count,
+        )
         let gaugesSource = parts.gauges
         if (
           previousGaugeSvg &&

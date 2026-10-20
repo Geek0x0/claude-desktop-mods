@@ -40,9 +40,10 @@ export type ActivityKind = 'needs-you' | 'reaction' | 'compacting' | 'working' |
 export type ReactionKind = 'test-pass' | 'test-fail' | 'oops' | 'tantrum'
 // The atom contains only fields used by the renderer. Ownership and restore stacks live in register.tsx.
 export type Activity = { kind: ActivityKind; icon?: ToolIcon; reaction?: ReactionKind }
+export type AgentState = { count: number; rows: { type: string; description: string }[] }
 
 declare module 'claude-code' {
   interface PluginState {
-    'usage-pet': { bars: Bars; cache: CacheTotals; pinned: boolean; lang: 'zh' | 'en'; pet: Pet; report: Report; ask: number; warm: number; week: Week; activity: Activity }
+    'usage-pet': { bars: Bars; cache: CacheTotals; pinned: boolean; lang: 'zh' | 'en'; pet: Pet; report: Report; ask: number; warm: number; week: Week; activity: Activity; agents: AgentState }
   }
 }

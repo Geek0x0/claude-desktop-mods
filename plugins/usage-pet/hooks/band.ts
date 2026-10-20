@@ -817,6 +817,7 @@ function clawd(
   pet?: PetView,
   activity?: Activity,
   showActivityIcon = true,
+  agentCount = 0,
 ): string {
   const pose = activity?.kind
   const reaction = pose === 'reaction' ? activity?.reaction : undefined
@@ -892,7 +893,7 @@ function clawd(
   return (
     `<g class="clawd${clawdWorking ? ' working' : ''}${isStressed ? ' stressed' : ''}${mini ? ' mini' : ''}${activityClass}${isChill ? ' chill' : ''}" ` +
     `transform="translate(${mini ? MINI_X : CLAWD_X} ${mini ? MINI_Y : CLAWD_Y}) scale(${mini ? MINI_U : U})">` +
-    (pet ? `<title>${pet.title}</title>` : '') +
+    (pet ? `<title>${agentCount > 0 ? escapeXml(pet.title) : pet.title}</title>` : '') +
     `<circle cx="8" cy="5" r="9.5" fill="url(#aura)" class="aura"/>` +
     `<g class="pace">` +
     `<ellipse cx="8" cy="9.75" rx="6.3" ry=".55" class="shadow ${didChange ? 'once' : clawdWorking ? '' : 'idle'}"/>` +
@@ -1235,6 +1236,32 @@ export type CacheTimer = { remainMs: number; ttlMs: number; startedAt?: number }
 
 export type BandSvgParts = { clawd: string; gauges: string; cut: number; gaugesKey: string }
 
+const AGENT_BADGE_STYLE =
+  `.agent-count rect{fill:#7C6AE0;stroke:#1C1B1A;stroke-opacity:.35}.agent-count text{fill:#fff}` +
+  `@media (prefers-color-scheme:light){.agent-count rect{fill:#6A58D6}}`
+
+function escapeXml(text: string): string {
+  const entities: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' }
+
+  return text.replace(/[&<>"']/g, char => entities[char] ?? char)
+}
+
+function agentBadgeSvg(count: number, mini: boolean): string {
+  const x = mini ? 91 : 94
+  const y = mini ? 8 : 52
+  const width = mini ? 17 : 24
+  const height = mini ? 13 : 15
+  const label = count > 99 ? '99+' : String(count)
+  // 「×99+」比胶囊宽，字号缩小才放得下
+  const fontSize = (mini ? 8.5 : 10) * (label.length > 2 ? 0.75 : 1)
+  const textY = (y + height / 2 + fontSize * 0.36).toFixed(2)
+
+  return (
+    `<g class="agent-count"><rect x="${x}" y="${y}" width="${width}" height="${height}" rx="${height / 2}"/>` +
+    `<text x="${x + width / 2}" y="${textY}" text-anchor="middle" font-size="${fontSize}" font-weight="700" fill="#fff" font-family="-apple-system,'SF Pro Text','Segoe UI',sans-serif">×${label}</text></g>`
+  )
+}
+
 function svgDocument(width: number, height: number, style: string, content: string): string {
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" style="color-scheme:light dark;background:transparent">` +
@@ -1252,6 +1279,7 @@ export function bandSvgParts(
   cacheTimer?: CacheTimer,
   activity?: Activity,
   now = Date.now(),
+  agents = 0,
 ): BandSvgParts {
   // The host's live working flag outranks a lingering done/sleep pose.
   const displayActivity: Activity | undefined =
@@ -1411,12 +1439,14 @@ export function bandSvgParts(
     (isStressed ? SWEAT_STYLE : '') +
     (mood ? MOOD_STYLE : '') +
     (pet?.halloween ? HALLOWEEN_STYLE : '') +
-    (isWorking ? DITHER_STYLE : '')
+    (isWorking ? DITHER_STYLE : '') +
+    (agents > 0 ? AGENT_BADGE_STYLE : '')
   const height = mini ? H_MINI : H
   const clawdContent =
     CLAWD_DEFS +
     (isWorking ? ditherSvg(width, height) : '') +
-    clawd(isWorking, isStressed, clawdChanged, mini, isChill, pet, displayActivity, showActivityIcon)
+    clawd(isWorking, isStressed, clawdChanged, mini, isChill, pet, displayActivity, showActivityIcon, agents) +
+    (agents > 0 ? agentBadgeSvg(agents, mini) : '')
   const gaugesContentInFullCoordinates =
     `<g transform="translate(-${cut} 0)">` +
     (isWorking ? ditherSvg(width, height) : '') +
