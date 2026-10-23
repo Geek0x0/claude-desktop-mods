@@ -1,6 +1,6 @@
 # usage-pet
 
-A usage band above the prompt in the **Code tab of Claude Desktop**: context, 5-hour limit, weekly limit and cache hit rate, plus an optional Fable weekly ring, with Clawd, a pixel pet who keeps you company while Claude works. Current version: **1.16.1**.
+A usage band above the prompt in the **Code tab of Claude Desktop**: context, 5-hour limit, weekly limit and cache hit rate, plus an optional Fable weekly ring, with Clawd, a pixel pet who keeps you company while Claude works. Current version: **1.16.2**.
 
 ![Light mode shows the expanded band in chill mode with sunglasses and a crown, a small auto-compact tick on the Context ring, and the Cost block after Cache hit; a collapsed editing strip appears below. Dark mode shows work with a terminal icon, purple dither and a purple “×2” subagent badge, near-limit amber and red rings, and a collapsed idle Clawd wearing a nightcap](https://raw.githubusercontent.com/Geek0x0/claude-desktop-mods/main/assets/usage-pet-preview.png)
 

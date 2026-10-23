@@ -24,11 +24,20 @@ import {
 // 原有用例都按中文界面断言：显式指定 /config 的 language = zh
 const ZH = { options: { language: 'zh' } }
 
+const DEFAULT_BODY_COLUMNS = 140
+const BODY_COLUMN_WIDTH = 8
+const BODY_RIGHT_INSET = 8
+const EXPAND_BUTTON_WIDTH = 44
+const BAND_SAFETY_PX = 40
+const desktopBandWidthForColumns = (bodyColumns: number) =>
+  bodyColumns * BODY_COLUMN_WIDTH - BODY_RIGHT_INSET - EXPAND_BUTTON_WIDTH - BAND_SAFETY_PX
+const DEFAULT_DESKTOP_BAND_WIDTH = desktopBandWidthForColumns(DEFAULT_BODY_COLUMNS)
+
 const BAND = (isWorking: boolean) => ({
   plugin: 'usage-pet',
   component: 'AbovePrompt' as const,
-  props: { hasSurvey: false, isWorking, maxRows: 12, bodyColumns: 140, scroll: { offset: 0, bodyRows: 12 }, view: {} },
-  viewport: { columns: 140, rows: 40 },
+  props: { hasSurvey: false, isWorking, maxRows: 12, bodyColumns: DEFAULT_BODY_COLUMNS, scroll: { offset: 0, bodyRows: 12 }, view: {} },
+  viewport: { columns: DEFAULT_BODY_COLUMNS, rows: 40 },
 })
 
 const measure = (ctx: number, session: number, weekly: number) => ({
@@ -794,10 +803,10 @@ test('桌面：一张显式宽高、自带底色的 SVG；变化时有扫环、�
   const svgNodes = await ui.findAll({ type: 'Svg' })
   expect(svgNodes).toHaveLength(2)
   expect(svgNodes[0].props?.width).toBe(120)
-  expect(svgNodes[1].props?.width).toBe(948)
+  expect(svgNodes[1].props?.width).toBe(DEFAULT_DESKTOP_BAND_WIDTH - 120)
   expect(svgNodes.every(node => node.props?.isInteractive === true)).toBe(true)
   const first = await svgOf(ui)
-  expect(first.props?.width).toBe(1068)
+  expect(first.props?.width).toBe(DEFAULT_DESKTOP_BAND_WIDTH)
   expect(first.props?.height).toBe(H)
   expect(first.props?.isInteractive).toBe(true)
   // 首次出现：圆环从空扫入、依次入场
@@ -972,7 +981,7 @@ test('排布均匀：左右留白相等，从预留工具图标后的 Clawd 边�
   for (const g of gaps) expect(near(g, gaps[0])).toBe(true)
   // 右边留白 = 左边留白（22）
   expect(src).toContain('transform="translate(22 ')
-  expect(near(1068 - (blocks[3][0] + blocks[3][1]), 22)).toBe(true)
+  expect(near(DEFAULT_DESKTOP_BAND_WIDTH - (blocks[3][0] + blocks[3][1]), 22)).toBe(true)
   // 各块宽度跟着文字走，不再强行等宽（上下文按悬停详情「84,000 tokens」留宽，比 5 小时额度那块宽）
   expect(blocks[0][1] > blocks[1][1]).toBe(true)
 })
@@ -1041,7 +1050,7 @@ test('细条排布均匀：左右留白相等，从预留工具图标后的 Claw
   const gaps = [items[0][0] - miniReservedEdge, ...[1, 2, 3].map(i => items[i][0] - (items[i - 1][0] + items[i - 1][1]))]
   for (const g of gaps) expect(near(g, gaps[0])).toBe(true)
   expect(src).toContain('transform="translate(14 ')
-  expect(near(1068 - (items[3][0] + items[3][1]), 14)).toBe(true)
+  expect(near(DEFAULT_DESKTOP_BAND_WIDTH - (items[3][0] + items[3][1]), 14)).toBe(true)
 })
 
 // ───────── 跟随系统语言 ─────────
@@ -1106,7 +1115,7 @@ test('英文界面：四块仍然左右留白相等，从预留工具图标后�
   const gaps = [blocks[0][0] - reservedEdge, ...[1, 2, 3].map(i => blocks[i][0] - (blocks[i - 1][0] + blocks[i - 1][1]))]
   for (const g of gaps) expect(near(g, gaps[0])).toBe(true)
   expect(src).toContain('transform="translate(22 ')
-  expect(near(1068 - (blocks[3][0] + blocks[3][1]), 22)).toBe(true)
+  expect(near(DEFAULT_DESKTOP_BAND_WIDTH - (blocks[3][0] + blocks[3][1]), 22)).toBe(true)
 })
 
 test('信息栏渲染出错：回退到后续渲染器', ZH, async ($, on) => {
@@ -1293,7 +1302,7 @@ test('悬停换上的详情（如「84,000 tokens」）比副标题长时，这�
   // 文字区 = 块宽 − 圆环和间隔（2R + 6 + 7 = 65）；下限按每字 0.5 个字号估（与插件的测宽函数无关）
   details.forEach((d, i) => expect(blocks[i][1] - 65).toBeGreaterThanOrEqual(d.length * 12 * 0.5))
   // 最后一块的右边不超过信息栏宽度（右边留白 22）
-  expect(blocks[3][0] + blocks[3][1]).toBeLessThanOrEqual(1068 - 22 + 0.6)
+  expect(blocks[3][0] + blocks[3][1]).toBeLessThanOrEqual(DEFAULT_DESKTOP_BAND_WIDTH - 22 + 0.6)
 })
 
 test('窗口变窄：信息栏宽度跟着收，加上右边按钮也不超过可用宽度（按钮不会被挤到下一行）；内容逐级收，不出右边界', EN, async ($, on) => {
@@ -1307,8 +1316,10 @@ test('窗口变窄：信息栏宽度跟着收，加上右边按钮也不超过�
     const band = { ...BAND(false), props: { ...BAND(false).props, bodyColumns: cols }, viewport: { columns: cols, rows: 40 }, surface: 'desktop' as const }
     const svg = await svgOf(await $.ui.mount(band))
     const width = Number(svg.props?.width)
-    // 可用宽度 ≈ 每列 8px；SVG + 按钮（44）不超过它（最窄 398 的下限只在极窄时才起作用）
-    if (cols * 8 - 8 >= MIN_BAND_W_WITH_ACTIVITY + 44) expect(width + 44).toBeLessThanOrEqual(cols * 8 - 8)
+    // 可用宽度 = 每列 8px − 右侧 8px；SVG、按钮和安全预留不超过它。
+    if (cols * BODY_COLUMN_WIDTH - BODY_RIGHT_INSET >= MIN_BAND_W_WITH_ACTIVITY + EXPAND_BUTTON_WIDTH + BAND_SAFETY_PX) {
+      expect(width + EXPAND_BUTTON_WIDTH + BAND_SAFETY_PX).toBeLessThanOrEqual(cols * BODY_COLUMN_WIDTH - BODY_RIGHT_INSET)
+    }
     const src = String(svg.props?.source)
     const blocks = [...src.matchAll(new RegExp(`<rect x="([\\d.]+)" y="0" width="([\\d.]+)" height="${H}" fill="transparent"\\/>`, 'g'))].map(m => Number(m[1]) + Number(m[2]))
     expect(blocks).toHaveLength(4)

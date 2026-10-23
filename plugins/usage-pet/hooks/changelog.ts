@@ -6,6 +6,13 @@ export type Release = { version: string; notes: Record<Lang, string[]> }
 
 export const CHANGELOG: Release[] = [
   {
+    version: '1.16.2',
+    notes: {
+      zh: ['修复：适配较新的 Claude Desktop 版本，信息栏略微收窄并留出 40px 边距，展开/收起按钮保持在同一行'],
+      en: ['Fix: on newer Claude Desktop builds, the band is slightly narrower with a 40px margin so the expand/collapse button stays on the same row'],
+    },
+  },
+  {
     version: '1.16.1',
     notes: {
       zh: ['修复：「×N」子代理徽章位置调整：收起时移到工具图标下方，Clawd 行走时不再与他或图标重叠；展开时徽章略微缩小并右移'],

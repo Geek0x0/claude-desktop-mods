@@ -534,6 +534,8 @@ const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit'])
 const MAX_FILES = 500
 // 展开 / 收起按钮占的宽度（像素），SVG 让出这一截
 const BUTTON_W = 44
+// 新版桌面端实测按钮会被挤到下一行：每列宽度和按钮外边距都有误差，多留一点余量，宁可信息栏窄一点也不能让按钮换行
+const BAND_SAFETY_PX = 40
 // 按钮用图标：信息栏往上长，▲ = 往上撑开，▼ = 往下收回。
 // 这一对是同一字体里的成对字形，Chrome 实测都是 19×20px、同样居中（⌃⌄ 不是一对，大小差很多）
 const ICON_EXPAND = '▲'
@@ -1540,7 +1542,7 @@ export const register: Register = (on, options) => {
         const minimumWidth = hasFable
           ? hasCost ? MIN_BAND_W_WITH_FABLE_AND_COST_AND_ACTIVITY : MIN_BAND_W_WITH_FABLE_AND_ACTIVITY
           : hasCost ? MIN_BAND_W_WITH_COST_AND_ACTIVITY : MIN_BAND_W_WITH_ACTIVITY
-        const width = Math.max(minimumWidth, e.props.bodyColumns * PX_PER_COLUMN - 8 - BUTTON_W)
+        const width = Math.max(minimumWidth, e.props.bodyColumns * PX_PER_COLUMN - 8 - BUTTON_W - BAND_SAFETY_PX)
         const pinned = await read($, pinnedAtom)
         const isMini = !pinned
         // 近 7 天用量只在展开时写进 Clawd 的悬停提示：收起时是一条细条，不放
