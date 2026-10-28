@@ -18,8 +18,10 @@ import {
   H_MINI,
   MIN_BAND_W_WITH_ACTIVITY,
   MIN_BAND_W_WITH_FABLE_AND_ACTIVITY,
+  minBandWidth,
   paceWarningAt,
 } from './band'
+import { T } from './i18n'
 
 // 原有用例都按中文界面断言：显式指定 /config 的 language = zh
 const ZH = { options: { language: 'zh' } }
@@ -75,6 +77,44 @@ const svgSourcesOf = async (ui: { findAll: (q: { type: 'Svg' }) => Promise<{ pro
   (await ui.findAll({ type: 'Svg' })).map(node => String(node.props?.source))
 
 const EMPTY_BARS = { from: null, to: null }
+
+const ALL_GAUGES_BARS = {
+  from: null,
+  to: {
+    contextPercent: 42,
+    contextTokens: 84000,
+    contextWindow: 200000,
+    session: { percent: 20 },
+    weekly: { percent: 35 },
+    fable: { percent: 50 },
+    cache: { rate: 65, read: 1000, write: 200, fresh: 100 },
+    cost: { usd: 1.25 },
+  },
+} as unknown as Bars
+
+const hiddenGaugeIds = (hidden: string[], lang: 'zh' | 'en') => {
+  const ordered = [
+    ['cost', T[lang].cost],
+    ['f', T[lang].fable],
+    ['k', T[lang].cache],
+    ['w', T[lang].weekly],
+  ] as const
+
+  return hidden.map(title => ordered.find(([, label]) => title.startsWith(label))?.[0])
+}
+
+const gaugeBlocks = (source: string, height: number) =>
+  [...source.matchAll(new RegExp(`<rect x="([\\d.]+)" y="0" width="([\\d.]+)" height="${height}" fill="transparent"\\/>`, 'g'))]
+    .map(match => [Number(match[1]), Number(match[2])])
+
+const expectEvenGaugeSpacing = (blocks: number[][], width: number, reservedEdge: number, rightMargin: number) => {
+  expect(blocks.length).toBeGreaterThanOrEqual(2)
+  const near = (a: number, b: number) => Math.abs(a - b) < 0.6
+  const gaps = [blocks[0][0] - reservedEdge, ...blocks.slice(1).map((block, i) => block[0] - (blocks[i][0] + blocks[i][1]))]
+  for (const gap of gaps) expect(near(gap, gaps[0])).toBe(true)
+  const last = blocks[blocks.length - 1]
+  expect(near(width - (last[0] + last[1]), rightMargin)).toBe(true)
+}
 
 test('姿势变化只改变 Clawd SVG，读数数据改变时才改变 gauges SVG', () => {
   const bars = {
@@ -1487,12 +1527,13 @@ test('窗口变窄：信息栏宽度跟着收，加上右边按钮也不超过�
     const svg = await svgOf(await $.ui.mount(band))
     const width = Number(svg.props?.width)
     // 可用宽度 = 每列 8px − 右侧 8px；SVG、按钮和安全预留不超过它。
-    if (cols * BODY_COLUMN_WIDTH - BODY_RIGHT_INSET >= MIN_BAND_W_WITH_ACTIVITY + EXPAND_BUTTON_WIDTH + BAND_SAFETY_PX) {
+    if (cols * BODY_COLUMN_WIDTH - BODY_RIGHT_INSET >= minBandWidth(2) + EXPAND_BUTTON_WIDTH + BAND_SAFETY_PX) {
       expect(width + EXPAND_BUTTON_WIDTH + BAND_SAFETY_PX).toBeLessThanOrEqual(cols * BODY_COLUMN_WIDTH - BODY_RIGHT_INSET)
     }
     const src = String(svg.props?.source)
     const blocks = [...src.matchAll(new RegExp(`<rect x="([\\d.]+)" y="0" width="([\\d.]+)" height="${H}" fill="transparent"\\/>`, 'g'))].map(m => Number(m[1]) + Number(m[2]))
-    expect(blocks).toHaveLength(4)
+    const expectedGaugeCount = width >= minBandWidth(4) ? 4 : width >= minBandWidth(3) ? 3 : 2
+    expect(blocks).toHaveLength(expectedGaugeCount)
     expect(Math.max(...blocks)).toBeLessThanOrEqual(width - 22 + 0.6)
     // 收掉的文字还在悬停提示里
     expect(src).toContain('<title>Context 42% · 84,000 / 200,000 tokens</title>')
@@ -1508,7 +1549,139 @@ test('窗口变窄：信息栏宽度跟着收，加上右边按钮也不超过�
     const svg = await svgOf(await $.ui.mount(band))
     const width = Number(svg.props?.width)
     const items = [...String(svg.props?.source).matchAll(new RegExp(`<rect x="([\\d.]+)" y="0" width="([\\d.]+)" height="${H_MINI}" fill="transparent"\\/>`, 'g'))].map(m => Number(m[1]) + Number(m[2]))
-    expect(items).toHaveLength(4)
+    expect(items.length).toBeGreaterThanOrEqual(2)
+    expect(items.length).toBeLessThanOrEqual(4)
     expect(Math.max(...items)).toBeLessThanOrEqual(width - 14 + 0.6)
   }
+})
+
+test('每个圆环都计入最窄宽度，保留旧的四、五、六环常量', () => {
+  expect(minBandWidth(2)).toBe(270)
+  expect(minBandWidth(3)).toBe(334)
+  expect(minBandWidth(4)).toBe(MIN_BAND_W_WITH_ACTIVITY)
+  expect(minBandWidth(5)).toBe(MIN_BAND_W_WITH_FABLE_AND_ACTIVITY)
+  expect(minBandWidth(6)).toBe(526)
+})
+
+test('展开和细条在中英文窄窗口都按优先级隐藏圆环并保持等间距', () => {
+  const dropOrder = ['cost', 'f', 'k', 'w']
+  const widths = [526, 525, 461, 397, 333, 270]
+  const hiddenCounts = [0, 1, 2, 3, 4, 4]
+
+  for (const lang of ['zh', 'en'] as const) {
+    const fullTitles = [...bandSvgParts(ALL_GAUGES_BARS, false, 1000, false, lang, undefined, undefined, undefined, 0).gauges.matchAll(/<title>(.*?)<\/title>/g)]
+      .map(match => match[1])
+    const narrowTitles = bandSvgParts(ALL_GAUGES_BARS, false, 270, false, lang, undefined, undefined, undefined, 0).hidden
+
+    expect(narrowTitles).toEqual(
+      [T[lang].cost, T[lang].fable, T[lang].cache, T[lang].weekly].map(label => fullTitles.find(title => title.startsWith(label))),
+    )
+
+    for (const [i, width] of widths.entries()) {
+      const parts = bandSvgParts(ALL_GAUGES_BARS, false, width, false, lang, undefined, undefined, undefined, 0)
+      const blocks = gaugeBlocks(parts.gauges, H)
+      const titles = [...parts.gauges.matchAll(/<title>(.*?)<\/title>/g)]
+
+      expect(parts.hidden).toHaveLength(hiddenCounts[i])
+      expect(hiddenGaugeIds(parts.hidden, lang)).toEqual(dropOrder.slice(0, hiddenCounts[i]))
+      expect(titles).toHaveLength(6 - hiddenCounts[i])
+      expect(blocks).toHaveLength(6 - hiddenCounts[i])
+      expect(Math.max(...blocks.map(([x, w]) => x + w))).toBeLessThanOrEqual(width - 22 + 0.6)
+      expectEvenGaugeSpacing(blocks, width, CLAWD_X + 16 * 4.5 + ACTIVITY_LAYOUT_RESERVE, CLAWD_X)
+    }
+
+    const miniWidths = [...Array.from({ length: 58 }, (_, i) => 500 - i * 4), 270]
+    for (const width of miniWidths) {
+      const parts = bandSvgParts(ALL_GAUGES_BARS, false, width, true, lang, undefined, undefined, undefined, 0)
+      const blocks = gaugeBlocks(parts.gauges, H_MINI)
+
+      expect(parts.hidden.length).toBeLessThanOrEqual(4)
+      expect(hiddenGaugeIds(parts.hidden, lang)).toEqual(dropOrder.slice(0, parts.hidden.length))
+      expect(blocks.length).toBe(6 - parts.hidden.length)
+      expect(blocks.length).toBeGreaterThanOrEqual(2)
+      expect(Math.max(...blocks.map(([x, w]) => x + w))).toBeLessThanOrEqual(width - MINI_X + 0.6)
+      expectEvenGaugeSpacing(blocks, width, MINI_X + 26 * 3 + 17, MINI_X)
+    }
+  }
+})
+
+test('隐藏圆环不影响 gaugesKey，显示圆环仍会使 key 改变', () => {
+  const narrow = bandSvgParts(ALL_GAUGES_BARS, false, 270, false, 'en', undefined, undefined, undefined, 0)
+  const hiddenWeeklyChanged = bandSvgParts(
+    { ...ALL_GAUGES_BARS, to: { ...ALL_GAUGES_BARS.to!, weekly: { percent: 97 } } } as Bars,
+    false,
+    270,
+    false,
+    'en',
+    undefined,
+    undefined,
+    undefined,
+    0,
+  )
+  const shownSessionChanged = bandSvgParts(
+    { ...ALL_GAUGES_BARS, to: { ...ALL_GAUGES_BARS.to!, session: { percent: 21 } } } as Bars,
+    false,
+    270,
+    false,
+    'en',
+    undefined,
+    undefined,
+    undefined,
+    0,
+  )
+
+  expect(hiddenGaugeIds(narrow.hidden, 'en')).toEqual(['cost', 'f', 'k', 'w'])
+  expect(narrow.gaugesKey).toContain('"id":"c"')
+  expect(narrow.gaugesKey).toContain('"id":"s"')
+  expect(narrow.gaugesKey).not.toContain('"id":"w"')
+  expect(hiddenWeeklyChanged.gaugesKey).toBe(narrow.gaugesKey)
+  expect(shownSessionChanged.gaugesKey).not.toBe(narrow.gaugesKey)
+
+  const timed = bandSvgParts(ALL_GAUGES_BARS, false, 1000, false, 'en', undefined, { remainMs: 3600000, ttlMs: 3600000, startedAt: 0 }, undefined, 0)
+  const minuteLater = bandSvgParts(ALL_GAUGES_BARS, false, 1000, false, 'en', undefined, { remainMs: 3540000, ttlMs: 3600000, startedAt: 0 }, undefined, 60000)
+  const hiddenTimer = bandSvgParts(ALL_GAUGES_BARS, false, 270, false, 'en', undefined, { remainMs: 3600000, ttlMs: 3600000, startedAt: 0 }, undefined, 0)
+
+  expect(minuteLater.gaugesKey).toBe(timed.gaugesKey)
+  expect(hiddenTimer.gaugesKey).toBe(narrow.gaugesKey)
+})
+
+test('隐藏的每周额度达到 90% 时 Clawd 仍然冒汗', () => {
+  const bars = {
+    ...ALL_GAUGES_BARS,
+    to: { ...ALL_GAUGES_BARS.to!, weekly: { percent: 97 } },
+  } as Bars
+  const parts = bandSvgParts(bars, false, 270, false, 'en', undefined, undefined, undefined, 0)
+
+  expect(hiddenGaugeIds(parts.hidden, 'en')).toContain('w')
+  expect(parts.clawd).toContain('class="sweat"')
+})
+
+test('Clawd 悬停文字会列出隐藏圆环，中英文正常宽度不增加隐藏行', ZH, async ($, on) => {
+  on('session.measure', ($, e) => ({ changed: e.changed }))
+  on('turn.complete', ($, e) => ({ text: '', usage: e.usage }))
+  await $.session.measure(measure(42, 8, 63))
+  await $.turn.complete(turn(80, 10, 10))
+  await $.command.run({ command: 'clawd', args: '' } as never)
+
+  const normal = await $.ui.mount({ ...BAND(false), surface: 'desktop' })
+  const normalClawd = String((await normal.findAll({ type: 'Svg' }))[0].props?.source)
+  expect(normalClawd).not.toContain(T.zh.hiddenNarrow)
+
+  const narrow = await $.ui.mount({ ...BAND(false), props: { ...BAND(false).props, bodyColumns: 30 }, surface: 'desktop' })
+  const narrowClawd = String((await narrow.findAll({ type: 'Svg' }))[0].props?.source)
+  expect(narrowClawd).toContain(`${T.zh.hiddenNarrow}\n· ${T.zh.cache}`)
+  expect(narrowClawd).toContain(`\n· ${T.zh.weekly}`)
+})
+
+test('Clawd uses translated hidden-gauge hover lines in English', EN, async ($, on) => {
+  on('session.measure', ($, e) => ({ changed: e.changed }))
+  on('turn.complete', ($, e) => ({ text: '', usage: e.usage }))
+  await $.session.measure(measure(42, 8, 63))
+  await $.turn.complete(turn(80, 10, 10))
+  await $.command.run({ command: 'clawd', args: '' } as never)
+
+  const narrow = await $.ui.mount({ ...BAND(false), props: { ...BAND(false).props, bodyColumns: 30 }, surface: 'desktop' })
+  const narrowClawd = String((await narrow.findAll({ type: 'Svg' }))[0].props?.source)
+  expect(narrowClawd).toContain(`${T.en.hiddenNarrow}\n· ${T.en.cache}`)
+  expect(narrowClawd).toContain(`\n· ${T.en.weekly}`)
 })

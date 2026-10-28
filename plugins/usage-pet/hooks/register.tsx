@@ -9,10 +9,7 @@ import {
   type BandSvgParts,
   H,
   H_MINI,
-  MIN_BAND_W_WITH_ACTIVITY,
-  MIN_BAND_W_WITH_COST_AND_ACTIVITY,
-  MIN_BAND_W_WITH_FABLE_AND_COST_AND_ACTIVITY,
-  MIN_BAND_W_WITH_FABLE_AND_ACTIVITY,
+  minBandWidth,
   formatCost,
   type PetView,
   tokensText,
@@ -34,6 +31,8 @@ type ToolBurst = { owner: number; calls: Set<number>; frame?: ActivityFrame; tim
 // Limit retained SVG time values across host remounts; reuse stays source-stable within the window.
 const GAUGE_SOURCE_MEMO_MAX_AGE_MS = 60_000
 let previousGaugeSvg: (Pick<BandSvgParts, 'gauges' | 'gaugesKey'> & { createdAt: number }) | undefined
+const TITLE_XML_ENTITIES: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' }
+const escapeTitleXml = (text: string) => text.replace(/[&<>"']/g, char => TITLE_XML_ENTITIES[char])
 
 const barsRef = { plugin: 'usage-pet', key: 'bars' } as const
 const cacheRef = { plugin: 'usage-pet', key: 'cache' } as const
@@ -1619,14 +1618,9 @@ export const register: Register = (on, options) => {
         const { Box, Button, Svg } = $.ui.resolve(e)
         const activity = await read($, activityAtom)
         const agents = await read($, agentsAtom)
-        // 不设大下限：以前最少 560px，窗口窄时信息栏比可用宽度还宽，按钮就被挤到下一行。
-        // 窄了由 bandSvgParts 自己逐级收（去副标题 → 只剩圆环），按钮始终在同一行右侧
+        // 至少留上下文和 5 小时额度；其余读数由 bandSvgParts 按优先级隐藏。
         // Clawd 工具图标的空间始终保留，避免姿势变化挪动圆环
-        const hasFable = bars.to?.fable !== undefined
-        const hasCost = bars.to?.cost !== undefined
-        const minimumWidth = hasFable
-          ? hasCost ? MIN_BAND_W_WITH_FABLE_AND_COST_AND_ACTIVITY : MIN_BAND_W_WITH_FABLE_AND_ACTIVITY
-          : hasCost ? MIN_BAND_W_WITH_COST_AND_ACTIVITY : MIN_BAND_W_WITH_ACTIVITY
+        const minimumWidth = minBandWidth(2)
         const width = Math.max(minimumWidth, e.props.bodyColumns * PX_PER_COLUMN - 8 - BUTTON_W - BAND_SAFETY_PX)
         const pinned = await read($, pinnedAtom)
         const dither = await read($, ditherAtom)
@@ -1655,6 +1649,11 @@ export const register: Register = (on, options) => {
           agents.count,
           dither,
         )
+        if (parts.hidden.length > 0) {
+          titleLines.push(T[lang].hiddenNarrow, ...parts.hidden.map(title => `· ${title}`))
+          const title = escapeTitleXml(titleLines.join('\n'))
+          parts.clawd = parts.clawd.replace(/<title>[\s\S]*?<\/title>/, `<title>${title}</title>`)
+        }
         let gaugesSource = parts.gauges
         if (
           previousGaugeSvg &&

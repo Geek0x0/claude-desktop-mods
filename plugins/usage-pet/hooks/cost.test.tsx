@@ -1,7 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 
 import type { Bars } from '../types'
-import { bandAlt, bandSvgParts, formatCost, MIN_BAND_W_WITH_COST_AND_ACTIVITY, MIN_BAND_W_WITH_FABLE_AND_COST_AND_ACTIVITY } from './band'
+import { bandAlt, bandSvgParts, formatCost, MIN_BAND_W_WITH_COST_AND_ACTIVITY, MIN_BAND_W_WITH_FABLE_AND_COST_AND_ACTIVITY, minBandWidth } from './band'
 import { cardAlt, cardSvg, type CardData } from './card'
 import { NEW_PET } from './pet'
 
@@ -159,7 +159,7 @@ test('费用来源：读取 session.usage，按 session.measure 更新并在无�
   const narrow = await $.ui.mount({ ...BAND, props: { ...BAND.props, bodyColumns: 30 } })
   const narrowSvgs = await narrow.findAll({ type: 'Svg' })
   expect(narrowSvgs[0].props?.width).toBe(120)
-  expect(narrowSvgs[0].props?.width as number + (narrowSvgs[1].props?.width as number)).toBe(MIN_BAND_W_WITH_COST_AND_ACTIVITY)
+  expect(narrowSvgs[0].props?.width as number + (narrowSvgs[1].props?.width as number)).toBe(minBandWidth(2))
   await $.session.measure({ ...MEASURE, cost: { usd: 1.25 } } as never)
   expect(barWrites).toBe(1)
   expect(await band()).toContain('>$1.25</text>')

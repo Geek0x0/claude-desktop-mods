@@ -6,6 +6,13 @@ export type Release = { version: string; notes: Record<Lang, string[]> }
 
 export const CHANGELOG: Release[] = [
   {
+    version: '1.18.0',
+    notes: {
+      zh: ['修复：极窄窗口下，展开信息栏和收起细条会按优先级隐藏较低优先级的读数（费用、Fable 每周、缓存命中、每周）；上下文和 5 小时读数始终保留。悬停 Clawd 可查看被隐藏的读数；▲/▼ 按钮也不再换到第二行'],
+      en: ['Fix: in very narrow windows, the expanded band and collapsed strip now hide lower-priority readings (Cost, Fable weekly, Cache hit, then Weekly); Context and 5-hour always stay. Hover Clawd to see hidden readings, and the ▲/▼ button no longer wraps to a second row'],
+    },
+  },
+  {
     version: '1.17.1',
     notes: {
       zh: ['修复：展开/收起和 `/clawd-dither` 的选择现在保存在插件存储中并由所有会话共享；新会话会沿用设置，已打开的会话会在下一轮后更新'],

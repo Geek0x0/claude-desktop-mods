@@ -38,7 +38,7 @@ Forked from [manson341349-beep/claude-desktop-mods](https://github.com/manson341
 
 ## 中文
 
-### usage-pet：Clawd 信息栏（v1.17.1）
+### usage-pet：Clawd 信息栏（v1.18.0）
 
 - **四个基础用量环**：上下文、5 小时额度、每周额度、缓存命中率（仅主对话本会话，排除子代理）；圆环、标签和百分比比早期版本更大。80% 变琥珀色，95% 变红，缓存命中低于 50% 才提醒。上下文环标出自动压缩位置（关闭自动压缩时不显示），悬停可看距压缩还剩多少 tokens，已到位置时显示「即将压缩」；5 小时、每周和 Fable 每周额度若可能在重置前用完，悬停显示预计用完时间（窗口前 10% 不显示），否则显示剩余时间
 - **Fable 每周（可选第五环）**：有额度时显示在每周之后，沿用额度环的琥珀色 / 红色阈值。仅当符合条件的 Claude 订阅 OAuth 登录有 Fable 每周额度时显示；API 密钥、Bedrock/Vertex、网关、未登录或请求失败时不显示，刷新失败保留上次读数。插件在会话开始和回复后自行 GET Anthropic 用量接口（`https://api.anthropic.com/api/oauth/usage`），最多每 5 分钟一次；宿主添加凭据，插件看不到令牌，也不发送提示词、回复或遥测。策略 `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` 或组织网页请求限制可能会阻止获取
@@ -58,7 +58,7 @@ Forked from [manson341349-beep/claude-desktop-mods](https://github.com/manson341
 - **万圣节**（10 月 25 日到 11 月 1 日）：Clawd 戴巫师帽、拎南瓜桶；Claude 干活时披上床单变幽灵，旁边飘的代码换成糖果。每答完一轮他会举起桶**讨糖**：点他一下就是给糖（开心 3 秒），连点两下空翻、三下跳起来撒糖；12 秒没人理他就生气跺脚，点一下就消气。不想要时段、季节和节日装扮：`/config` 里把 `seasonal` 填成 `off`
 - **鼠标**：放到 Clawd 身上会冒爱心，点它会空翻；放到圆环上显示详细数值
 - **近 7 天用量**：信息栏展开时，鼠标放到 Clawd 身上显示最近 7 天（从现在往回 7×24 小时）用了多少 tokens，所有会话合计、含子代理；战报卡上也有这一行。插件自己按小时记账（Claude 只给当前会话的用量），所以从装上 1.9.0 起才开始记，不满 7 天时会写明从哪天开始
-- **切换**：信息栏默认保持收起为 30px 的细条，点右侧 ▲ 或运行 `/clawd` 展开；点 ▼ 或再次运行 `/clawd` 收起
+- **切换**：信息栏默认保持收起为 30px 的细条，点右侧 ▲ 或运行 `/clawd` 展开；点 ▼ 或再次运行 `/clawd` 收起。窗口特别窄时，会依次隐藏费用、Fable 每周、缓存命中和每周额度；上下文与 5 小时额度始终保留。
 
 ### 安装
 
@@ -105,7 +105,7 @@ claude plugin uninstall usage-pet@claude-desktop-mods
 
 ## English
 
-### usage-pet (v1.17.1)
+### usage-pet (v1.18.0)
 
 - **Four base rings**: context, 5-hour limit, weekly limit and cache hit rate (cumulative for the main conversation this session, excluding subagents), plus an optional fifth Fable weekly ring. Rings, labels and percentages are larger than in earlier versions. Amber at 80%, red at 95%; cache hit warns below 50%. The context ring marks where auto-compaction kicks in (hidden when auto-compact is off); hover to see tokens left, or "compacting soon" at or past the mark. If a 5-hour, weekly or Fable weekly limit may run out before reset, hover to see when (hidden in the first 10% of a window); otherwise it shows time left
 - **Fable weekly**: when available, this separate allowance appears after Weekly with percent used and reset time, using the same amber/red thresholds. It appears only for an eligible first-party OAuth Claude subscription; API keys, Bedrock/Vertex, gateways, no login or a failed request leave it hidden, and refresh failures keep the last good value. The plugin fetches it at session start and after replies, at most every 5 minutes, using host-side authorization; no token, prompts, replies or telemetry are sent. `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` or an organization policy can block the GET.
@@ -125,7 +125,7 @@ claude plugin uninstall usage-pet@claude-desktop-mods
 - **Halloween** (Oct 25 to Nov 1): Clawd wears a witch hat and carries a pumpkin pail; while Claude works he turns into a bedsheet ghost and candy floats up instead of code. After each turn he holds out his pail for **trick or treat**: click him once to give candy (he's happy for 3 seconds), twice for a flip, three times and he jumps for joy and throws candy. Ignore him for 12 seconds and he stomps in a huff until you click. Turn time-of-day, seasonal and holiday looks off with `seasonal: off` in `/config`
 - **Pointer**: hover Clawd for hearts, click for a flip; hover a ring for details
 - **Last 7 days**: with the band expanded, hover Clawd to see how many tokens you used in the last 7 days (the past 7×24 hours), all sessions together, subagents included; the report card shows it too. The plugin keeps its own hourly tally (Claude only reports the current session), so counting starts when you install 1.9.0, and until a full week has passed it says since when
-- **Toggle**: it stays collapsed as a 30px strip until you click ▲ or run `/clawd`; click ▼ or run `/clawd` again to collapse it
+- **Toggle**: it stays collapsed as a 30px strip until you click ▲ or run `/clawd`; click ▼ or run `/clawd` again to collapse it. In very narrow windows, Cost, Fable weekly, Cache hit and then Weekly are hidden as needed; Context and 5-hour stay visible.
 
 ### Install
 

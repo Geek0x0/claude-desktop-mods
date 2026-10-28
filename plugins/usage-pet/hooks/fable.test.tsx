@@ -1,7 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 
 import type { Bars } from '../types'
-import { bandAlt, bandSvgParts, MIN_BAND_W_WITH_ACTIVITY, MIN_BAND_W_WITH_FABLE_AND_ACTIVITY } from './band'
+import { bandAlt, bandSvgParts, MIN_BAND_W_WITH_FABLE_AND_ACTIVITY, minBandWidth } from './band'
 
 const bandSvg = (...args: Parameters<typeof bandSvgParts>) => {
   const { gauges, clawd } = bandSvgParts(...args)
@@ -138,7 +138,7 @@ test('session.start 读取大小写不敏感的 Fable 每周额度，后续用�
 
   const narrow = await $.ui.mount(NARROW_BAND)
   const narrowSvgs = await narrow.findAll({ type: 'Svg' })
-  expect((narrowSvgs[0].props?.width as number) + (narrowSvgs[1].props?.width as number)).toBe(MIN_BAND_W_WITH_FABLE_AND_ACTIVITY)
+  expect((narrowSvgs[0].props?.width as number) + (narrowSvgs[1].props?.width as number)).toBe(minBandWidth(2))
 })
 
 test('Fable 返回成功但没有匹配额度时，清除旧圆环', { options: { language: 'en' } }, async ($, on) => {
@@ -185,8 +185,8 @@ test('没有第一方授权时跳过 Fable 请求，普通信息栏仍正常显�
   const svgs = await ui.findAll({ type: 'Svg' })
   const svg = svgs[1]
   expect(network.fetches).toBe(0)
-  expect((svgs[0].props?.width as number) + (svgs[1].props?.width as number)).toBe(MIN_BAND_W_WITH_ACTIVITY)
-  expect(gaugeCount(String(svg.props?.source))).toBe(4)
+  expect((svgs[0].props?.width as number) + (svgs[1].props?.width as number)).toBe(minBandWidth(2))
+  expect(gaugeCount(String(svg.props?.source))).toBe(2)
   expect(String(svg.props?.alt)).not.toContain('Fable')
 })
 

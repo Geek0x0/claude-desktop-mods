@@ -1,6 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { PromptSubmitInput, SessionCompactInput } from 'claude-code'
 
+import { minBandWidth } from './band'
 import { mergePetProgress, NEW_PET, levelOf, normalize, onTurn, threshold } from './pet'
 
 const ZH = { options: { language: 'zh' } }
@@ -479,7 +480,7 @@ test('工具调用期间显示工具图标，完成后恢复工作字形并透�
 
   expect(duringSvg).toContain('class="activity-icon terminal"')
   expect(duringSvg).toContain('<g class="laptop">')
-  expect((duringSvgs[0].props?.width as number) + (duringSvgs[1].props?.width as number)).toBe(398)
+  expect((duringSvgs[0].props?.width as number) + (duringSvgs[1].props?.width as number)).toBe(minBandWidth(2))
 
   release()
   expect(await pending).toEqual({ result: { marker: 'unchanged' } })

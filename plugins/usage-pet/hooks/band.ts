@@ -418,6 +418,10 @@ export const MIN_BAND_W_WITH_FABLE_AND_ACTIVITY = MIN_BAND_W_WITH_FABLE + ACTIVI
 export const MIN_BAND_W_WITH_COST_AND_ACTIVITY = MIN_BAND_W_WITH_COST + ACTIVITY_LAYOUT_RESERVE
 export const MIN_BAND_W_WITH_FABLE_AND_COST_AND_ACTIVITY = MIN_BAND_W_WITH_FABLE_AND_COST + ACTIVITY_LAYOUT_RESERVE
 
+export function minBandWidth(count: number): number {
+  return Math.ceil(2 * CLAWD_X + CLAWD_W + count * RING_W + count * MIN_GAP.rings) + ACTIVITY_LAYOUT_RESERVE
+}
+
 export function pickLayout(gauges: { label: string; sub: string; detail: string }[], width: number, clawdWidth = CLAWD_W + ACTIVITY_LAYOUT_RESERVE, lang: Lang = 'zh'): Layout {
   const need = (layout: Layout) =>
     2 * CLAWD_X + clawdWidth + gauges.reduce((a, g) => a + blockWidth(g as Gauge, layout, lang), 0) + gauges.length * MIN_GAP[layout]
@@ -442,6 +446,22 @@ type Gauge = {
   timerMs?: number
   timerTtlMs?: number
   timerStartedAt?: number
+}
+
+const GAUGE_DROP_ORDER = ['cost', 'f', 'k', 'w']
+
+// 空间不够时依次收起费用、Fable、缓存命中和每周额度；上下文与 5 小时额度始终保留。
+function dropGauges(gauges: Gauge[], fits: (shown: Gauge[]) => boolean): { shown: Gauge[]; hidden: Gauge[] } {
+  const shown = [...gauges]
+  const hidden: Gauge[] = []
+
+  for (const id of GAUGE_DROP_ORDER) {
+    if (shown.length <= 2 || fits(shown)) break
+    const index = shown.findIndex(g => g.id === id)
+    if (index >= 0) hidden.push(shown.splice(index, 1)[0])
+  }
+
+  return { shown, hidden }
 }
 
 const off = (p: number | undefined) => (C * (1 - Math.min(100, Math.max(0, p ?? 0)) / 100)).toFixed(2)
@@ -1185,10 +1205,15 @@ function ditherSvg(width: number, height: number): string {
 // ───────────────────────── 整条 ─────────────────────────
 
 // 收起后的细条：所有可用读数的「标签 细进度条 百分比」，靠间距分组。
-function miniGaugeContent(gauges: Gauge[], width: number, lang: Lang): { content: string; canShowActivityIcon: boolean } {
+function miniGaugeContent(gauges: Gauge[], width: number, lang: Lang): {
+  content: string
+  canShowActivityIcon: boolean
+  shown: Gauge[]
+  hidden: Gauge[]
+} {
   // 窄窗口同样逐级收：标签 + 细条 + 百分比 → 标签 + 百分比 → 短标签 + 百分比 → 只剩百分比（完整标签在悬停提示里）
-  const measure = (showBar: boolean, showLabel: boolean, isShort = false) =>
-    gauges.map(g => {
+  const measure = (shown: Gauge[], showBar: boolean, showLabel: boolean, isShort = false) =>
+    shown.map(g => {
       const value = g.kind === 'cost' ? g.sub : g.to === undefined ? '—' : `${Math.round(g.to)}%`
       const label = isShort ? (g.short ?? g.label) : g.label
       const labelW = showLabel ? textWidth(label, MINI_LABEL_SIZE) : 0
@@ -1200,8 +1225,14 @@ function miniGaugeContent(gauges: Gauge[], width: number, lang: Lang): { content
   // 间距至少 24px：Clawd 干活时会往右跑 20px，不能撞上第一项。图标空间一直预留。
   const fits = (list: { w: number }[]) =>
     2 * MINI_X + MINI_LAYOUT_W + MINI_ACTIVITY_RESERVE + list.reduce((a, b) => a + b.w, 0) + list.length * 24 <= width
-  const compact = measure(false, false)
-  const layouts = [measure(true, true), measure(false, true), measure(false, true, true), compact]
+  const selection = dropGauges(gauges, shown => fits(measure(shown, false, false)))
+  const compact = measure(selection.shown, false, false)
+  const layouts = [
+    measure(selection.shown, true, true),
+    measure(selection.shown, false, true),
+    measure(selection.shown, false, true, true),
+    compact,
+  ]
   const items = layouts.find(list => fits(list))
   const canShowActivityIcon = items !== undefined
   const selected = items ?? compact
@@ -1228,13 +1259,18 @@ function miniGaugeContent(gauges: Gauge[], width: number, lang: Lang): { content
     x += w + gap
   })
 
-  return { content: `<g class="gauges">${parts.join('')}</g>`, canShowActivityIcon }
+  return {
+    content: `<g class="gauges">${parts.join('')}</g>`,
+    canShowActivityIcon,
+    shown: selection.shown,
+    hidden: selection.hidden,
+  }
 }
 
 // cacheTimer：离缓存过期的毫秒数和有效期（Claude 干活时不显示：那时缓存一直在用）
 export type CacheTimer = { remainMs: number; ttlMs: number; startedAt?: number }
 
-export type BandSvgParts = { clawd: string; gauges: string; cut: number; gaugesKey: string }
+export type BandSvgParts = { clawd: string; gauges: string; cut: number; gaugesKey: string; hidden: string[] }
 
 const AGENT_BADGE_STYLE =
   `.agent-count rect{fill:#7C6AE0;stroke:#1C1B1A;stroke-opacity:.35}.agent-count text{fill:#fff}` +
@@ -1394,31 +1430,39 @@ export function bandSvgParts(
         ]
       : []),
   ]
-  const hasCost = gauges.some(g => g.kind === 'cost')
-  const hasCompactTick = gauges.some(g => g.tickAt !== undefined)
-  const hasTimer = gauges.some(g => g.timerMs !== undefined)
   const cut = Math.ceil(mini ? MINI_X + MINI_LAYOUT_W + MINI_ACTIVITY_RESERVE : CLAWD_X + CLAWD_W + ACTIVITY_LAYOUT_RESERVE)
   const clawdChanged = isChanged && !isFirst
   const mood = moodForClawd(isWorking, displayActivity, pet)
   let gaugesContent: string
   let gaugesStyle: string
   let showActivityIcon = displayActivity?.icon !== undefined
+  let shownGauges: Gauge[]
+  let hidden: Gauge[]
 
   if (mini) {
     const miniGauge = miniGaugeContent(gauges, width, lang)
+    shownGauges = miniGauge.shown
+    hidden = miniGauge.hidden
     showActivityIcon = displayActivity?.icon !== undefined && miniGauge.canShowActivityIcon
     gaugesContent = miniGauge.content
-    gaugesStyle = GAUGE_BASE_STYLE + MINI_GAUGE_STYLE + (hasTimer ? TIMER_STYLE : '') + (showDither ? DITHER_STYLE + DITHER_GAUGE_STYLE : '')
+    gaugesStyle =
+      GAUGE_BASE_STYLE +
+      MINI_GAUGE_STYLE +
+      (shownGauges.some(g => g.timerMs !== undefined) ? TIMER_STYLE : '') +
+      (showDither ? DITHER_STYLE + DITHER_GAUGE_STYLE : '')
   } else {
+    const selection = dropGauges(gauges, shown => minBandWidth(shown.length) <= width)
+    shownGauges = selection.shown
+    hidden = selection.hidden
     // 按完整信息栏坐标排：左右留白相等，工具图标空间固定预留
     const clawdWidth = CLAWD_W + ACTIVITY_LAYOUT_RESERVE
-    const layout = pickLayout(gauges, width, clawdWidth, lang)
-    const widths = gauges.map(g => blockWidth(g, layout, lang))
-    const gap = Math.max(MIN_GAP[layout], (width - 2 * CLAWD_X - clawdWidth - widths.reduce((a, b) => a + b, 0)) / gauges.length)
+    const layout = pickLayout(shownGauges, width, clawdWidth, lang)
+    const widths = shownGauges.map(g => blockWidth(g, layout, lang))
+    const gap = Math.max(MIN_GAP[layout], (width - 2 * CLAWD_X - clawdWidth - widths.reduce((a, b) => a + b, 0)) / shownGauges.length)
     const xs: number[] = []
     widths.reduce((x, w) => (xs.push(x), x + w + gap), CLAWD_X + clawdWidth + gap)
-    const blocks = gauges.map((g, i) => gauge(g, i, xs[i], widths[i], isChanged, isFirst, css, layout, lang)).join('')
-    const seps = Array.from({ length: gauges.length - 1 }, (_, i) => i + 1)
+    const blocks = shownGauges.map((g, i) => gauge(g, i, xs[i], widths[i], isChanged, isFirst, css, layout, lang)).join('')
+    const seps = Array.from({ length: shownGauges.length - 1 }, (_, i) => i + 1)
       .map(i => {
         const mid = (xs[i] - gap / 2).toFixed(1)
         return `<line x1="${mid}" y1="${RING_CY - R + 1}" x2="${mid}" y2="${RING_CY + R - 1}" class="sep"/>`
@@ -1428,9 +1472,9 @@ export function bandSvgParts(
     gaugesStyle =
       GAUGE_BASE_STYLE +
       EXPANDED_STYLE +
-      (hasCompactTick ? COMPACT_TICK_STYLE : '') +
-      (hasTimer ? TIMER_STYLE : '') +
-      (hasCost ? COST_STYLE : '') +
+      (shownGauges.some(g => g.tickAt !== undefined) ? COMPACT_TICK_STYLE : '') +
+      (shownGauges.some(g => g.timerMs !== undefined) ? TIMER_STYLE : '') +
+      (shownGauges.some(g => g.kind === 'cost') ? COST_STYLE : '') +
       css.join('') +
       (showDither ? DITHER_STYLE + DITHER_GAUGE_STYLE : '')
   }
@@ -1455,6 +1499,20 @@ export function bandSvgParts(
     (showDither ? ditherSvg(width, height) : '') +
     gaugesContent +
     `</g>`
+  // 被省略的圆环数据变化不该让显示出来的圆环重画
+  const HIDDEN_BAR_FIELDS: Record<string, string[]> = { cost: ['cost'], f: ['fable'], k: ['cache'], w: ['weekly'] }
+  const barsForKey = (snap: typeof to) => {
+    if (!snap) return snap
+    const copy: Record<string, unknown> = { ...snap }
+    for (const g of hidden) for (const field of HIDDEN_BAR_FIELDS[g.id] ?? []) delete copy[field]
+
+    return copy
+  }
+  // 缓存依据只放原始数据和离散状态，不放按分钟变化的文字（还剩 N 分钟、约 HH:MM 用完），否则每分钟都会重画圆环
+  const shownForKey = shownGauges.map(g => ({
+    id: g.id,
+    timer: g.timerMs === undefined ? null : { ttlMs: g.timerTtlMs ?? g.timerMs, expired: g.timerMs <= 0, startedAt: g.timerStartedAt },
+  }))
   const paceKey = (window: { percent: number; resetsAt?: string } | undefined, lengthMs: number, weekly: boolean) => {
     const at = paceWarningAt(window, lengthMs, now)
     if (at === undefined) return null
@@ -1463,16 +1521,17 @@ export function bandSvgParts(
 
     return date.toDateString() === new Date(now).toDateString() ? false : date.getDay()
   }
+  const shown = (id: string) => shownGauges.some(g => g.id === id)
   const gaugesKey = JSON.stringify({
-    bars: { from, to },
-    pace: {
-      session: paceKey(to?.session, FIVE_HOUR_MS, false),
-      weekly: paceKey(to?.weekly, WEEK_MS, true),
-      fable: paceKey(to?.fable, WEEK_MS, true),
-    },
-    isChanged,
+    bars: { from: barsForKey(from), to: barsForKey(to) },
+    gauges: shownForKey,
+    isChanged: shownGauges.some(g => g.from !== g.to),
     isFirst,
-    timer: timer ? { ttlMs: timer.ttlMs, expired: timer.remainMs <= 0, startedAt: timer.startedAt } : null,
+    pace: {
+      session: shown('s') ? paceKey(to?.session, FIVE_HOUR_MS, false) : null,
+      weekly: shown('w') ? paceKey(to?.weekly, WEEK_MS, true) : null,
+      fable: shown('f') ? paceKey(to?.fable, WEEK_MS, true) : null,
+    },
     isWorking,
     dither,
     width,
@@ -1485,6 +1544,7 @@ export function bandSvgParts(
     gauges: svgDocument(width - cut, height, gaugesStyle, GAUGE_DEFS + gaugesContentInFullCoordinates),
     cut,
     gaugesKey,
+    hidden: hidden.map(g => g.title),
   }
 }
 
