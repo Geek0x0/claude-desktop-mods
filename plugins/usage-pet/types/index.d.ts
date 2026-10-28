@@ -44,6 +44,6 @@ export type AgentState = { count: number; rows: { type: string; description: str
 
 declare module 'claude-code' {
   interface PluginState {
-    'usage-pet': { bars: Bars; cache: CacheTotals; pinned: boolean; lang: 'zh' | 'en'; pet: Pet; report: Report; ask: number; warm: number; week: Week; activity: Activity; agents: AgentState }
+    'usage-pet': { bars: Bars; cache: CacheTotals; pinned: boolean; dither: boolean; lang: 'zh' | 'en'; pet: Pet; report: Report; ask: number; warm: number; week: Week; activity: Activity; agents: AgentState }
   }
 }

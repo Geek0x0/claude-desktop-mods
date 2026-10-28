@@ -59,6 +59,8 @@ export const T = {
     agentsRunning: (n: number) => `子代理：${n} 个运行中`,
     pinned: 'Clawd 信息栏：已展开；点 ▼ 收起',
     autoCollapse: 'Clawd 信息栏：已收起；点 ▲ 展开',
+    ditherOn: '紫色像素点阵：已开启',
+    ditherOff: '紫色像素点阵：已关闭',
     // 养成
     achievement: {
       'cache-99': ['缓存大师', '单轮缓存命中 99%'],
@@ -129,6 +131,8 @@ export const T = {
     agentsRunning: (n: number) => `Subagents: ${n} running`,
     pinned: 'Clawd band: expanded; click ▼ to collapse',
     autoCollapse: 'Clawd band: collapsed; click ▲ to expand',
+    ditherOn: 'Purple pixel dither: on',
+    ditherOff: 'Purple pixel dither: off',
     achievement: {
       'cache-99': ['Cache master', '99% cache hit in one turn'],
       'streak-3': ['Warming up', '3 days in a row'],

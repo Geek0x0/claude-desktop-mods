@@ -36,6 +36,7 @@ let previousGaugeSvg: (Pick<BandSvgParts, 'gauges' | 'gaugesKey'> & { createdAt:
 const barsRef = { plugin: 'usage-pet', key: 'bars' } as const
 const cacheRef = { plugin: 'usage-pet', key: 'cache' } as const
 const pinnedRef = { plugin: 'usage-pet', key: 'pinned' } as const
+const ditherRef = { plugin: 'usage-pet', key: 'dither' } as const
 const langRef = { plugin: 'usage-pet', key: 'lang' } as const
 const petRef = { plugin: 'usage-pet', key: 'pet' } as const
 const reportRef = { plugin: 'usage-pet', key: 'report' } as const
@@ -51,6 +52,8 @@ const cacheAtom = atom(cacheRef, { read: 0, write: 0, fresh: 0 } as CacheTotals)
 
 // 展开 / 收起：只由用户通过按钮或 /clawd 切换；pinned 键保留以沿用已有用户选择
 const pinnedAtom = atom(pinnedRef, false) as UsagePetAtom<'pinned', boolean>
+// 紫色像素点阵：用户选择跨会话保留；默认开启
+const ditherAtom = atom(ditherRef, true) as UsagePetAtom<'dither', boolean>
 // 界面语言：session.start 时定下来（/config 选了就用选的，auto 就跟随系统）
 const langAtom = atom(langRef, 'en' as Lang) as UsagePetAtom<'lang', Lang>
 // 养成：跨会话的那份在 $.store 的 PET_KEY；这里留一份给信息栏画
@@ -146,6 +149,7 @@ function readUsagePetAtom($: EngineInterface, key: UsagePetAtomKey) {
     case 'bars': return $.state.get(barsRef)
     case 'cache': return $.state.get(cacheRef)
     case 'pinned': return $.state.get(pinnedRef)
+    case 'dither': return $.state.get(ditherRef)
     case 'lang': return $.state.get(langRef)
     case 'pet': return $.state.get(petRef)
     case 'report': return $.state.get(reportRef)
@@ -162,6 +166,7 @@ function writeUsagePetAtom($: EngineInterface, key: UsagePetAtomKey, value: unkn
     case 'bars': return $.state.set(barsRef, value as Bars, { ifVersion: version })
     case 'cache': return $.state.set(cacheRef, value as CacheTotals, { ifVersion: version })
     case 'pinned': return $.state.set(pinnedRef, value as boolean, { ifVersion: version })
+    case 'dither': return $.state.set(ditherRef, value as boolean, { ifVersion: version })
     case 'lang': return $.state.set(langRef, value as Lang, { ifVersion: version })
     case 'pet': return $.state.set(petRef, value as Pet, { ifVersion: version })
     case 'report': return $.state.set(reportRef, value as Report, { ifVersion: version })
@@ -1188,6 +1193,7 @@ export const register: Register = (on, options) => {
         description: 'Clawd band: expand / collapse · 展开 / 收起',
         immediate: true,
       })
+      await $.command.register({ name: 'clawd-dither', description: 'Clawd band: purple pixel dither on / off · 紫色像素点阵 开 / 关', immediate: true })
       await $.command.register({ name: 'clawd-card', description: `${T.en.cardCommand} · ${T.zh.cardCommand}` })
     })
 
@@ -1501,6 +1507,20 @@ export const register: Register = (on, options) => {
     return { text: pinned ? t.pinned : t.autoCollapse }
   })
 
+  on('command.run', { command: 'clawd-dither' }, async ($, e) => {
+    const arg = String(e.args ?? '').trim().toLowerCase()
+    const dither = arg === 'on' || arg === '开'
+      ? true
+      : arg === 'off' || arg === '关'
+        ? false
+        : !(await read($, ditherAtom))
+    await updateIfChanged($, ditherAtom, () => dither)
+
+    const t = T[await langOf($, choice)]
+
+    return { text: dither ? t.ditherOn : t.ditherOff }
+  })
+
   on('session.measure', async ($, e, next) => {
     await safeBookkeeping($, 'session.measure bookkeeping failed', async () => {
       const compactAt = await compactThresholdForWindow($, e.context.window)
@@ -1544,6 +1564,7 @@ export const register: Register = (on, options) => {
           : hasCost ? MIN_BAND_W_WITH_COST_AND_ACTIVITY : MIN_BAND_W_WITH_ACTIVITY
         const width = Math.max(minimumWidth, e.props.bodyColumns * PX_PER_COLUMN - 8 - BUTTON_W - BAND_SAFETY_PX)
         const pinned = await read($, pinnedAtom)
+        const dither = await read($, ditherAtom)
         const isMini = !pinned
         // 近 7 天用量只在展开时写进 Clawd 的悬停提示：收起时是一条细条，不放
         const week = isMini ? undefined : weekLine(await read($, weekAtom), lang, now)
@@ -1567,6 +1588,7 @@ export const register: Register = (on, options) => {
           activity,
           now,
           agents.count,
+          dither,
         )
         let gaugesSource = parts.gauges
         if (

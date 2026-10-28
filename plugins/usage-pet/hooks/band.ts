@@ -1281,7 +1281,9 @@ export function bandSvgParts(
   activity?: Activity,
   now = Date.now(),
   agents = 0,
+  dither = true,
 ): BandSvgParts {
+  const showDither = isWorking && dither
   // The host's live working flag outranks a lingering done/sleep pose.
   const displayActivity: Activity | undefined =
     isWorking && (activity?.kind === 'done' || activity?.kind === 'sleep') ? { kind: 'working' } : activity
@@ -1406,7 +1408,7 @@ export function bandSvgParts(
     const miniGauge = miniGaugeContent(gauges, width, lang)
     showActivityIcon = displayActivity?.icon !== undefined && miniGauge.canShowActivityIcon
     gaugesContent = miniGauge.content
-    gaugesStyle = GAUGE_BASE_STYLE + MINI_GAUGE_STYLE + (hasTimer ? TIMER_STYLE : '') + (isWorking ? DITHER_STYLE + DITHER_GAUGE_STYLE : '')
+    gaugesStyle = GAUGE_BASE_STYLE + MINI_GAUGE_STYLE + (hasTimer ? TIMER_STYLE : '') + (showDither ? DITHER_STYLE + DITHER_GAUGE_STYLE : '')
   } else {
     // 按完整信息栏坐标排：左右留白相等，工具图标空间固定预留
     const clawdWidth = CLAWD_W + ACTIVITY_LAYOUT_RESERVE
@@ -1430,7 +1432,7 @@ export function bandSvgParts(
       (hasTimer ? TIMER_STYLE : '') +
       (hasCost ? COST_STYLE : '') +
       css.join('') +
-      (isWorking ? DITHER_STYLE + DITHER_GAUGE_STYLE : '')
+      (showDither ? DITHER_STYLE + DITHER_GAUGE_STYLE : '')
   }
 
   const clawdStyle =
@@ -1440,17 +1442,17 @@ export function bandSvgParts(
     (isStressed ? SWEAT_STYLE : '') +
     (mood ? MOOD_STYLE : '') +
     (pet?.halloween ? HALLOWEEN_STYLE : '') +
-    (isWorking ? DITHER_STYLE : '') +
+    (showDither ? DITHER_STYLE : '') +
     (agents > 0 ? AGENT_BADGE_STYLE : '')
   const height = mini ? H_MINI : H
   const clawdContent =
     CLAWD_DEFS +
-    (isWorking ? ditherSvg(width, height) : '') +
+    (showDither ? ditherSvg(width, height) : '') +
     clawd(isWorking, isStressed, clawdChanged, mini, isChill, pet, displayActivity, showActivityIcon, agents) +
     (agents > 0 ? agentBadgeSvg(agents, mini) : '')
   const gaugesContentInFullCoordinates =
     `<g transform="translate(-${cut} 0)">` +
-    (isWorking ? ditherSvg(width, height) : '') +
+    (showDither ? ditherSvg(width, height) : '') +
     gaugesContent +
     `</g>`
   const paceKey = (window: { percent: number; resetsAt?: string } | undefined, lengthMs: number, weekly: boolean) => {
@@ -1472,6 +1474,7 @@ export function bandSvgParts(
     isFirst,
     timer: timer ? { ttlMs: timer.ttlMs, expired: timer.remainMs <= 0, startedAt: timer.startedAt } : null,
     isWorking,
+    dither,
     width,
     mini,
     lang,

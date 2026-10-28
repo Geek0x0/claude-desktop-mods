@@ -6,6 +6,13 @@ export type Release = { version: string; notes: Record<Lang, string[]> }
 
 export const CHANGELOG: Release[] = [
   {
+    version: '1.17.0',
+    notes: {
+      zh: ['新增：运行 `/clawd-dither on|off` 控制 Claude 工作时显示的紫色像素点阵；不带参数可切换，选择会跨会话保留（仅深色模式显示）'],
+      en: ['Added `/clawd-dither on|off` to control the purple pixel dither shown while Claude works; run it without an argument to toggle, and the choice persists across sessions (shown only in dark mode)'],
+    },
+  },
+  {
     version: '1.16.2',
     notes: {
       zh: ['修复：适配较新的 Claude Desktop 版本，信息栏略微收窄并留出 40px 边距，展开/收起按钮保持在同一行'],

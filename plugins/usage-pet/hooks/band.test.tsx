@@ -319,6 +319,31 @@ test('干活时：展开和细条都有紫色像素背景，且背景在读数�
   }
 })
 
+test('关闭点阵时只隐藏点阵，不改变工作姿势；默认参数保持原 SVG 字节', () => {
+  const now = new Date(2026, 9, 10, 14).getTime()
+  for (const mini of [false, true]) {
+    const legacy = bandSvgParts(EMPTY_BARS, true, 1100, mini, 'zh', undefined, undefined, undefined, now)
+    const enabled = bandSvgParts(EMPTY_BARS, true, 1100, mini, 'zh', undefined, undefined, undefined, now, 0, true)
+    const disabled = bandSvgParts(EMPTY_BARS, true, 1100, mini, 'zh', undefined, undefined, undefined, now, 0, false)
+
+    expect(enabled).toEqual(legacy)
+    expect(disabled.clawd).not.toContain('ultra-dither')
+    expect(disabled.gauges).not.toContain('ultra-dither')
+    expect(disabled.gauges).not.toContain('paint-order:stroke')
+    expect(disabled.gauges).not.toContain('stroke:#1C1B1A')
+    // 笔记本只有展开的 Clawd 搬；细条里靠 working mini 类表示干活姿势
+    expect(disabled.clawd).toContain(mini ? 'class="clawd working mini"' : '<g class="laptop">')
+  }
+})
+
+test('gaugesKey 会区分点阵开关', () => {
+  const now = new Date(2026, 9, 10, 14).getTime()
+  const enabled = bandSvgParts(EMPTY_BARS, true, 1100, false, 'zh', undefined, undefined, undefined, now, 0, true)
+  const disabled = bandSvgParts(EMPTY_BARS, true, 1100, false, 'zh', undefined, undefined, undefined, now, 0, false)
+
+  expect(disabled.gaugesKey).not.toBe(enabled.gaugesKey)
+})
+
 test('圆环和细条：展开尺寸、描边、文字与进度条都按新比例绘制', ZH, async () => {
   const bars = {
     from: null,

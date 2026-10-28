@@ -65,6 +65,48 @@ test('store 里读出来的脏数据补齐成完整的 Pet', () => {
   expect(normalize({ xp: -5, turns: 'x', streak: 3, achievements: ['a', 1] })).toEqual({ xp: 0, turns: 0, streak: 3, lastDay: undefined, achievements: ['a'] })
 })
 
+test('点阵命令：指定开关、大小写、中文和其他参数切换并持久化', ZH, async ($, on) => {
+  const writes: boolean[] = []
+  await start($, on, {}, on => {
+    on('state.set', ($, e, next) => {
+      if (e.key === 'dither') writes.push(e.value as boolean)
+
+      return next(e)
+    })
+  })
+
+  const run = async (args: string) => $.command.run({ command: 'clawd-dither', args } as never)
+  expect(await run('on')).toEqual({ text: '紫色像素点阵：已开启' })
+  expect(await run('off')).toEqual({ text: '紫色像素点阵：已关闭' })
+  expect(await run(' ON ')).toEqual({ text: '紫色像素点阵：已开启' })
+  expect(await run('off')).toEqual({ text: '紫色像素点阵：已关闭' })
+  expect(await run('开')).toEqual({ text: '紫色像素点阵：已开启' })
+  expect(await run('关')).toEqual({ text: '紫色像素点阵：已关闭' })
+  expect(await run('')).toEqual({ text: '紫色像素点阵：已开启' })
+  expect(await run('anything')).toEqual({ text: '紫色像素点阵：已关闭' })
+  expect(writes).toEqual([false, true, false, true, false, true, false])
+  const writesBeforeRestart = writes.length
+  await $.session.start(START as never)
+  expect(writes).toHaveLength(writesBeforeRestart)
+  expect(await run('')).toEqual({ text: '紫色像素点阵：已开启' })
+})
+
+test('点阵命令：英文回复本地化，并在工作中的信息栏即时隐藏和恢复点阵', { options: { language: 'en' } }, async ($, on) => {
+  await start($, on, {})
+  const workingBand = { ...BAND, props: { ...BAND.props, isWorking: true } }
+  const source = async () => {
+    const ui = await $.ui.mount(workingBand as never)
+
+    return (await ui.findAll({ type: 'Svg' })).map(node => String(node.props?.source)).join('')
+  }
+
+  expect((await source())).toContain('ultra-dither')
+  expect(await $.command.run({ command: 'clawd-dither', args: 'OFF' } as never)).toEqual({ text: 'Purple pixel dither: off' })
+  expect(await source()).not.toContain('ultra-dither')
+  expect(await $.command.run({ command: 'clawd-dither', args: 'on' } as never)).toEqual({ text: 'Purple pixel dither: on' })
+  expect(await source()).toContain('ultra-dither')
+})
+
 test('跨会话合并养成：经验和回合取较大值，成就合并并保留较新的日期', () => {
   expect(
     mergePetProgress(
