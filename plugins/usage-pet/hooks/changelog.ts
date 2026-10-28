@@ -6,6 +6,13 @@ export type Release = { version: string; notes: Record<Lang, string[]> }
 
 export const CHANGELOG: Release[] = [
   {
+    version: '1.17.1',
+    notes: {
+      zh: ['修复：展开/收起和 `/clawd-dither` 的选择现在保存在插件存储中并由所有会话共享；新会话会沿用设置，已打开的会话会在下一轮后更新'],
+      en: ['Fix: the expanded/collapsed and `/clawd-dither` choices are now saved in the plugin store and shared across sessions; new sessions start with those settings, and open sessions follow after their next turn'],
+    },
+  },
+  {
     version: '1.17.0',
     notes: {
       zh: ['新增：运行 `/clawd-dither on|off` 控制 Claude 工作时显示的紫色像素点阵；不带参数可切换，选择会跨会话保留（仅深色模式显示）'],

@@ -1086,6 +1086,59 @@ const START = { cwd: '/tmp', surface: 'desktop' as const, isInteractive: true }
 const EN = { options: { language: 'en' } }
 const AUTO = { options: { language: 'auto' } }
 
+type UsagePetHarness = Parameters<Parameters<typeof test>[1]>
+
+function testStore(on: UsagePetHarness[1], entries: Record<string, unknown>) {
+  const data = new Map<string, unknown>(Object.entries(entries).map(([key, value]) => [key, JSON.parse(JSON.stringify(value))]))
+  const writeWaiters = new Map<string, Array<() => void>>()
+  on('store.get', ($, e) => ({ value: data.get(e.key) }))
+  on('store.set', ($, e) => {
+    data.set(e.key, JSON.parse(JSON.stringify(e.value)))
+    writeWaiters.get(e.key)?.shift()?.()
+
+    return { value: undefined }
+  })
+  on('store.delete', ($, e) => {
+    data.delete(e.key)
+
+    return { value: undefined }
+  })
+  on('store.keys', () => ({ value: [...data.keys()] }))
+
+  return {
+    data,
+    waitForWrites(key: string, count = 1) {
+      const pending = writeWaiters.get(key) ?? []
+      writeWaiters.set(key, pending)
+      return Promise.all(Array.from({ length: count }, () => new Promise<void>(resolve => pending.push(resolve))))
+    },
+  }
+}
+
+async function startWithStore($: UsagePetHarness[0], on: UsagePetHarness[1], entries: Record<string, unknown>) {
+  const store = testStore(on, entries)
+  mock.clock(on)
+  on('session.start', ($, e) => ({ cwd: e.cwd }))
+  on('session.authorize', () => ({ value: null }))
+  on('session.usage', () => ({ value: { startedAt: 0, context: { window: 200000 }, rateLimits: [] } }))
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  on('turn.complete', ($, e) => ({ text: '', usage: e.usage }))
+  await $.session.start(START as never)
+
+  return store
+}
+
+function failingStore(on: UsagePetHarness[1]) {
+  on('store.get', () => {
+    throw new Error('store get failed')
+  })
+  on('store.set', () => {
+    throw new Error('store set failed')
+  })
+  on('store.keys', () => ({ value: [] }))
+  on('store.delete', () => ({ value: undefined }))
+}
+
 // 跑一次 session.start，环境变量和 macOS 系统语言列表都由测试给定
 async function startAuto(
   $: Parameters<Parameters<typeof test>[2]>[0],
@@ -1112,6 +1165,98 @@ async function startAuto(
 
   return asked
 }
+
+test('展开按钮、/clawd 和 /clawd-dither 都把选择写进跨会话 store', ZH, async ($, on) => {
+  const store = testStore(on, {})
+  const ui = await $.ui.mount({ ...BAND(false), surface: 'desktop' })
+
+  const buttonWrite = store.waitForWrites('prefs')
+  await ui.press({ key: 'toggle' })
+  await buttonWrite
+  expect(store.data.get('prefs')).toEqual({ pinned: true })
+
+  const commandWrites = store.waitForWrites('prefs', 2)
+  const replies = await Promise.all([
+    $.command.run({ command: 'clawd', args: '' } as never),
+    $.command.run({ command: 'clawd-dither', args: 'off' } as never),
+  ])
+  await commandWrites
+  expect(replies[1]?.text).toContain('关闭')
+  expect(store.data.get('prefs')).toEqual({ pinned: false, dither: false })
+})
+
+test('session.start 从 store 恢复展开状态，缺省时仍收起', ZH, async ($, on) => {
+  const store = await startWithStore($, on, { prefs: { pinned: true } })
+  const ui = await $.ui.mount({ ...BAND(false), surface: 'desktop' })
+  expect((await svgOf(ui)).props?.height).toBe(H)
+  expect(store.data.get('prefs')).toEqual({ pinned: true })
+})
+
+test('session.start 对空 prefs 保留默认收起状态', ZH, async ($, on) => {
+  await startWithStore($, on, {})
+  const ui = await $.ui.mount({ ...BAND(false), surface: 'desktop' })
+  expect((await svgOf(ui)).props?.height).toBe(H_MINI)
+})
+
+test('session.start 从 store 恢复关闭的 dither', ZH, async ($, on) => {
+  await startWithStore($, on, { prefs: { dither: false } })
+  const ui = await $.ui.mount({ ...BAND(true), surface: 'desktop' })
+  expect(String((await svgOf(ui)).props?.source)).not.toContain('ultra-dither')
+})
+
+test('主回合完成后读取其他会话写入的偏好', ZH, async ($, on) => {
+  const store = await startWithStore($, on, { prefs: {} })
+  const ui = await $.ui.mount({ ...BAND(true), surface: 'desktop' })
+  store.data.set('prefs', { pinned: true, dither: false })
+
+  await $.turn.complete({
+    answer: 'ok',
+    durationMs: 1000,
+    isAborted: false,
+    turnId: 'prefs-sync',
+    reason: 'answer',
+    usage: { model: 'claude-opus-5-5', input_tokens: 50, output_tokens: 40, cache_read_input_tokens: 900, cache_creation_input_tokens: 50 },
+  } as never)
+  await ui.redraw()
+
+  const svg = await svgOf(ui)
+  expect(svg.props?.height).toBe(H)
+  expect(String(svg.props?.source)).not.toContain('ultra-dither')
+})
+
+test('偏好 store 读写失败时启动、命令和主回合仍可完成', ZH, async ($, on) => {
+  mock.clock(on)
+  failingStore(on)
+  on('session.start', ($, e) => ({ cwd: e.cwd }))
+  on('session.authorize', () => ({ value: null }))
+  on('session.usage', () => ({ value: { startedAt: 0, context: { window: 200000 }, rateLimits: [] } }))
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  on('turn.complete', ($, e) => ({ text: '', usage: e.usage }))
+
+  await $.session.start(START as never)
+  const pinned = await $.command.run({ command: 'clawd', args: '' } as never)
+  const dither = await $.command.run({ command: 'clawd-dither', args: 'off' } as never)
+  await $.turn.complete({
+    answer: 'ok',
+    durationMs: 1000,
+    isAborted: false,
+    turnId: 'prefs-store-failure',
+    reason: 'answer',
+    usage: { model: 'claude-opus-5-5', input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
+  } as never)
+
+  expect(pinned.text).toContain('展开')
+  expect(dither.text).toContain('关闭')
+})
+
+test('prefs 里的非布尔值被忽略并保留两个设置的默认值', ZH, async ($, on) => {
+  await startWithStore($, on, { prefs: { pinned: 'true', dither: 0 } })
+  const ui = await $.ui.mount({ ...BAND(true), surface: 'desktop' })
+
+  const svg = await svgOf(ui)
+  expect(svg.props?.height).toBe(H_MINI)
+  expect(String(svg.props?.source)).toContain('ultra-dither')
+})
 
 test('英文界面：language = en 时标签、重置时间、读屏描述都是英文', EN, async ($, on) => {
   on('session.measure', ($, e) => ({ changed: e.changed }))

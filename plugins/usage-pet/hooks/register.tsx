@@ -26,6 +26,8 @@ import { addTurn, isStale, LEDGER_PREFIX, mergeLedgers, partialSince, SINCE_KEY,
 
 type UsagePetAtomKey = keyof PluginState['usage-pet'] & string
 type UsagePetAtom<K extends UsagePetAtomKey, T> = Atom<T> & { readonly ref: StateRef<'usage-pet', K> }
+type UsagePetPrefs = { pinned?: boolean; dither?: boolean }
+type UsagePetPrefKey = keyof UsagePetPrefs
 type ActivityFrame = Activity & { owner?: number; previous?: ActivityFrame }
 type ToolBurst = { owner: number; calls: Set<number>; frame?: ActivityFrame; timer?: Timer; generation: number }
 
@@ -37,6 +39,7 @@ const barsRef = { plugin: 'usage-pet', key: 'bars' } as const
 const cacheRef = { plugin: 'usage-pet', key: 'cache' } as const
 const pinnedRef = { plugin: 'usage-pet', key: 'pinned' } as const
 const ditherRef = { plugin: 'usage-pet', key: 'dither' } as const
+const PREFS_KEY = 'prefs'
 const langRef = { plugin: 'usage-pet', key: 'lang' } as const
 const petRef = { plugin: 'usage-pet', key: 'pet' } as const
 const reportRef = { plugin: 'usage-pet', key: 'report' } as const
@@ -99,6 +102,41 @@ function debugError($: EngineInterface, label: string, error: unknown) {
     $.ui.log(`usage-pet: ${label}: ${String(error)}`, { to: 'debug' })
   } catch {
     // Logging must never change the result of an observed event.
+  }
+}
+
+async function readPrefs($: EngineInterface): Promise<UsagePetPrefs> {
+  try {
+    const stored = await $.store.get(PREFS_KEY)
+    if (!stored || typeof stored !== 'object' || Array.isArray(stored)) return {}
+    const values = stored as Record<string, unknown>
+
+    return {
+      ...(typeof values.pinned === 'boolean' ? { pinned: values.pinned } : {}),
+      ...(typeof values.dither === 'boolean' ? { dither: values.dither } : {}),
+    }
+  } catch (error) {
+    debugError($, 'reading preferences failed', error)
+
+    return {}
+  }
+}
+
+async function writePref($: EngineInterface, key: UsagePetPrefKey, value: boolean): Promise<void> {
+  try {
+    await serially(async () => {
+      const stored = await $.store.get(PREFS_KEY)
+      const values = stored && typeof stored === 'object' && !Array.isArray(stored)
+        ? stored as Record<string, unknown>
+        : {}
+      const prefs: UsagePetPrefs = {
+        ...(typeof values.pinned === 'boolean' ? { pinned: values.pinned } : {}),
+        ...(typeof values.dither === 'boolean' ? { dither: values.dither } : {}),
+      }
+      await $.store.set(PREFS_KEY, { ...prefs, [key]: value })
+    })
+  } catch (error) {
+    debugError($, `writing ${key} preference failed`, error)
   }
 }
 
@@ -1187,6 +1225,18 @@ export const register: Register = (on, options) => {
       await updateIfChanged($, reportAtom, r => (r.startedAt ? r : { ...r, startedAt: Date.now() }))
     })
 
+    await safeBookkeeping($, 'session.start preference load failed', async () => {
+      const prefs = await readPrefs($)
+      if (typeof prefs.pinned === 'boolean') {
+        const pinned = prefs.pinned
+        await updateIfChanged($, pinnedAtom, () => pinned)
+      }
+      if (typeof prefs.dither === 'boolean') {
+        const dither = prefs.dither
+        await updateIfChanged($, ditherAtom, () => dither)
+      }
+    })
+
     await safeBookkeeping($, 'session.start command registration failed', async () => {
       await $.command.register({
         name: 'clawd',
@@ -1359,6 +1409,19 @@ export const register: Register = (on, options) => {
         await updateWeekDisplay($, weekToDisplay, weekAt)
       }
     })
+    if (e.agentId === undefined) {
+      await safeBookkeeping($, 'turn.complete preference sync failed', async () => {
+        const prefs = await readPrefs($)
+        if (typeof prefs.pinned === 'boolean') {
+          const pinned = prefs.pinned
+          await updateIfChanged($, pinnedAtom, () => pinned)
+        }
+        if (typeof prefs.dither === 'boolean') {
+          const dither = prefs.dither
+          await updateIfChanged($, ditherAtom, () => dither)
+        }
+      })
+    }
     if (e.agentId === undefined && !sleepTimerArmed) {
       await safeBookkeeping($, 'turn.complete sleep timer recovery failed', async () => armSleepTimer($, lastActivityAt))
     }
@@ -1501,6 +1564,7 @@ export const register: Register = (on, options) => {
   on('command.run', { command: 'clawd' }, async $ => {
     const pinned = !(await read($, pinnedAtom))
     await updateIfChanged($, pinnedAtom, () => pinned)
+    void writePref($, 'pinned', pinned)
 
     const t = T[await langOf($, choice)]
 
@@ -1515,6 +1579,7 @@ export const register: Register = (on, options) => {
         ? false
         : !(await read($, ditherAtom))
     await updateIfChanged($, ditherAtom, () => dither)
+    void writePref($, 'dither', dither)
 
     const t = T[await langOf($, choice)]
 
@@ -1605,6 +1670,7 @@ export const register: Register = (on, options) => {
         const toggle = async () => {
           const expanded = !(await read($, pinnedAtom))
           await updateIfChanged($, pinnedAtom, () => expanded)
+          void writePref($, 'pinned', expanded)
         }
 
         return (
