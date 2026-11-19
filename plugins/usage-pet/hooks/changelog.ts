@@ -6,6 +6,13 @@ export type Release = { version: string; notes: Record<Lang, string[]> }
 
 export const CHANGELOG: Release[] = [
   {
+    version: '1.18.1',
+    notes: {
+      zh: ['更新插件作者信息为 Kody.S（无功能变化）'],
+      en: ['Updated the plugin author metadata to Kody.S (no behavior change)'],
+    },
+  },
+  {
     version: '1.18.0',
     notes: {
       zh: ['修复：极窄窗口下，展开信息栏和收起细条会按优先级隐藏较低优先级的读数（费用、Fable 每周、缓存命中、每周）；上下文和 5 小时读数始终保留。悬停 Clawd 可查看被隐藏的读数；▲/▼ 按钮也不再换到第二行'],
