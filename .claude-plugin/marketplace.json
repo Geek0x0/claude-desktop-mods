@@ -12,6 +12,13 @@
       "description": "Usage band above the prompt (context / 5-hour / weekly / optional Fable weekly / cache hit) with Clawd, an animated pixel pet",
       "category": "productivity",
       "tags": ["mod", "usage", "desktop"]
+    },
+    {
+      "name": "doc-review",
+      "source": "./plugins/doc-review",
+      "description": "Offers a read-only Fable subagent review after a superpowers spec or plan is written",
+      "category": "productivity",
+      "tags": ["mod", "review", "desktop"]
     }
   ]
 }

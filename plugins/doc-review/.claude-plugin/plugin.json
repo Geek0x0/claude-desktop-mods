@@ -1,0 +1,17 @@
+{
+  "name": "doc-review",
+  "version": "1.0.0",
+  "description": "After the main agent writes a superpowers spec or plan, offers to have a read-only Fable subagent review it.",
+  "types": "./types/index.d.ts",
+  "author": {
+    "name": "Kody.S",
+    "url": "https://github.com/Geek0x0"
+  },
+  "repository": "https://github.com/Geek0x0/claude-desktop-mods",
+  "license": "MIT",
+  "keywords": [
+    "mod",
+    "review",
+    "desktop"
+  ]
+}
