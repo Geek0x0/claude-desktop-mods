@@ -19,6 +19,13 @@
       "description": "Offers a read-only Fable subagent review after a superpowers spec or plan is written",
       "category": "productivity",
       "tags": ["mod", "review", "desktop"]
+    },
+    {
+      "name": "remote-sessions",
+      "source": "./plugins/remote-sessions",
+      "description": "Pane listing sessions with Remote Control on, close each with one click; /remote-sessions off [keyword] too",
+      "category": "productivity",
+      "tags": ["mod", "remote-control", "desktop"]
     }
   ]
 }

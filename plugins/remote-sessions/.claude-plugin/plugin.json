@@ -1,0 +1,17 @@
+{
+  "name": "remote-sessions",
+  "version": "1.0.0",
+  "description": "Adds /remote-sessions, a side pane listing the sessions that have Remote Control on.",
+  "types": "./types/index.d.ts",
+  "author": {
+    "name": "Kody.S",
+    "url": "https://github.com/Geek0x0"
+  },
+  "repository": "https://github.com/Geek0x0/claude-desktop-mods",
+  "license": "MIT",
+  "keywords": [
+    "mod",
+    "remote-control",
+    "desktop"
+  ]
+}
