@@ -15,8 +15,11 @@ const BAND = (surface: 'desktop' | 'terminal') => ({
   viewport: { columns: 140, rows: 40 },
   surface,
 })
-const FIVE: SessionRateLimit = { kind: 'five_hour', percentUsed: 8, resetsAt: new Date(Date.now() + 50 * 60000).toISOString() }
-const WEEK: SessionRateLimit = { kind: 'seven_day', percentUsed: 50, resetsAt: new Date(Date.now() + 3 * 86400000).toISOString() }
+// 读数里的倒计时读插件时钟，而 mock.clock 的默认值是 epoch 0。固定插件时钟并按它给 resetsAt，
+// 否则「还剩 N 天 H 小时」会随真实时间变化，H 正好是 5 时还会撞上下面断言里的「5 小时」。
+const NOW = new Date(2026, 10, 25, 12).getTime()
+const FIVE: SessionRateLimit = { kind: 'five_hour', percentUsed: 8, resetsAt: new Date(NOW + 50 * 60000).toISOString() }
+const WEEK: SessionRateLimit = { kind: 'seven_day', percentUsed: 50, resetsAt: new Date(NOW + 3 * 86400000).toISOString() }
 const measure = (rateLimits: SessionRateLimit[]) => ({
   context: { window: 200000, tokens: 84000, percent: 42 },
   rateLimits,
@@ -45,7 +48,7 @@ function fakeStore(on: Harness[1], entries: Record<string, unknown>) {
 
 async function setup($: Harness[0], on: Harness[1], entries: Record<string, unknown> = {}, opening: SessionRateLimit[] = []) {
   const store = fakeStore(on, entries)
-  mock.clock(on)
+  mock.clock(on, { now: NOW })
   mock.env(on, {})
   on('session.measure', ($, e) => ({ changed: e.changed }))
   on('session.start', ($, e) => ({ cwd: e.cwd }))
@@ -76,7 +79,7 @@ test('展开：没有 5 小时额度就画三项，没有空圆环，分隔线�
   await $.session.measure(measure([WEEK]) as never)
   await $.command.run({ command: 'clawd', args: '' } as never)
   const { source, alt } = await svgOf($)
-  expect(source).not.toContain('5 小时')
+  expect(source).not.toContain('5 小时额度')
   expect(source).not.toContain('暂无读数')
   expect(source).toContain('每周额度')
   expect(source.match(/class="sep"/g)).toHaveLength(2)
@@ -89,7 +92,7 @@ test('收起成细条：同样只有三项', ZH, async ($, on) => {
   await $.session.measure(measure([WEEK]) as never)
   const { source } = await svgOf($)
   expect(source).toContain('class="mlab"')
-  expect(source).not.toContain('5 小时')
+  expect(source).not.toContain('5小时')
   expect(source.match(/class="mval"/g)).toHaveLength(3)
 })
 
@@ -124,7 +127,7 @@ test('新会话第一次回复之前：记得上次没有 5 小时额度，一�
   await setup($, on, { noFiveHour: true })
   await $.session.measure(measure([]) as never)
   await $.command.run({ command: 'clawd', args: '' } as never)
-  expect((await svgOf($)).source).not.toContain('5 小时')
+  expect((await svgOf($)).source).not.toContain('5 小时额度')
 })
 
 test('第一次发现没有 5 小时额度：记下来，留给下一个会话', ZH, async ($, on) => {
@@ -150,14 +153,14 @@ test('记录写不进去：这次照样不画空圆环，不让 store 的问题�
   })
   await $.session.measure(measure([WEEK]) as never)
   const { source } = await svgOf($)
-  expect(source).not.toContain('5 小时')
+  expect(source).not.toContain('5 小时额度')
   expect(logs.join()).toContain('读写 5 小时额度记录失败')
 })
 
 test('换回有 5 小时额度的套餐（或窗口过期后下一次回复带回来）：圆环回来，记录改回去', ZH, async ($, on) => {
   const store = await setup($, on, { noFiveHour: true }, [WEEK])
   await $.command.run({ command: 'clawd', args: '' } as never)
-  expect((await svgOf($)).source).not.toContain('5 小时')
+  expect((await svgOf($)).source).not.toContain('5 小时额度')
   await $.session.measure(measure([FIVE, WEEK]) as never)
   const { source } = await svgOf($)
   expect(source).toContain('5 小时额度')
@@ -183,5 +186,5 @@ test('窄窗口：没有 5 小时额度时按优先级收，保留上下文与�
   expect(parts.hidden[0]).toContain('缓存命中')
   expect(parts.gauges).toContain('<title>上下文')
   expect(parts.gauges).toContain('<title>每周额度')
-  expect(parts.gauges).not.toContain('5 小时')
+  expect(parts.gauges).not.toContain('5 小时额度')
 })
