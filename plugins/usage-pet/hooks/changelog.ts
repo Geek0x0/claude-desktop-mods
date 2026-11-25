@@ -6,6 +6,13 @@ export type Release = { version: string; notes: Record<Lang, string[]> }
 
 export const CHANGELOG: Release[] = [
   {
+    version: '1.19.2',
+    notes: {
+      zh: ['在 plugin.json 里声明插件访问的主机 api.anthropic.com（用于读取 Fable 每周额度，无功能变化）'],
+      en: ['Declared in plugin.json the host the plugin reaches, api.anthropic.com (for the Fable weekly reading; no behavior change)'],
+    },
+  },
+  {
     version: '1.19.1',
     notes: {
       zh: ['修复：运行 /clear、/resume 或 /branch 后，信息栏不再退回默认状态（收起、英文、Clawd 变回 Lv.1、读数为空）；展开状态、点阵、语言、等级和额度读数会立即重新读回'],

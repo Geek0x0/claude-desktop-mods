@@ -1,6 +1,6 @@
 {
   "name": "usage-pet",
-  "version": "1.19.1",
+  "version": "1.19.2",
   "description": "A usage band above the prompt — context, 5-hour limit, weekly limit, optional Fable weekly limit, cache hit rate — with Clawd, an animated pixel pet. For the Code tab of Claude Desktop.",
   "types": "./types/index.d.ts",
   "author": {
@@ -15,6 +15,11 @@
     "desktop",
     "pet"
   ],
+  "network": {
+    "hosts": [
+      "api.anthropic.com"
+    ]
+  },
   "userConfig": {
     "language": {
       "type": "string",
