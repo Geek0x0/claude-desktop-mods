@@ -97,6 +97,7 @@ export const T = {
     },
     cardCommand: 'Clawd 战报：生成本次会话的战报卡，复制到剪贴板并存到「图片/Clawd Reports」',
     cardSaved: (path: string) => `Clawd 战报已复制到剪贴板（可以直接粘贴到 X），也存到了：${path}`,
+    cardSavedNoCopy: (path: string) => `Clawd 战报已存到：${path}（没能放进剪贴板：需要图形会话里的 wl-copy 或 xclip）`,
     cardOnlyShown: (why: string) => `Clawd 战报已在面板里打开，但没能导出图片：${why}`,
   },
   en: {
@@ -167,6 +168,7 @@ export const T = {
     },
     cardCommand: 'Clawd report: a card of this session, copied to the clipboard and saved to Pictures/Clawd Reports',
     cardSaved: (path: string) => `Clawd report copied to the clipboard (paste it straight into X) and saved to ${path}`,
+    cardSavedNoCopy: (path: string) => `Clawd report saved to ${path} (could not copy it to the clipboard: needs wl-copy or xclip in a graphical session)`,
     cardOnlyShown: (why: string) => `Clawd report opened in a pane, but the image could not be exported: ${why}`,
   },
 }

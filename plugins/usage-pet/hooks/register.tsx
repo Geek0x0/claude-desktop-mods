@@ -722,6 +722,17 @@ async function isWindows($: EngineInterface): Promise<boolean> {
   return (await $.env.get('OS')) === 'Windows_NT'
 }
 
+// Not Windows: ask the kernel. Only `uname -s` = Linux takes the Linux export; Darwin or any failure keeps the macOS path
+async function isLinux($: EngineInterface): Promise<boolean> {
+  try {
+    const { exitCode, stdout } = await $.process.run(['uname', '-s'], { timeoutMs: 3000 })
+
+    return exitCode === 0 && stdout.trim() === 'Linux'
+  } catch {
+    return false
+  }
+}
+
 // Windows 的 PowerShell 5.1（系统自带，不用另装）。-Sta：剪贴板要求单线程套间
 const POWERSHELL = ['powershell.exe', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Sta']
 
@@ -1197,6 +1208,12 @@ const EXPORT_SH =
   `ls -t "$dir"/Clawd-report-*.png | tail -n +${KEEP_CARDS + 1} | while IFS= read -r old; do mv "$old" "$HOME/.Trash/" || true; done; ` +
   'printf %s "$out"'
 
+// PNG export (Linux): hooks/export-card.sh screenshots the SVG at 1200×675 with headless Chrome / Chromium / Edge and
+// saves it to <Pictures>/Clawd Reports; it copies to the clipboard only with wl-copy or xclip, else prints a leading nocopy line
+async function runLinuxExport($: EngineInterface, svg: string, name: string) {
+  return $.process.run(['/bin/sh', `${$.plugin.root}/hooks/export-card.sh`, name, String(KEEP_CARDS)], { stdin: svg, timeoutMs: 45000 })
+}
+
 // 导出 PNG（Windows）：hooks/export-card.ps1 用 Edge（没有就用 Chrome）无头模式把 SVG 截成 1200×675，
 // 存到「图片\Clawd Reports」、放进剪贴板，只留最近 KEEP_CARDS 张，更早的移进回收站。
 // SVG 先写到临时文件再交给脚本：经 stdin 传给 PowerShell 会按系统代码页解码，中文会乱
@@ -1214,19 +1231,23 @@ async function runWindowsExport($: EngineInterface, svg: string, name: string) {
   )
 }
 
-async function exportCard($: EngineInterface, data: CardData, lang: Lang): Promise<{ path: string } | { error: string }> {
+async function exportCard($: EngineInterface, data: CardData, lang: Lang): Promise<{ path: string; copied: boolean } | { error: string }> {
   const d = new Date()
   const pad = (n: number) => String(n).padStart(2, '0')
   const name = `Clawd-report-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}.png`
   try {
     const { exitCode, stdout, stderr } = (await isWindows($))
       ? await runWindowsExport($, cardSvg(data, lang, 'wide'), name)
-      : await $.process.run(['/bin/sh', '-c', EXPORT_SH, 'sh', name], { stdin: cardSvg(data, lang, 'square'), timeoutMs: 30000 })
+      : (await isLinux($))
+        ? await runLinuxExport($, cardSvg(data, lang, 'wide'), name)
+        : await $.process.run(['/bin/sh', '-c', EXPORT_SH, 'sh', name], { stdin: cardSvg(data, lang, 'square'), timeoutMs: 30000 })
     if (exitCode !== 0 || !stdout.endsWith(name)) {
       return { error: (stderr || `exit ${exitCode}`).trim().slice(0, 200) }
     }
 
-    return { path: stdout }
+    const copied = !stdout.startsWith('nocopy\n')
+
+    return { path: copied ? stdout : stdout.slice('nocopy\n'.length), copied }
   } catch (err) {
     return { error: String(err).slice(0, 200) }
   }
@@ -1630,7 +1651,7 @@ export const register: Register = (on, options) => {
     await $.ui.open({ id: CARD_PANE, title: T[lang].card.title })
     const out = await exportCard($, await cardData($, seasonal, lang), lang)
 
-    return { text: 'path' in out ? T[lang].cardSaved(out.path) : T[lang].cardOnlyShown(out.error) }
+    return { text: 'path' in out ? (out.copied ? T[lang].cardSaved(out.path) : T[lang].cardSavedNoCopy(out.path)) : T[lang].cardOnlyShown(out.error) }
   })
 
   on('ui.render', { component: 'Pane', requestId: CARD_PANE }, async ($, e) => {

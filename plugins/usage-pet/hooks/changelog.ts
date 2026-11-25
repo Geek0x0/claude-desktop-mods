@@ -6,6 +6,13 @@ export type Release = { version: string; notes: Record<Lang, string[]> }
 
 export const CHANGELOG: Release[] = [
   {
+    version: '1.20.0',
+    notes: {
+      zh: ['/clawd-card 支持 Linux：用 Chrome、Chromium 或 Edge 导出，有 wl-copy 或 xclip 时放进剪贴板，旧图移进回收站'],
+      en: ['/clawd-card now works on Linux: exports with Chrome, Chromium or Edge, copies to the clipboard when wl-copy or xclip is available, and older cards go to the Trash'],
+    },
+  },
+  {
     version: '1.19.3',
     notes: {
       zh: ['每轮答完不再重读所有会话的近 7 天账本：别的会话的用量最多每 5 分钟重读一次，本会话照常即时计入'],

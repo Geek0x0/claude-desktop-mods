@@ -1,6 +1,6 @@
 # usage-pet
 
-A usage band above the prompt in the **Code tab of Claude Desktop**: context, 5-hour limit, weekly limit and cache hit rate, plus an optional Fable weekly ring, with Clawd, a pixel pet who keeps you company while Claude works. Current version: **1.19.3**.
+A usage band above the prompt in the **Code tab of Claude Desktop**: context, 5-hour limit, weekly limit and cache hit rate, plus an optional Fable weekly ring, with Clawd, a pixel pet who keeps you company while Claude works. Current version: **1.20.0**.
 
 ![Light mode shows the expanded band in chill mode with sunglasses and a crown, a small auto-compact tick on the Context ring, and the Cost block after Cache hit; a collapsed editing strip appears below. Dark mode shows work with a terminal icon, purple dither and a purple “×2” subagent badge, near-limit amber and red rings, and a collapsed idle Clawd wearing a nightcap](https://raw.githubusercontent.com/Geek0x0/claude-desktop-mods/main/assets/usage-pet-preview.png)
 
@@ -19,7 +19,7 @@ A usage band above the prompt in the **Code tab of Claude Desktop**: context, 5-
 - **Seasonal moods**: northern-hemisphere seasons; coffee 06:00–10:00, nightcap 22:00–06:00, Christmas Dec 20–26, New Year Dec 31–Jan 1. `seasonal: off` disables time-of-day, seasonal and holiday looks.
 - **Last 7 days**: with the band expanded, hover Clawd to see how many tokens you used in the last 7 days (the past 7×24 hours), all sessions together, subagents included; the report card shows it too. The plugin keeps its own hourly tally (Claude only reports the current session), so counting starts when you install 1.9.0, and until a full week has passed it says since when. Other sessions' counts are re-read at most once every five minutes; this session's turns count right away.
 - **Growth**: Clawd earns 10 XP per turn (+5 at 90%+ cache hit, +20 for the first turn of the day), with a sprout at Lv.2, bow tie at Lv.3, cap at Lv.5 and crown at Lv.10. Hover for level, XP and streak, plus the last-7-days line while expanded. Of 8 achievements (Cache master, Night owl, Close call, Full week…), only those newly unlocked this session appear on `/clawd-card`; there are no pop-ups, and progress persists across sessions.
-- **Report card**: `/clawd-card` makes a card of this session (duration, turns, tool calls, files edited, tokens, cache hit, cost when available, level, achievements unlocked this session), copies it to the clipboard and saves it to Pictures/Clawd Reports (keeps the latest 20; older ones go to the Trash), ready to paste into X (exported with Quick Look on macOS; on Windows with Edge, or Chrome, and older cards go to the Recycle Bin).
+- **Report card**: `/clawd-card` makes a card of this session (duration, turns, tool calls, files edited, tokens, cache hit, cost when available, level, achievements unlocked this session), copies it to the clipboard and saves it to Pictures/Clawd Reports (keeps the latest 20; older ones go to the Trash), ready to paste into X (exported with Quick Look on macOS; on Windows with Edge, or Chrome, and older cards go to the Recycle Bin; on Linux with Chrome, Chromium or Edge, to the clipboard with wl-copy or xclip, and older cards go to the Trash).
 - **Halloween** (Oct 25 to Nov 1): Clawd wears a witch hat and carries a pumpkin pail; while Claude works he turns into a bedsheet ghost and candy floats up instead of code. After each turn he holds out his pail for **trick or treat**: click him once to give candy (he's happy for 3 seconds), twice for a flip, three times and he jumps for joy and throws candy. Ignore him for 12 seconds and he stomps in a huff until you click. Turn time-of-day, seasonal and holiday looks off with `seasonal: off` in `/config`.
 - **Collapses out of the way**: stays collapsed as a 30px strip until you click ▲ or run `/clawd` to expand it; click ▼ or run `/clawd` again to collapse it. In very narrow windows, Cost, Fable weekly, Cache hit and then Weekly are hidden as needed; Context and 5-hour stay visible (Context and Weekly on plans without a 5-hour limit).
 - English and Chinese, light and dark appearance, macOS and Windows. The terminal shows context, 5-hour, weekly and optional Fable bars plus session cost when the host provides it, with no cache hit or Clawd; Remote Control, mobile and web show nothing.
@@ -40,6 +40,7 @@ Then run `/reload-plugins` or start a new session.
 - The **Code tab of Claude Desktop**, light or dark appearance. The terminal shows context, 5-hour, weekly and optional Fable bars plus session cost when the host provides it, with no cache hit or Clawd; Remote Control, mobile and web show nothing
 - Mods are on by default from Claude Code **2.1.287**; tested by the author on 2.1.286 (macOS); Windows is supported from 1.6.0
 - On Windows, exporting the report card needs Windows PowerShell 5.1 (built in) and Edge or Chrome
+- On Linux, exporting the report card needs Chrome, Chromium or Edge, and wl-copy or xclip to copy to the clipboard; older cards move to the Trash only when `gio` is installed
 - Desktop redraws every mod site on any state change ([anthropics/claude-code#99211](https://github.com/anthropics/claude-code/issues/99211)), which restarts animations and can make the ▲▼ button miss clicks; `/clawd` always works
 - Where an organization manages Claude Code (a Team or Enterprise login, or a machine with managed settings), Claude Code does not run the `classic.*` and `session.compact` hooks of plugins you install, and `/plugin` shows a note saying so. There, permission requests show no "!", compaction has no look of its own, and after `/clear`, `/resume` or `/branch` the band starts from its defaults: the expanded state, dither and Clawd's level come back after the next reply, and a `language: auto` band stays in English until `/reload-plugins` (set `language` to `zh` or `en` to avoid that)
 
@@ -56,6 +57,7 @@ Then run `/reload-plugins` or start a new session.
 - Language detection when `language` is `auto`, at session start and again after `/clear`, `/resume` or `/branch`: `defaults read -g AppleLanguages` on macOS; on Windows: `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Sta -Command (Get-UICulture).Name`.
 - `/clawd-card` on macOS: `/bin/sh` with Quick Look (`qlmanage`) and `sips` to turn the card SVG into a PNG in a temporary folder, `osascript` to put it on the clipboard. It saves the PNG to `~/Pictures/Clawd Reports` and moves cards beyond the newest 20 (only files named `Clawd-report-*.png` in that folder) to the Trash.
 - `/clawd-card` on Windows runs `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Sta -File <plugin-root>\hooks\export-card.ps1 -Svg <svgPath> -Name <name> -Keep 20`. The script opens the local SVG in headless Edge, or Chrome if Edge is missing, takes a 1200×675 screenshot, copies it to the clipboard, saves it to `Pictures\Clawd Reports`, moves older matching cards to the Recycle Bin, and deletes temporary files.
+- `/clawd-card` on Linux runs `uname -s` to pick the script, then `/bin/sh <plugin-root>/hooks/export-card.sh <name> 20` with the card SVG on stdin. The script looks up Chrome, Chromium or Edge on PATH (Flatpak browsers are not found), takes a 1200×675 headless screenshot under `timeout` in a temporary folder inside the pictures folder, copies it to the clipboard with wl-copy (Wayland) or xclip (X11) when available, saves the PNG to the `Clawd Reports` folder inside the pictures folder from `xdg-user-dir PICTURES`, moves older matching cards to the Trash with `gio trash`, and deletes temporary files.
 
 ## Hooks and commands
 
@@ -95,7 +97,7 @@ In `/config`, `language` accepts lowercase `auto`, `zh` or `en`; anything else m
 - **配置**：`seasonal` 和 `tantrums` 填 `off`（不分大小写、忽略首尾空格）才会关闭；其他值保持开启
 - **浅色 / 深色**：跟着 Claude App 的外观设置自动切换，背景始终透明
 - **养成**：Claude 每答完一轮 Clawd 涨 10 点经验（缓存命中 ≥90% 再 +5，每天第一轮 +20）。Lv.2 长出小芽、Lv.3 戴红领结、Lv.5 戴帽子、Lv.10 戴皇冠。悬停可看等级、经验和连续天数；展开时也显示近 7 天用量。8 个成就中，缓存大师、夜猫子、极限操作、一周不停等只在 `/clawd-card` 列出本会话新解锁项，不弹出提示；数据跨会话保存
-- **战报卡**：输入 `/clawd-card`，生成本次会话的战报（时长、回合、工具调用、改动文件、Tokens、缓存命中、费用、等级、本次解锁的成就），复制到剪贴板、存到「图片/Clawd Reports」（只留最近 20 张，更早的自动移进废纸篓），直接粘贴到 X（macOS 用系统自带的 Quick Look 导出；Windows 用系统自带的 Edge，没有 Edge 时用 Chrome，旧图移进回收站）
+- **战报卡**：输入 `/clawd-card`，生成本次会话的战报（时长、回合、工具调用、改动文件、Tokens、缓存命中、费用、等级、本次解锁的成就），复制到剪贴板、存到「图片/Clawd Reports」（只留最近 20 张，更早的自动移进废纸篓），直接粘贴到 X（macOS 用系统自带的 Quick Look 导出；Windows 用系统自带的 Edge，没有 Edge 时用 Chrome，旧图移进回收站；Linux 用 Chrome、Chromium 或 Edge，有 wl-copy 或 xclip 才复制到剪贴板，旧图移进回收站）
 - **万圣节**（10 月 25 日到 11 月 1 日）：Clawd 戴巫师帽、拎南瓜桶；Claude 干活时披上床单变幽灵，旁边飘的代码换成糖果。每答完一轮他会举起桶**讨糖**：点他一下就是给糖（开心 3 秒），连点两下空翻、三下跳起来撒糖；12 秒没人理他就生气跺脚，点一下就消气。不想要时段、季节和节日装扮：`/config` 里把 `seasonal` 填成 `off`
 - **鼠标**：放到 Clawd 身上会冒爱心，点它会空翻；放到圆环上显示详细数值
 - **近 7 天用量**：信息栏展开时，鼠标放到 Clawd 身上显示最近 7 天（从现在往回 7×24 小时）用了多少 tokens，所有会话合计、含子代理；战报卡上也有这一行。插件自己按小时记账（Claude 只给当前会话的用量），所以从装上 1.9.0 起才开始记，不满 7 天时会写明从哪天开始；别的会话的用量最多每 5 分钟重读一次，本会话照常即时计入
@@ -117,6 +119,7 @@ In `/config`, `language` accepts lowercase `auto`, `zh` or `en`; anything else m
 - Claude 桌面 App 的 **Code 页**支持浅色和深色。终端显示上下文、5 小时、每周（和 Fable）进度条及宿主有提供时的本会话费用，没有缓存命中或 Clawd；Remote Control、手机和网页端不显示
 - Claude Code **2.1.287 起**默认支持 mod；作者在 2.1.286（macOS）上实测，Windows 从 1.6.0 起支持
 - Windows 导出战报图片要用 Windows PowerShell 5.1（系统自带）和 Edge 或 Chrome
+- Linux 导出战报图片要 Chrome、Chromium 或 Edge；复制到剪贴板还要 wl-copy 或 xclip；旧图移进回收站还要 gio
 - 桌面 App 目前有一个重画 bug（[anthropics/claude-code#99211](https://github.com/anthropics/claude-code/issues/99211)）：状态变化时动画会从头播；▲▼ 按钮偶尔点不动，可以用 `/clawd` 代替
 - 由组织管理 Claude Code 的环境（Team / Enterprise 登录，或机器上有 managed settings）里，Claude Code 不会运行用户安装插件的 `classic.*` 和 `session.compact` 钩子，`/plugin` 里会有提示。这时权限请求不显示「!」，压缩没有专属动作；`/clear`、`/resume`、`/branch` 之后信息栏先回到默认状态：展开状态、点阵和等级在下一轮回复后恢复，`language` 为 `auto` 时会停在英文，直到 `/reload-plugins`（把 `language` 填成 `zh` 或 `en` 可避免）
 

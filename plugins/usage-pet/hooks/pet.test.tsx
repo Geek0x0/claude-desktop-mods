@@ -1050,6 +1050,9 @@ test('战报：工具调用计数，改过的文件按路径去重，被拦下�
     on('tool.call', ($, e) => (e.tool === 'Bash' ? { deny: 'blocked' } : { result: {} as never }))
     on('process.run', ($, e) => {
       runs.push({ argv: [...e.argv], stdin: e.init?.stdin })
+      if (e.argv[0] === 'uname') {
+        return { value: { exitCode: 0, stdout: 'Darwin\n', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+      }
       const out = `/Users/me/Pictures/Clawd Reports/${e.argv[4]}`
       return { value: { exitCode: 0, stdout: out, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
     })
@@ -1064,16 +1067,18 @@ test('战报：工具调用计数，改过的文件按路径去重，被拦下�
 
   const res = await $.command.run({ command: 'clawd-card', args: '' } as never)
   expect(String((res as { text?: string }).text)).toContain('Clawd 战报已复制到剪贴板')
-  expect(runs).toHaveLength(1)
-  expect(runs[0]!.argv.slice(0, 2)).toEqual(['/bin/sh', '-c'])
-  expect(runs[0]!.argv[4]).toMatch(/^Clawd-report-\d{8}-\d{6}\.png$/)
+  // 先跑 uname -s 判定平台，再走 macOS 导出
+  expect(runs).toHaveLength(2)
+  expect(runs[0]!.argv).toEqual(['uname', '-s'])
+  expect(runs[1]!.argv.slice(0, 2)).toEqual(['/bin/sh', '-c'])
+  expect(runs[1]!.argv[4]).toMatch(/^Clawd-report-\d{8}-\d{6}\.png$/)
   // 存到「图片/Clawd Reports」而不是桌面；只留最近 20 张，更早的进废纸篓（只动 Clawd-report-*.png）
-  expect(runs[0]!.argv[2]).toContain('dir="$HOME/Pictures/Clawd Reports"')
-  expect(runs[0]!.argv[2]).not.toContain('Desktop')
-  expect(runs[0]!.argv[2]).toContain('ls -t "$dir"/Clawd-report-*.png | tail -n +21')
-  expect(runs[0]!.argv[2]).toContain('mv "$old" "$HOME/.Trash/"')
+  expect(runs[1]!.argv[2]).toContain('dir="$HOME/Pictures/Clawd Reports"')
+  expect(runs[1]!.argv[2]).not.toContain('Desktop')
+  expect(runs[1]!.argv[2]).toContain('ls -t "$dir"/Clawd-report-*.png | tail -n +21')
+  expect(runs[1]!.argv[2]).toContain('mv "$old" "$HOME/.Trash/"')
   // 导出的是正方形画布（qlmanage 只出正方形），数字对得上：4 次工具调用、2 个文件、1 回合、命中 90%
-  const svg = String(runs[0]!.stdin)
+  const svg = String(runs[1]!.stdin)
   expect(svg).toContain('width="1200" height="1200"')
   expect(svg).toMatch(/>4<\/text><text[^>]*>工具调用/)
   expect(svg).toMatch(/>2<\/text><text[^>]*>改动文件/)
@@ -1149,4 +1154,76 @@ test('Windows：导出失败（找不到 Edge / Chrome）时面板照样打开�
   })
   const res = await $.command.run({ command: 'clawd-card', args: '' } as never)
   expect(String((res as { text?: string }).text)).toContain('没能导出图片：Microsoft Edge or Google Chrome not found')
+})
+
+// ───────── Linux ─────────
+
+test('Linux：/clawd-card 交给 export-card.sh（浏览器截图 1200×675），SVG 从 stdin 传', ZH, async ($, on) => {
+  const runs: { argv: string[]; stdin?: string }[] = []
+  await start($, on, {}, on => {
+    mock.env(on, { HOME: '/home/me' })
+    on('process.run', ($, e) => {
+      runs.push({ argv: [...e.argv], stdin: e.init?.stdin })
+      if (e.argv[0] === 'uname') {
+        return { value: { exitCode: 0, stdout: 'Linux\n', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+      }
+      const out = `/home/me/Pictures/Clawd Reports/${e.argv[2]}`
+      return { value: { exitCode: 0, stdout: out, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+    })
+    on('ui.open', () => ({ value: { isPlaced: true } }))
+  })
+  await $.turn.complete(turn(900, 50, 50))
+
+  const res = await $.command.run({ command: 'clawd-card', args: '' } as never)
+  expect(String((res as { text?: string }).text)).toContain('Clawd 战报已复制到剪贴板')
+  expect(String((res as { text?: string }).text)).toContain('/home/me/Pictures/Clawd Reports/Clawd-report-')
+  // 先问 uname -s，再跑 export-card.sh；SVG 走 stdin，宽画布 1200×675
+  expect(runs).toHaveLength(2)
+  expect(runs[0]!.argv).toEqual(['uname', '-s'])
+  const argv = runs[1]!.argv
+  expect(argv[0]).toBe('/bin/sh')
+  expect(argv[1]).toMatch(/\/hooks\/export-card\.sh$/)
+  expect(argv[2]).toMatch(/^Clawd-report-\d{8}-\d{6}\.png$/)
+  expect(argv[3]).toBe('20')
+  const svg = String(runs[1]!.stdin)
+  expect(svg).toContain('width="1200" height="675"')
+  expect(svg).toContain('rx="0" fill="#1C1B1A"')
+  expect(svg).toMatch(/>1<\/text><text[^>]*>回合/)
+})
+
+test('Linux：没有 wl-copy / xclip 时只存图，如实说没放进剪贴板', ZH, async ($, on) => {
+  await start($, on, {}, on => {
+    mock.env(on, { HOME: '/home/me' })
+    on('process.run', ($, e) => {
+      if (e.argv[0] === 'uname') {
+        return { value: { exitCode: 0, stdout: 'Linux\n', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+      }
+      const out = `nocopy\n/home/me/Pictures/Clawd Reports/${e.argv[2]}`
+      return { value: { exitCode: 0, stdout: out, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+    })
+    on('ui.open', () => ({ value: { isPlaced: true } }))
+  })
+  await $.turn.complete(turn(900, 50, 50))
+
+  const res = await $.command.run({ command: 'clawd-card', args: '' } as never)
+  const text = String((res as { text?: string }).text)
+  expect(text).toContain('没能放进剪贴板')
+  expect(text).toContain('/home/me/Pictures/Clawd Reports/Clawd-report-')
+  expect(text).not.toContain('已复制到剪贴板')
+  expect(text).not.toContain('nocopy')
+})
+
+test('Linux：找不到浏览器时面板照样打开，告诉用户原因', ZH, async ($, on) => {
+  await start($, on, {}, on => {
+    mock.env(on, { HOME: '/home/me' })
+    on('process.run', ($, e) => {
+      if (e.argv[0] === 'uname') {
+        return { value: { exitCode: 0, stdout: 'Linux\n', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+      }
+      return { value: { exitCode: 1, stdout: '', stderr: 'Google Chrome, Chromium or Microsoft Edge not found', isStdoutTruncated: false, isStderrTruncated: false } }
+    })
+    on('ui.open', () => ({ value: { isPlaced: true } }))
+  })
+  const res = await $.command.run({ command: 'clawd-card', args: '' } as never)
+  expect(String((res as { text?: string }).text)).toContain('没能导出图片：Google Chrome, Chromium or Microsoft Edge not found')
 })
