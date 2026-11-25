@@ -58,7 +58,7 @@ const cacheAtom = atom(cacheRef, { read: 0, write: 0, fresh: 0 } as CacheTotals)
 const pinnedAtom = atom(pinnedRef, false) as UsagePetAtom<'pinned', boolean>
 // 紫色像素点阵：用户选择跨会话保留；默认开启
 const ditherAtom = atom(ditherRef, true) as UsagePetAtom<'dither', boolean>
-// 界面语言：session.start 时定下来（/config 选了就用选的，auto 就跟随系统）
+// 界面语言：loadSession 时定下来（/config 选了就用选的，auto 就跟随系统）
 const langAtom = atom(langRef, 'en' as Lang) as UsagePetAtom<'lang', Lang>
 // 养成：跨会话的那份在 $.store 的 PET_KEY；这里留一份给信息栏画
 const petAtom = atom(petRef, NEW_PET as Pet) as UsagePetAtom<'pet', Pet>
@@ -1190,78 +1190,78 @@ async function exportCard($: EngineInterface, data: CardData, lang: Lang): Promi
   }
 }
 
-export const register: Register = (on, options) => {
-  const choice = (options?.language ?? 'auto') as LangChoice
-  // 节日装扮：/config 里 seasonal 填 off 就不换（不分大小写、去掉首尾空格；以前是下拉，现在是文本框）
-  const seasonal = String(options?.seasonal ?? 'auto').trim().toLowerCase() !== 'off'
-  const tantrumsEnabled = String(options?.tantrums ?? 'on').trim().toLowerCase() !== 'off'
-  const fableState: FableSession = {}
-  let pendingPermission: { tool: string; owner: number } | undefined
-  let langDetectionGeneration = 0
+const fableState: FableSession = {}
+let pendingPermission: { tool: string; owner: number } | undefined
+let langDetectionGeneration = 0
+let lastDetectedLang: Lang | undefined
 
-  on('session.start', async ($, e, next) => {
-    const detectionGeneration = ++langDetectionGeneration
-    resetAgentRefresh($)
-    await safeBookkeeping($, 'session.start 子代理状态重置失败', async () => {
-      await updateIfChanged($, agentsAtom, () => EMPTY_AGENTS)
-    })
-    compactThresholdSnapshot = undefined
-    mainTurnActive = false
-    pendingPermission = undefined
-    if (toolBurst) cancelToolRestore(toolBurst)
-    toolBurst = undefined
-    cancelActivityPublishTimer($, 'session.start activity publish timer cancel failed')
-    lastActivityWriteAt = undefined
-    activeActivityOwners.clear()
-    activityFrame = { kind: 'idle' }
-    publishedActivity = undefined
-    await safeBookkeeping($, 'session.start fable and language setup failed', async () => {
-      refreshFable($, fableState)
-      // auto 先沿用本地已有语言（首次是英文），系统检测放到后台，不阻塞 session.start。
-      let lang: Lang = 'en'
-      if (choice === 'zh' || choice === 'en') {
-        lang = choice
-      } else {
-        try {
-          lang = await read($, langAtom)
-        } catch (err) {
-          debugError($, 'reading the current language failed', err)
-        }
-      }
-      await updateIfChanged($, langAtom, () => lang)
-      if (choice !== 'zh' && choice !== 'en') {
-        void detectLang($)
-          .then(async detected => {
-            if (detectionGeneration !== langDetectionGeneration) return
-            await updateIfChanged($, langAtom, current => (current === detected ? current : detected))
-          })
-          .catch(err => debugError($, 'language detection failed', err))
-      }
-    })
-
-    await safeBookkeeping($, 'session.start pet and report load failed', async () => {
-      // 养成数据从 store 读进来；战报从这个会话第一次加载开始计时（重载插件不重置）
+// Runs at session.start, and again after /clear, /resume and /branch: those reset every $.state value
+// to its default without firing session.start, so everything read from $.store and the engine is loaded again.
+async function loadSession($: EngineInterface, choice: LangChoice, registerCommands: boolean): Promise<void> {
+  const detectionGeneration = ++langDetectionGeneration
+  resetAgentRefresh($)
+  await safeBookkeeping($, 'session.start 子代理状态重置失败', async () => {
+    await updateIfChanged($, agentsAtom, () => EMPTY_AGENTS)
+  })
+  compactThresholdSnapshot = undefined
+  mainTurnActive = false
+  pendingPermission = undefined
+  if (toolBurst) cancelToolRestore(toolBurst)
+  toolBurst = undefined
+  cancelActivityPublishTimer($, 'session.start activity publish timer cancel failed')
+  lastActivityWriteAt = undefined
+  activeActivityOwners.clear()
+  activityFrame = { kind: 'idle' }
+  publishedActivity = undefined
+  await safeBookkeeping($, 'session.start fable and language setup failed', async () => {
+    refreshFable($, fableState)
+    // auto 先沿用本地已有语言（首次是英文），系统检测放到后台，不阻塞 session.start。
+    let lang: Lang = 'en'
+    if (choice === 'zh' || choice === 'en') {
+      lang = choice
+    } else {
       try {
-        const pet = normalize(await $.store.get(PET_KEY))
-        await updateIfChanged($, petAtom, () => pet)
+        lang = lastDetectedLang ?? (await read($, langAtom))
       } catch (err) {
-        $.ui.log(`usage-pet: 读养成数据失败：${String(err)}`, { to: 'debug' })
+        debugError($, 'reading the current language failed', err)
       }
-      await updateIfChanged($, reportAtom, r => (r.startedAt ? r : { ...r, startedAt: Date.now() }))
-    })
+    }
+    await updateIfChanged($, langAtom, () => lang)
+    if (choice !== 'zh' && choice !== 'en') {
+      void detectLang($)
+        .then(async detected => {
+          lastDetectedLang = detected
+          if (detectionGeneration !== langDetectionGeneration) return
+          await updateIfChanged($, langAtom, current => (current === detected ? current : detected))
+        })
+        .catch(err => debugError($, 'language detection failed', err))
+    }
+  })
 
-    await safeBookkeeping($, 'session.start preference load failed', async () => {
-      const prefs = await readPrefs($)
-      if (typeof prefs.pinned === 'boolean') {
-        const pinned = prefs.pinned
-        await updateIfChanged($, pinnedAtom, () => pinned)
-      }
-      if (typeof prefs.dither === 'boolean') {
-        const dither = prefs.dither
-        await updateIfChanged($, ditherAtom, () => dither)
-      }
-    })
+  await safeBookkeeping($, 'session.start pet and report load failed', async () => {
+    // 养成数据从 store 读进来；战报从这个会话第一次加载开始计时（重载插件不重置；/clear、/resume、/branch 之后重新计时）
+    try {
+      const pet = normalize(await $.store.get(PET_KEY))
+      await updateIfChanged($, petAtom, () => pet)
+    } catch (err) {
+      $.ui.log(`usage-pet: 读养成数据失败：${String(err)}`, { to: 'debug' })
+    }
+    await updateIfChanged($, reportAtom, r => (r.startedAt ? r : { ...r, startedAt: Date.now() }))
+  })
 
+  await safeBookkeeping($, 'session.start preference load failed', async () => {
+    const prefs = await readPrefs($)
+    if (typeof prefs.pinned === 'boolean') {
+      const pinned = prefs.pinned
+      await updateIfChanged($, pinnedAtom, () => pinned)
+    }
+    if (typeof prefs.dither === 'boolean') {
+      const dither = prefs.dither
+      await updateIfChanged($, ditherAtom, () => dither)
+    }
+  })
+
+  if (registerCommands) {
     await safeBookkeeping($, 'session.start command registration failed', async () => {
       await $.command.register({
         name: 'clawd',
@@ -1271,41 +1271,59 @@ export const register: Register = (on, options) => {
       await $.command.register({ name: 'clawd-dither', description: 'Clawd band: purple pixel dither on / off · 紫色像素点阵 开 / 关', immediate: true })
       await $.command.register({ name: 'clawd-card', description: `${T.en.cardCommand} · ${T.zh.cardCommand}` })
     })
+  }
 
-    await safeBookkeeping($, 'session.start usage seed failed', async () => {
-      // summary：本地估算，不发请求；只用它的 apiUsage（上一次回复的用量）给还没读数的缓存垫底
-      const u = await $.session.usage({ breakdown: 'summary' })
-      const compactAt = u.context.breakdown?.autoCompactThreshold
-      compactThresholdSnapshot = { window: u.context.window, threshold: compactAt }
-      const last = u.context.breakdown?.apiUsage
-      const totals = await read($, cacheAtom)
-      if (last && totals.read + totals.write + totals.fresh === 0) {
-        await updateIfChanged($, cacheAtom, () => ({
-          read: last.cache_read_input_tokens,
-          write: last.cache_creation_input_tokens,
-          fresh: last.input_tokens,
-          turnRate: turnRate(last),
-        }))
-      }
-      await record($, { ...toSnap(u.context, u.rateLimits, u.cost), ...(compactAt === undefined ? {} : { compactAt }), fable: fableState.value }, true)
-    })
+  await safeBookkeeping($, 'session.start usage seed failed', async () => {
+    // summary：本地估算，不发请求；只用它的 apiUsage（上一次回复的用量）给还没读数的缓存垫底
+    const u = await $.session.usage({ breakdown: 'summary' })
+    const compactAt = u.context.breakdown?.autoCompactThreshold
+    compactThresholdSnapshot = { window: u.context.window, threshold: compactAt }
+    const last = u.context.breakdown?.apiUsage
+    const totals = await read($, cacheAtom)
+    if (last && totals.read + totals.write + totals.fresh === 0) {
+      await updateIfChanged($, cacheAtom, () => ({
+        read: last.cache_read_input_tokens,
+        write: last.cache_creation_input_tokens,
+        fresh: last.input_tokens,
+        turnRate: turnRate(last),
+      }))
+    }
+    await record($, { ...toSnap(u.context, u.rateLimits, u.cost), ...(compactAt === undefined ? {} : { compactAt }), fable: fableState.value }, true)
+  })
 
-    await safeBookkeeping($, '读近 7 天用量失败', async () => {
-      await refreshWeek($, await clockNow($))
-    })
+  await safeBookkeeping($, '读近 7 天用量失败', async () => {
+    await refreshWeek($, await clockNow($))
+  })
 
-    await safeBookkeeping($, 'session.start tantrum reset failed', () => {
-      tantrumTimes = []
-    })
+  await safeBookkeeping($, 'session.start tantrum reset failed', () => {
+    tantrumTimes = []
+  })
 
-    await safeBookkeeping($, 'session.start activity reset failed', async () => {
-      await setActivityFrame($, { kind: 'idle' })
-    })
+  await safeBookkeeping($, 'session.start activity reset failed', async () => {
+    await setActivityFrame($, { kind: 'idle' })
+  })
 
-    await safeBookkeeping($, 'session.start activity timestamp reset failed', async () => {
-      await noteActivity($)
-    })
+  await safeBookkeeping($, 'session.start activity timestamp reset failed', async () => {
+    await noteActivity($)
+  })
+}
 
+export const register: Register = (on, options) => {
+  const choice = (options?.language ?? 'auto') as LangChoice
+  // 节日装扮：/config 里 seasonal 填 off 就不换（不分大小写、去掉首尾空格；以前是下拉，现在是文本框）
+  const seasonal = String(options?.seasonal ?? 'auto').trim().toLowerCase() !== 'off'
+  const tantrumsEnabled = String(options?.tantrums ?? 'on').trim().toLowerCase() !== 'off'
+
+  on('session.start', async ($, e, next) => {
+    await loadSession($, choice, true)
+    const result = await next(e)
+    requestAgentRefresh($)
+
+    return result
+  })
+
+  on('classic.SessionStart', { source: ['clear', 'resume', 'fork'] }, async ($, e, next) => {
+    await loadSession($, choice, false)
     const result = await next(e)
     requestAgentRefresh($)
 

@@ -1,6 +1,6 @@
 # usage-pet
 
-A usage band above the prompt in the **Code tab of Claude Desktop**: context, 5-hour limit, weekly limit and cache hit rate, plus an optional Fable weekly ring, with Clawd, a pixel pet who keeps you company while Claude works. Current version: **1.19.0**.
+A usage band above the prompt in the **Code tab of Claude Desktop**: context, 5-hour limit, weekly limit and cache hit rate, plus an optional Fable weekly ring, with Clawd, a pixel pet who keeps you company while Claude works. Current version: **1.19.1**.
 
 ![Light mode shows the expanded band in chill mode with sunglasses and a crown, a small auto-compact tick on the Context ring, and the Cost block after Cache hit; a collapsed editing strip appears below. Dark mode shows work with a terminal icon, purple dither and a purple “×2” subagent badge, near-limit amber and red rings, and a collapsed idle Clawd wearing a nightcap](https://raw.githubusercontent.com/Geek0x0/claude-desktop-mods/main/assets/usage-pet-preview.png)
 
@@ -41,10 +41,11 @@ Then run `/reload-plugins` or start a new session.
 - Mods are on by default from Claude Code **2.1.287**; tested by the author on 2.1.286 (macOS); Windows is supported from 1.6.0
 - On Windows, exporting the report card needs Windows PowerShell 5.1 (built in) and Edge or Chrome
 - Desktop redraws every mod site on any state change ([anthropics/claude-code#99211](https://github.com/anthropics/claude-code/issues/99211)), which restarts animations and can make the ▲▼ button miss clicks; `/clawd` always works
+- Where an organization manages Claude Code (a Team or Enterprise login, or a machine with managed settings), Claude Code does not run the `classic.*` and `session.compact` hooks of plugins you install, and `/plugin` shows a note saying so. There, permission requests show no "!", compaction has no look of its own, and after `/clear`, `/resume` or `/branch` the band starts from its defaults: the expanded state, dither and Clawd's level come back after the next reply, and a `language: auto` band stays in English until `/reload-plugins` (set `language` to `zh` or `en` to avoid that)
 
 ## What it runs, stores and sends
 
-**Network**: Claude Code's plugin API exposes only the 5-hour and weekly windows, so the plugin fetches Fable's separate weekly allowance itself from Anthropic's usage endpoint (`https://api.anthropic.com/api/oauth/usage`). It uses `$.session.authorize()` and `$.http.fetch`; Claude Code adds the credential on the host side, and the plugin never sees the token. Fetches happen at session start and after replies, at most once every five minutes per session. The only request is that GET; no prompts, replies or telemetry are sent. `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` or an organization web-fetch policy can block the request.
+**Network**: Claude Code's plugin API exposes only the 5-hour and weekly windows, so the plugin fetches Fable's separate weekly allowance itself from Anthropic's usage endpoint (`https://api.anthropic.com/api/oauth/usage`). It uses `$.session.authorize()` and `$.http.fetch`; Claude Code adds the credential on the host side, and the plugin never sees the token. Fetches happen at session start, after `/clear`, `/resume` or `/branch`, and after replies, at most once every five minutes per session. The only request is that GET; no prompts, replies or telemetry are sent. `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` or an organization web-fetch policy can block the request.
 
 **Reads**: Claude Code's current-session context, rate limits and token counts, plus session cost from `session.usage()` and `session.measure` when the host provides a cost ledger; cost matches the API-equivalent total shown by `/cost`, and subscription amounts are estimates, not bills. It also reads Fable's weekly limit from Anthropic when an eligible first-party OAuth subscription login is available, and the `LANG`, `LANGUAGE`, `LC_ALL`, `LC_MESSAGES`, `OS`, `TEMP` and `TMP` environment variables (language, platform and temp folder only). Every submitted prompt is checked for a leading `/` after trimming whitespace to distinguish slash commands from turns; when `tantrums` is on, composer text is also checked locally for frustration. Prompt text is never stored, sent or changed; `tantrums: off` disables only the frustration check. `classic.PermissionRequest` is observed only to show "!" and is never answered or changed; `ExitPlanMode` also shows "!". `tool.call` reads Bash/PowerShell commands to spot test runs and result/exit-code data for test and error reactions. The plugin never reads or receives credentials; Claude Code supplies authorization to the usage request on the host side. While a session runs it counts tool calls and keeps edited file paths in memory for the report card; paths are never written to disk or shown on the card.
 
@@ -52,7 +53,7 @@ Then run `/reload-plugins` or start a new session.
 
 **Runs**:
 
-- Language detection when `language` is `auto`: `defaults read -g AppleLanguages` on macOS; on Windows: `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Sta -Command (Get-UICulture).Name`.
+- Language detection when `language` is `auto`, at session start and again after `/clear`, `/resume` or `/branch`: `defaults read -g AppleLanguages` on macOS; on Windows: `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Sta -Command (Get-UICulture).Name`.
 - `/clawd-card` on macOS: `/bin/sh` with Quick Look (`qlmanage`) and `sips` to turn the card SVG into a PNG in a temporary folder, `osascript` to put it on the clipboard. It saves the PNG to `~/Pictures/Clawd Reports` and moves cards beyond the newest 20 (only files named `Clawd-report-*.png` in that folder) to the Trash.
 - `/clawd-card` on Windows runs `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Sta -File <plugin-root>\hooks\export-card.ps1 -Svg <svgPath> -Name <name> -Keep 20`. The script opens the local SVG in headless Edge, or Chrome if Edge is missing, takes a 1200×675 screenshot, copies it to the clipboard, saves it to `Pictures\Clawd Reports`, moves older matching cards to the Recycle Bin, and deletes temporary files.
 
@@ -61,6 +62,7 @@ Then run `/reload-plugins` or start a new session.
 The mod is one hooks module, `hooks/register.tsx`. Its hooks on Claude Code's own events only watch them and pass them on unchanged; it answers only its own two commands and draws only its own band and pane:
 
 - `session.start`: fetch Fable weekly usage (when eligible; throttled to once per five minutes), register `/clawd` and `/clawd-card`, detect the language, and read Clawd's progress from the local store. Release notes remain in the project's `hooks/changelog.ts` record and are not shown as a pop-up.
+- `classic.SessionStart`, only after `/clear`, `/resume` or `/branch`: Claude Code resets the band's in-session state there without firing `session.start`, so the plugin repeats the `session.start` loading (Fable usage, language, Clawd's progress, saved choices, usage readings, last-7-days tally) without registering the commands again. It passes the event through unchanged.
 - `session.measure` and `turn.complete`: read the usage numbers to redraw the band; refresh Fable weekly usage after replies (when eligible; throttled to once per five minutes); add XP after each reply of the main conversation (not subagents), add each turn's token counts (main conversation and subagents) to the hourly tally for the "last 7 days" figure, note when that reply finished for the cache countdown (kept for the session only), and start the Halloween candy animation in season.
 - `classic.PermissionRequest`: shows "!" for permission requests and passes the request through unchanged; it never answers or changes it.
 - `prompt.submit`: checks every prompt for a leading `/` after trimming whitespace; when `tantrums` is on, also checks composer text locally for frustration and keeps only hit timestamps in memory. It passes the prompt through unchanged.
@@ -80,7 +82,7 @@ In `/config`, `language` accepts lowercase `auto`, `zh` or `en`; anything else m
 ### 功能
 
 - **四个基础用量环**：上下文、5 小时额度、每周额度、缓存命中率（仅主对话本会话，排除子代理）；圆环、标签和百分比比早期版本更大。80% 变琥珀色，95% 变红，缓存命中低于 50% 才提醒。上下文环标出自动压缩位置（关闭自动压缩时不显示），悬停可看距压缩还剩多少 tokens，已到位置时显示「即将压缩」；5 小时、每周和 Fable 每周额度若可能在重置前用完，悬停显示预计用完时间（窗口前 10% 不显示），否则显示剩余时间。没有 5 小时额度的套餐（已验证的 Ultra）不显示 5 小时额度
-- **Fable 每周（可选第五环）**：有额度时显示在每周之后，沿用额度环的琥珀色 / 红色阈值。仅当符合条件的 Claude 订阅 OAuth 登录有 Fable 每周额度时显示；API 密钥、Bedrock/Vertex、网关、未登录或请求失败时不显示，刷新失败保留上次读数。插件在会话开始和回复后自行 GET Anthropic 用量接口（`https://api.anthropic.com/api/oauth/usage`），最多每 5 分钟一次；宿主添加凭据，插件看不到令牌，也不发送提示词、回复或遥测。策略 `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` 或组织网页请求限制可能会阻止获取
+- **Fable 每周（可选第五环）**：有额度时显示在每周之后，沿用额度环的琥珀色 / 红色阈值。仅当符合条件的 Claude 订阅 OAuth 登录有 Fable 每周额度时显示；API 密钥、Bedrock/Vertex、网关、未登录或请求失败时不显示，刷新失败保留上次读数。插件在会话开始、`/clear`、`/resume`、`/branch` 之后和回复后自行 GET Anthropic 用量接口（`https://api.anthropic.com/api/oauth/usage`），最多每 5 分钟一次；宿主添加凭据，插件看不到令牌，也不发送提示词、回复或遥测。策略 `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` 或组织网页请求限制可能会阻止获取
 - **收起状态**：默认保持为 30px 的细条；点 ▲ 或运行 `/clawd` 展开，点 ▼ 或再次运行 `/clawd` 收起
 - **展开时**：圆环依次扫入、数字像老虎机一样滚动、旁边飘出「+N%」
 - **缓存倒计时**：Claude 工作时隐藏，首轮回复后才显示在缓存命中旁（订阅约 1 小时、API 密钥 5 分钟，每次回复重新计时），剩 5 分钟变色，过期显示「已过期」。缓存过期后下一轮要把整段对话重新写入缓存，更耗额度
@@ -116,6 +118,7 @@ In `/config`, `language` accepts lowercase `auto`, `zh` or `en`; anything else m
 - Claude Code **2.1.287 起**默认支持 mod；作者在 2.1.286（macOS）上实测，Windows 从 1.6.0 起支持
 - Windows 导出战报图片要用 Windows PowerShell 5.1（系统自带）和 Edge 或 Chrome
 - 桌面 App 目前有一个重画 bug（[anthropics/claude-code#99211](https://github.com/anthropics/claude-code/issues/99211)）：状态变化时动画会从头播；▲▼ 按钮偶尔点不动，可以用 `/clawd` 代替
+- 由组织管理 Claude Code 的环境（Team / Enterprise 登录，或机器上有 managed settings）里，Claude Code 不会运行用户安装插件的 `classic.*` 和 `session.compact` 钩子，`/plugin` 里会有提示。这时权限请求不显示「!」，压缩没有专属动作；`/clear`、`/resume`、`/branch` 之后信息栏先回到默认状态：展开状态、点阵和等级在下一轮回复后恢复，`language` 为 `auto` 时会停在英文，直到 `/reload-plugins`（把 `language` 填成 `zh` 或 `en` 可避免）
 
 ## Source and license
 

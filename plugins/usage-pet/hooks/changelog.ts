@@ -6,6 +6,13 @@ export type Release = { version: string; notes: Record<Lang, string[]> }
 
 export const CHANGELOG: Release[] = [
   {
+    version: '1.19.1',
+    notes: {
+      zh: ['修复：运行 /clear、/resume 或 /branch 后，信息栏不再退回默认状态（收起、英文、Clawd 变回 Lv.1、读数为空）；展开状态、点阵、语言、等级和额度读数会立即重新读回'],
+      en: ['Fix: after /clear, /resume or /branch the band no longer falls back to its defaults (collapsed, English, Clawd at Lv.1, empty readings); the expanded state, dither, language, level and limit readings are loaded again right away'],
+    },
+  },
+  {
     version: '1.19.0',
     notes: {
       zh: ['适配 Claude Ultra 套餐：已验证的 Ultra 账号没有 5 小时额度，信息栏、收起细条和终端不再显示空的「5 小时」读数，其余几项自动排开；窄窗口下改为保留上下文与每周额度。Max 和 Pro 不变'],
