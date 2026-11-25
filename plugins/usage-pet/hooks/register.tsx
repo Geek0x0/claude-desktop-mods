@@ -1,7 +1,7 @@
 import { atom, read } from 'claude-code'
 import type { Atom, EngineInterface, ModelUsage, PluginState, Register, SessionContextUsage, SessionRateLimit, StateRef, Timer } from 'claude-code'
 
-import type { Activity, AgentState, Bars, CacheStat, CacheTotals, Pet, ReactionKind, Report, SessionCost, Snap, Week, Window } from '../types'
+import type { Activity, AgentState, Bars, CacheStat, CacheTotals, Ledger, Pet, ReactionKind, Report, SessionCost, Snap, Week, Window } from '../types'
 import {
   bandAlt,
   bandSvgParts,
@@ -560,11 +560,15 @@ const askAtom = atom(askRef, 0) as UsagePetAtom<'ask', number>
 // 有效期：订阅（有 5 小时 / 每周额度读数）约 1 小时，API 密钥 5 分钟；每次请求重新计时。
 // 从「答完」算会比真正的过期时间晚一点（有效期从最后一次请求开始算），所以界面上只到分钟
 const warmAtom = atom(warmRef, 0) as UsagePetAtom<'warm', number>
-// 近 7 天用量：所有会话的账按小时合并的一份，答完一轮、会话开始时从 $.store 重新合并。
-// 留的是按小时的明细不是合计：很久不发消息时，画的时候按当前时间截，数字照样往前滚
+// Last-7-days usage: every session's hourly ledger merged into one; re-merged from $.store at session start
+// and at most every five minutes after a turn, with this session's own turns added from memory in between.
+// Kept as hourly detail, not a total: long after the last message the figure is still cut at the current time.
 const weekAtom = atom(weekRef, { hours: {}, since: 0 } as Week) as UsagePetAtom<'week', Week>
 // 同一个会话里主对话和子代理可能同时答完：记账排队一个一个来，免得两次读写交错丢数
 let ledgerQueue: Promise<unknown> = Promise.resolve()
+// Re-read other sessions' ledgers from $.store at most this often; own turns are added from memory in between
+const WEEK_RESCAN_MS = 5 * 60000
+let weekCache: { key: string; others: Ledger; own: Ledger; since: number; at: number } | undefined
 const TTL_SUBSCRIPTION_MS = 60 * 60000
 const TTL_API_MS = 5 * 60000
 const FABLE_REFRESH_MS = 5 * 60000
@@ -885,9 +889,19 @@ function serially<R>(fn: () => Promise<R>): Promise<R> {
 async function logTurn($: EngineInterface, u: ModelUsage, now: number) {
   await serially(async () => {
     const key = await ledgerKey($)
-    await $.store.set(key, addTurn(toLedger(await $.store.get(key)), now, u))
-    if (!(Number(await $.store.get(SINCE_KEY)) > 0)) {
+    const ledger = addTurn(toLedger(await $.store.get(key)), now, u)
+    await $.store.set(key, ledger)
+    if (weekCache?.key === key) {
+      weekCache.own = ledger
+    }
+    const since = Number(await $.store.get(SINCE_KEY))
+    if (since > 0) {
+      if (weekCache) {
+        weekCache.since = since
+      }
+    } else {
       await $.store.set(SINCE_KEY, now)
+      weekCache = undefined
     }
   })
 }
@@ -899,21 +913,45 @@ async function updateWeekDisplay($: EngineInterface, next: Week, now: number) {
   )
 }
 
-async function refreshWeek($: EngineInterface, now: number, updateDisplay = true): Promise<Week> {
-  const own = await ledgerKey($)
-  const ledgers = []
-  for (const key of await $.store.keys()) {
-    if (!key.startsWith(LEDGER_PREFIX)) {
-      continue
-    }
-    const ledger = toLedger(await $.store.get(key))
-    if (key !== own && isStale(ledger, now)) {
-      await $.store.delete(key)
-    } else {
-      ledgers.push(ledger)
-    }
+function cachedWeek(): Week | undefined {
+  if (!weekCache) {
+    return undefined
   }
-  const week: Week = { hours: mergeLedgers(ledgers), since: Number(await $.store.get(SINCE_KEY)) || 0 }
+
+  return { hours: mergeLedgers([weekCache.others, weekCache.own]), since: weekCache.since }
+}
+
+async function refreshWeek($: EngineInterface, now: number, updateDisplay = true, force = false): Promise<Week> {
+  const week = await serially(async (): Promise<Week> => {
+    const own = await ledgerKey($)
+    const fresh = !force && weekCache !== undefined && weekCache.key === own && now >= weekCache.at && now - weekCache.at < WEEK_RESCAN_MS
+    if (!fresh) {
+      const otherLedgers: Ledger[] = []
+      let ownLedger: Ledger = {}
+      for (const key of await $.store.keys()) {
+        if (!key.startsWith(LEDGER_PREFIX)) {
+          continue
+        }
+        const ledger = toLedger(await $.store.get(key))
+        if (key === own) {
+          ownLedger = ledger
+        } else if (isStale(ledger, now)) {
+          await $.store.delete(key)
+        } else {
+          otherLedgers.push(ledger)
+        }
+      }
+      weekCache = {
+        key: own,
+        others: mergeLedgers(otherLedgers),
+        own: ownLedger,
+        since: Number(await $.store.get(SINCE_KEY)) || 0,
+        at: now,
+      }
+    }
+
+    return cachedWeek() ?? { hours: {}, since: 0 }
+  })
   if (updateDisplay) await updateWeekDisplay($, week, now)
 
   return week
@@ -1203,6 +1241,7 @@ let lastDetectedLang: Lang | undefined
 // to its default without firing session.start, so everything read from $.store and the engine is loaded again.
 async function loadSession($: EngineInterface, choice: LangChoice, registerCommands: boolean): Promise<void> {
   const detectionGeneration = ++langDetectionGeneration
+  weekCache = undefined
   resetAgentRefresh($)
   await safeBookkeeping($, 'session.start 子代理状态重置失败', async () => {
     await updateIfChanged($, agentsAtom, () => EMPTY_AGENTS)
@@ -1296,7 +1335,7 @@ async function loadSession($: EngineInterface, choice: LangChoice, registerComma
   })
 
   await safeBookkeeping($, '读近 7 天用量失败', async () => {
-    await refreshWeek($, await clockNow($))
+    await refreshWeek($, await clockNow($), true, true)
   })
 
   await safeBookkeeping($, 'session.start tantrum reset failed', () => {
@@ -1453,7 +1492,7 @@ export const register: Register = (on, options) => {
         }
       }
       if (weekToDisplay && weekAt !== undefined) {
-        await updateWeekDisplay($, weekToDisplay, weekAt)
+        await updateWeekDisplay($, cachedWeek() ?? weekToDisplay, weekAt)
       }
     })
     if (e.agentId === undefined) {

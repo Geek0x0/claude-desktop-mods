@@ -6,6 +6,13 @@ export type Release = { version: string; notes: Record<Lang, string[]> }
 
 export const CHANGELOG: Release[] = [
   {
+    version: '1.19.3',
+    notes: {
+      zh: ['每轮答完不再重读所有会话的近 7 天账本：别的会话的用量最多每 5 分钟重读一次，本会话照常即时计入'],
+      en: ["Each reply no longer re-reads every session's 7-day tally: other sessions' counts are re-read at most every 5 minutes; this session's still count right away"],
+    },
+  },
+  {
     version: '1.19.2',
     notes: {
       zh: ['在 plugin.json 里声明插件访问的主机 api.anthropic.com（用于读取 Fable 每周额度，无功能变化）'],

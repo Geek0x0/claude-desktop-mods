@@ -72,21 +72,36 @@ type Harness = Parameters<TestBody>
 function fakeStore(on: Harness[1], entries: Record<string, unknown>) {
   const data = new Map<string, unknown>(Object.entries(entries).map(([k, v]) => [k, JSON.parse(JSON.stringify(v))]))
   const deleted: string[] = []
-  on('store.get', ($, e) => ({ value: data.get(e.key) }))
+  const calls: string[] = []
+  on('store.get', ($, e) => {
+    calls.push(`get:${e.key}`)
+
+    return { value: data.get(e.key) }
+  })
   on('store.set', ($, e) => {
+    calls.push(`set:${e.key}`)
     data.set(e.key, JSON.parse(JSON.stringify(e.value)))
 
     return { value: undefined }
   })
   on('store.delete', ($, e) => {
+    calls.push(`delete:${e.key}`)
     data.delete(e.key)
     deleted.push(e.key)
 
     return { value: undefined }
   })
-  on('store.keys', () => ({ value: [...data.keys()] }))
+  const fail = { keys: false }
+  on('store.keys', () => {
+    calls.push('keys')
+    if (fail.keys) {
+      throw new Error('store.keys unavailable')
+    }
 
-  return { data, deleted }
+    return { value: [...data.keys()] }
+  })
+
+  return { data, deleted, calls, fail }
 }
 
 async function setup($: Harness[0], on: Harness[1], since = NOW - 10 * DAY) {
@@ -96,14 +111,15 @@ async function setup($: Harness[0], on: Harness[1], since = NOW - 10 * DAY) {
     'tok:old': { [NOW_HOUR - 240]: [9, 9, 9, 9] },
   })
   const clock = mock.clock(on, { now: NOW })
-  on('session.id', () => ({ value: 'sess-A' }))
+  const session = { id: 'sess-A' }
+  on('session.id', () => ({ value: session.id }))
   on('session.start', ($, e) => ({ cwd: e.cwd }))
   on('session.usage', () => ({ value: { startedAt: 0, context: { window: 200000 }, rateLimits: [] } }))
   on('command.register', ($, e) => ({ value: { command: e.name } }))
   on('turn.complete', ($, e) => ({ text: '', usage: e.usage }))
   await $.session.start({ cwd: '/tmp', surface: 'desktop', isInteractive: true } as never)
 
-  return { clock, ...store }
+  return { clock, ...store, session }
 }
 const clawdTitle = async ($: Harness[0]) => {
   const svg = String((await (await $.ui.mount(BAND)).findAll({ type: 'Svg' }))[0]?.props?.source)
@@ -194,6 +210,89 @@ test('session.start 注册命令失败时仍记录用量快照', { options: { la
 
 test('主对话和子代理同时答完：两笔都记上，不会一笔盖掉另一笔', { options: { language: 'en' } }, async ($, on) => {
   const { data } = await setup($, on)
+  await $.command.run({ command: 'clawd', args: '' } as never)
   await Promise.all([$.turn.complete(TURN), $.turn.complete({ ...TURN, turnId: 't2', agentId: 'sub-1' })])
   expect(data.get('tok:sess-A')).toEqual({ [NOW_HOUR]: [100, 100, 1800, 80] })
+  // 回归护栏：测试装置里两个回合按 log→log→refresh→refresh 排队，区分不出 cachedWeek() ?? 那一行，但行为退化了这里会跟着坏
+  // 后写的那份读数带上两笔：5000（别的会话）+ 1040 × 2 = 7080 → 7k，不能停在 6k
+  expect(await clawdTitle($)).toContain('Last 7 days: 7k tokens')
+})
+
+test('五分钟内的回合不重新扫描别的会话；过五分钟再读回别的会话的新用量', { options: { language: 'en' } }, async ($, on) => {
+  const { calls, clock, data } = await setup($, on)
+  await $.command.run({ command: 'clawd', args: '' } as never)
+  calls.length = 0
+
+  await $.turn.complete(TURN)
+  expect(calls).not.toContain('keys')
+  expect(calls).not.toContain('get:tok:other')
+  expect(calls.some(c => c.startsWith('delete:'))).toBe(false)
+  expect(await clawdTitle($)).toContain('Last 7 days: 6k tokens')
+
+  // 别的会话在这五分钟里又记了 20000：五分钟内的回合先看不到
+  data.set('tok:other', { [NOW_HOUR - 48]: [5000, 0, 0, 0], [NOW_HOUR]: [20000, 0, 0, 0] })
+  await clock.advance(4 * 60000)
+  await $.turn.complete({ ...TURN, turnId: 't2' })
+  expect(calls).not.toContain('keys')
+  expect(calls).not.toContain('get:tok:other')
+  expect(calls.some(c => c.startsWith('delete:'))).toBe(false)
+  expect(await clawdTitle($)).toContain('Last 7 days: 7k tokens')
+
+  // 到五分钟：重扫一次，新用量进来——25000 + 1040 × 3 = 28120 → 28k
+  await clock.advance(60000)
+  await $.turn.complete({ ...TURN, turnId: 't3' })
+  expect(calls.filter(c => c === 'keys')).toHaveLength(1)
+  expect(await clawdTitle($)).toContain('Last 7 days: 28k tokens')
+})
+
+test('/clear 之后重新扫描：别的会话刚写的用量立刻算进来', { options: { language: 'en' } }, async ($, on) => {
+  on('classic.SessionStart', () => ({}))
+  const { calls, data } = await setup($, on)
+  await $.command.run({ command: 'clawd', args: '' } as never)
+  await $.turn.complete(TURN)
+  calls.length = 0
+
+  data.set('tok:other', { [NOW_HOUR - 48]: [25000, 0, 0, 0] })
+  await $.classic.SessionStart({ source: 'clear' })
+
+  expect(calls).toContain('keys')
+  // 25000 + 1040 = 26040 → 26k，不走表也读回来了
+  expect(await clawdTitle($)).toContain('Last 7 days: 26k tokens')
+})
+
+test('/clear 换了一个会话 id：新会话自己记账，老会话那份留在账里一起算', { options: { language: 'en' } }, async ($, on) => {
+  on('classic.SessionStart', () => ({}))
+  const { data, session } = await setup($, on)
+  await $.command.run({ command: 'clawd', args: '' } as never)
+  await $.turn.complete(TURN)
+
+  session.id = 'sess-C'
+  await $.classic.SessionStart({ source: 'clear' })
+  await $.turn.complete({ ...TURN, turnId: 't2' })
+
+  expect(data.get('tok:sess-C')).toEqual({ [NOW_HOUR]: [50, 50, 900, 40] })
+  expect(data.get('tok:sess-A')).toEqual({ [NOW_HOUR]: [50, 50, 900, 40] })
+  // 5000（别的会话）+ 1040（sess-A 老账）+ 1040（sess-C 新账）= 7080 → 7k，两份都只算一次
+  expect(await clawdTitle($)).toContain('Last 7 days: 7k tokens')
+})
+
+test('重扫失败不留下半个缓存：这轮照常透传，恢复后的下一轮换到新用量', { options: { language: 'en' } }, async ($, on) => {
+  const { calls, clock, data, fail } = await setup($, on)
+  await $.command.run({ command: 'clawd', args: '' } as never)
+  await $.turn.complete(TURN)
+  calls.length = 0
+
+  data.set('tok:other', { [NOW_HOUR - 48]: [25000, 0, 0, 0] })
+  fail.keys = true
+  await clock.advance(5 * 60000)
+  await $.turn.complete({ ...TURN, turnId: 't2' })
+  expect(calls).toContain('keys')
+  // 扫描失败：缓存还是旧的，这轮照常透传，读数停在 5000 + 1040 → 6k
+  expect(await clawdTitle($)).toContain('Last 7 days: 6k tokens')
+
+  fail.keys = false
+  await $.turn.complete({ ...TURN, turnId: 't3' })
+  expect(calls.filter(c => c === 'keys')).toHaveLength(2)
+  // 25000 + 1040 × 3 = 28120 → 28k
+  expect(await clawdTitle($)).toContain('Last 7 days: 28k tokens')
 })
