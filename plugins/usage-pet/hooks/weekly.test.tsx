@@ -1,4 +1,5 @@
 import { expect, mock, test } from 'claude-code/testing'
+import type { TestBody } from 'claude-code/testing'
 
 import type { Ledger } from '../types'
 import { cardAlt, cardSvg } from './card'
@@ -59,13 +60,13 @@ test('战报卡：有数字就多一行「近 7 天 · 所有会话」，没有�
 const BAND = {
   plugin: 'usage-pet',
   component: 'AbovePrompt' as const,
-  props: { hasSurvey: false, isWorking: false, maxRows: 12, bodyColumns: 140, scroll: { offset: 0, bodyRows: 12 }, view: {} },
+  props: { hasSurvey: false, isCollapsed: false, isWorking: false, maxRows: 12, bodyColumns: 140, scroll: { offset: 0, bodyRows: 12 }, view: {} },
   viewport: { columns: 140, rows: 40 },
   surface: 'desktop' as const,
 }
 const TURN = { answer: 'ok', durationMs: 1000, isAborted: false, turnId: 't1', reason: 'answer' as const, usage: { model: 'claude-opus-5-5', ...USAGE } }
 
-type Harness = Parameters<Parameters<typeof test>[1]>
+type Harness = Parameters<TestBody>
 // 另一个会话在 2 天前记了 5000，一个早已结束的会话在 10 天前记过账；记账从 10 天前开始
 // mock.store 存的是副本、测试里读不回来（同一事件也不能再挂第二个钩子）：自己用一个 Map 当 store，测试能直接看插件写了什么、删了什么
 function fakeStore(on: Harness[1], entries: Record<string, unknown>) {

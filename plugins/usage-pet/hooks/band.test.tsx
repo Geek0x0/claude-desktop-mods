@@ -1,4 +1,5 @@
 import { expect, mock, test } from 'claude-code/testing'
+import type { TestBody } from 'claude-code/testing'
 
 import type { Activity, Bars } from '../types'
 import { moodAt } from './mood'
@@ -38,7 +39,7 @@ const DEFAULT_DESKTOP_BAND_WIDTH = desktopBandWidthForColumns(DEFAULT_BODY_COLUM
 const BAND = (isWorking: boolean) => ({
   plugin: 'usage-pet',
   component: 'AbovePrompt' as const,
-  props: { hasSurvey: false, isWorking, maxRows: 12, bodyColumns: DEFAULT_BODY_COLUMNS, scroll: { offset: 0, bodyRows: 12 }, view: {} },
+  props: { hasSurvey: false, isCollapsed: false, isWorking, maxRows: 12, bodyColumns: DEFAULT_BODY_COLUMNS, scroll: { offset: 0, bodyRows: 12 }, view: {} },
   viewport: { columns: DEFAULT_BODY_COLUMNS, rows: 40 },
 })
 
@@ -110,10 +111,10 @@ const gaugeBlocks = (source: string, height: number) =>
 const expectEvenGaugeSpacing = (blocks: number[][], width: number, reservedEdge: number, rightMargin: number) => {
   expect(blocks.length).toBeGreaterThanOrEqual(2)
   const near = (a: number, b: number) => Math.abs(a - b) < 0.6
-  const gaps = [blocks[0][0] - reservedEdge, ...blocks.slice(1).map((block, i) => block[0] - (blocks[i][0] + blocks[i][1]))]
-  for (const gap of gaps) expect(near(gap, gaps[0])).toBe(true)
-  const last = blocks[blocks.length - 1]
-  expect(near(width - (last[0] + last[1]), rightMargin)).toBe(true)
+  const gaps = [blocks[0]![0]! - reservedEdge, ...blocks.slice(1).map((block, i) => block[0]! - (blocks[i]![0]! + blocks[i]![1]!))]
+  for (const gap of gaps) expect(near(gap, gaps[0]!)).toBe(true)
+  const last = blocks[blocks.length - 1]!
+  expect(near(width - (last[0]! + last[1]!), rightMargin)).toBe(true)
 }
 
 test('姿势变化只改变 Clawd SVG，读数数据改变时才改变 gauges SVG', () => {
@@ -466,7 +467,7 @@ test('模型窗口变化：summary 只为新窗口重读一次', ZH, async ($, o
           window,
           tokens: 80000,
           percent: 8,
-          breakdown: { autoCompactThreshold: window / 2, isAutoCompactEnabled: true },
+          breakdown: { autoCompactThreshold: window / 2, isAutoCompactEnabled: true } as never,
         },
         rateLimits: [],
       },
@@ -544,12 +545,12 @@ test('缓存倒计时：共用定位样式，六十分钟精确显示，长 TTL 
 
   expect(sixtyGroup).not.toBeNull()
   expect(sixtyPosition).not.toBeNull()
-  expect((sixtyGroup?.[1].match(/<text\b/g) ?? []).length).toBe(61)
+  expect((sixtyGroup?.[1]!.match(/<text\b/g) ?? []).length).toBe(61)
   expect(sixtyGroup?.[1]).toContain('>60分</text>')
   expect(sixtyGroup?.[1]).toContain('>1分</text>')
   expect(sixtyGroup?.[1]).toContain('>已过期</text>')
   expect(sixtyGroup?.[1]).not.toMatch(/<text[^>]*\s[xy]=/)
-  expect((longGroup?.[1].match(/<text\b/g) ?? []).length).toBe(62)
+  expect((longGroup?.[1]!.match(/<text\b/g) ?? []).length).toBe(62)
   expect(longGroup?.[1]).toContain('>1440分</text>')
   expect(longGroup?.[1]).toContain('>60分</text>')
 })
@@ -867,10 +868,10 @@ test('桌面：一张显式宽高、自带底色的 SVG；变化时有扫环、�
   expect(JSON.stringify(await ui.drawn())).not.toContain('"Client"')
   const svgNodes = await ui.findAll({ type: 'Svg' })
   expect(svgNodes).toHaveLength(2)
-  expect(svgNodes[0].props?.width).toBe(120)
-  expect(svgNodes[1].props?.width).toBe(DEFAULT_DESKTOP_BAND_WIDTH - 120)
+  expect(svgNodes[0]!.props?.width).toBe(120)
+  expect(svgNodes[1]!.props?.width).toBe(DEFAULT_DESKTOP_BAND_WIDTH - 120)
   expect(svgNodes.every(node => node.props?.isInteractive === true)).toBe(true)
-  const first = await svgOf(ui)
+  const first = (await svgOf(ui))!
   expect(first.props?.width).toBe(DEFAULT_DESKTOP_BAND_WIDTH)
   expect(first.props?.height).toBe(H)
   expect(first.props?.isInteractive).toBe(true)
@@ -880,7 +881,7 @@ test('桌面：一张显式宽高、自带底色的 SVG；变化时有扫环、�
 
   await clock.advance(1400)
   await ui.redraw()
-  const settled = await svgOf(ui)
+  const settled = (await svgOf(ui))!
   expect(settled.props?.alt).toBe('上下文 42%，5 小时额度 8%，每周额度 63%，缓存命中 —；Claude 在休息')
   // 背景透明：不铺底色；配色方案声明成 light dark，小窗口跟着 App 外观走，两边一致就不会垫底
   expect(String(settled.props?.source)).not.toContain('class="bg"')
@@ -895,7 +896,7 @@ test('桌面：一张显式宽高、自带底色的 SVG；变化时有扫环、�
 
   await $.session.measure(measure(57, 8, 63))
   await ui.redraw()
-  const moving = String((await svgOf(ui)).props?.source)
+  const moving = String((await svgOf(ui))!.props?.source)
   // 十位 4→5、个位 2→7 滚动；上下文圆环从 42% 扫到 57%；+15% 提示；Clawd 跳一下
   expect(moving).toContain('@keyframes odc0{from{transform:translateY(-56px)}to{transform:translateY(-70px)}}')
   expect(moving).toContain('@keyframes odc1{from{transform:translateY(-28px)}to{transform:translateY(-98px)}}')
@@ -906,12 +907,12 @@ test('桌面：一张显式宽高、自带底色的 SVG；变化时有扫环、�
 
   await clock.advance(1400)
   await ui.redraw()
-  const after = String((await svgOf(ui)).props?.source)
+  const after = String((await svgOf(ui))!.props?.source)
   expect(after).not.toContain('@keyframes arc')
   expect(after).not.toContain('@keyframes od')
   expect(after).toContain('class="hop idle"')
   expect(after).not.toContain('+15%')
-  expect((await svgOf(ui)).props?.alt).toContain('上下文 57%')
+  expect((await svgOf(ui))!.props?.alt).toContain('上下文 57%')
 })
 
 test('一分钟内 AbovePrompt 的 pose-only 重画复用 gauges source 字节串', ZH, async ($, on) => {
@@ -951,15 +952,15 @@ test('Clawd：干活时搬出笔记本，额度 ≥90% 冒汗', ZH, async ($, on
   await $.command.run({ command: 'clawd', args: '' } as never)
   const idle = await $.ui.mount({ ...BAND(false), surface: 'desktop' })
   const busy = await $.ui.mount({ ...BAND(true), surface: 'desktop' })
-  expect(String((await svgOf(idle)).props?.alt)).toContain('Claude 在休息')
-  expect(String((await svgOf(idle)).props?.source)).not.toContain('class="laptop"')
-  expect(String((await svgOf(busy)).props?.alt)).toContain('Claude 正在干活')
-  expect(String((await svgOf(busy)).props?.source)).toContain('class="laptop"')
+  expect(String((await svgOf(idle))!.props?.alt)).toContain('Claude 在休息')
+  expect(String((await svgOf(idle))!.props?.source)).not.toContain('class="laptop"')
+  expect(String((await svgOf(busy))!.props?.alt)).toContain('Claude 正在干活')
+  expect(String((await svgOf(busy))!.props?.source)).toContain('class="laptop"')
 
   await $.session.measure(measure(30, 92, 50))
   await idle.redraw()
-  expect(String((await svgOf(idle)).props?.source)).toContain('class="sweat"')
-  expect(String((await svgOf(idle)).props?.source)).toContain('class="clawd stressed"')
+  expect(String((await svgOf(idle))!.props?.source)).toContain('class="sweat"')
+  expect(String((await svgOf(idle))!.props?.source)).toContain('class="clawd stressed"')
 })
 
 const turn = (read: number, write: number, fresh: number, agentId?: string) => ({
@@ -985,7 +986,7 @@ test('缓存命中：按轮累计（读取 ÷ 读取+写入+未走缓存），�
   // 子代理的轮次不计入
   await $.turn.complete(turn(0, 500, 500, 'agent-1'))
   await ui.redraw()
-  const svg = await svgOf(ui)
+  const svg = (await svgOf(ui))!
   expect(String(svg.props?.alt)).toContain('缓存命中 90%')
   expect(String(svg.props?.source)).toContain('缓存命中')
   expect(String(svg.props?.source)).toContain('本轮 95%')
@@ -1037,18 +1038,18 @@ test('排布均匀：左右留白相等，从预留工具图标后的 Clawd 边�
   await $.session.measure(measure(42, 8, 63))
   await $.command.run({ command: 'clawd', args: '' } as never)
   const ui = await $.ui.mount({ ...BAND(false), surface: 'desktop' })
-  const src = String((await svgOf(ui)).props?.source)
+  const src = String((await svgOf(ui))!.props?.source)
   const blocks = [...src.matchAll(new RegExp(`<rect x="([\\d.]+)" y="0" width="([\\d.]+)" height="${H}" fill="transparent"\\/>`, 'g'))].map(m => [Number(m[1]), Number(m[2])])
   expect(blocks).toHaveLength(4)
   const near = (a: number, b: number) => Math.abs(a - b) < 0.6
   const reservedEdge = 22 + 16 * 4.5 + ACTIVITY_LAYOUT_RESERVE
-  const gaps = [blocks[0][0] - reservedEdge, ...[1, 2, 3].map(i => blocks[i][0] - (blocks[i - 1][0] + blocks[i - 1][1]))]
-  for (const g of gaps) expect(near(g, gaps[0])).toBe(true)
+  const gaps = [blocks[0]![0]! - reservedEdge, ...[1, 2, 3].map(i => blocks[i]![0]! - (blocks[i - 1]![0]! + blocks[i - 1]![1]!))]
+  for (const g of gaps) expect(near(g, gaps[0]!)).toBe(true)
   // 右边留白 = 左边留白（22）
   expect(src).toContain('transform="translate(22 ')
-  expect(near(DEFAULT_DESKTOP_BAND_WIDTH - (blocks[3][0] + blocks[3][1]), 22)).toBe(true)
+  expect(near(DEFAULT_DESKTOP_BAND_WIDTH - (blocks[3]![0]! + blocks[3]![1]!), 22)).toBe(true)
   // 各块宽度跟着文字走，不再强行等宽（上下文按悬停详情「84,000 tokens」留宽，比 5 小时额度那块宽）
-  expect(blocks[0][1] > blocks[1][1]).toBe(true)
+  expect(blocks[0]![1]! > blocks[1]![1]!).toBe(true)
 })
 
 test('100% 放进圆环：三位数去掉 %、换小字号', ZH, async ($, on) => {
@@ -1058,8 +1059,8 @@ test('100% 放进圆环：三位数去掉 %、换小字号', ZH, async ($, on) =
   await $.turn.complete(turn(500, 0, 0))
   await $.command.run({ command: 'clawd', args: '' } as never)
   const ui = await $.ui.mount({ ...BAND(false), surface: 'desktop' })
-  const src = String((await svgOf(ui)).props?.source)
-  expect(String((await svgOf(ui)).props?.alt)).toContain('缓存命中 100%')
+  const src = String((await svgOf(ui))!.props?.source)
+  expect(String((await svgOf(ui))!.props?.alt)).toContain('缓存命中 100%')
   // 另外三个两位数以内的圆环各有一个 %，100 的那个没有
   expect(src.match(/class="pct"/g)?.length).toBe(3)
   expect(src).toContain('class="num sm"')
@@ -1070,7 +1071,7 @@ test('折叠：数据刷新保持细条；▲ 和 /clawd 展开，▼ 和 /clawd
   await $.session.measure(measure(42, 8, 63))
   const ui = await $.ui.mount({ ...BAND(false), surface: 'desktop' })
 
-  const mini = await svgOf(ui)
+  const mini = (await svgOf(ui))!
   expect(mini.props?.height).toBe(H_MINI)
   expect(String(mini.props?.source)).toContain(' mini"')
   expect(String(mini.props?.source)).toContain('class="mlab">缓存命中')
@@ -1082,40 +1083,40 @@ test('折叠：数据刷新保持细条；▲ 和 /clawd 展开，▼ 和 /clawd
   // 按「展开」→ 一直展开
   await ui.press({ key: 'toggle' })
   await ui.redraw()
-  expect((await svgOf(ui)).props?.height).toBe(H)
+  expect((await svgOf(ui))!.props?.height).toBe(H)
 
   // 按「收起」→ 立刻收起
   await ui.press({ key: 'toggle' })
   await ui.redraw()
-  expect((await svgOf(ui)).props?.height).toBe(H_MINI)
+  expect((await svgOf(ui))!.props?.height).toBe(H_MINI)
 
   // 收起时有新读数仍保持细条
   await $.session.measure(measure(57, 8, 63))
   await ui.redraw()
-  expect((await svgOf(ui)).props?.height).toBe(H_MINI)
+  expect((await svgOf(ui))!.props?.height).toBe(H_MINI)
 
   // /clawd：展开后保持展开，再次运行收起
   await $.command.run({ command: 'clawd', args: '' } as never)
   await ui.redraw()
-  expect((await svgOf(ui)).props?.height).toBe(H)
+  expect((await svgOf(ui))!.props?.height).toBe(H)
   await $.command.run({ command: 'clawd', args: '' } as never)
   await ui.redraw()
-  expect((await svgOf(ui)).props?.height).toBe(H_MINI)
+  expect((await svgOf(ui))!.props?.height).toBe(H_MINI)
 })
 
 test('细条排布均匀：左右留白相等，从预留工具图标后的 Clawd 边缘计算间距', ZH, async ($, on) => {
   on('session.measure', ($, e) => ({ changed: e.changed }))
   await $.session.measure(measure(42, 8, 63))
   const ui = await $.ui.mount({ ...BAND(false), surface: 'desktop' })
-  const src = String((await svgOf(ui)).props?.source)
+  const src = String((await svgOf(ui))!.props?.source)
   const items = [...src.matchAll(new RegExp(`<rect x="([\\d.]+)" y="0" width="([\\d.]+)" height="${H_MINI}" fill="transparent"\\/>`, 'g'))].map(m => [Number(m[1]), Number(m[2])])
   expect(items).toHaveLength(4)
   const near = (a: number, b: number) => Math.abs(a - b) < 0.6
   const miniReservedEdge = 14 + 26 * 3 + 17 // MINI_X + MINI_LAYOUT_W + MINI_ACTIVITY_RESERVE
-  const gaps = [items[0][0] - miniReservedEdge, ...[1, 2, 3].map(i => items[i][0] - (items[i - 1][0] + items[i - 1][1]))]
-  for (const g of gaps) expect(near(g, gaps[0])).toBe(true)
+  const gaps = [items[0]![0]! - miniReservedEdge, ...[1, 2, 3].map(i => items[i]![0]! - (items[i - 1]![0]! + items[i - 1]![1]!))]
+  for (const g of gaps) expect(near(g, gaps[0]!)).toBe(true)
   expect(src).toContain('transform="translate(14 ')
-  expect(near(DEFAULT_DESKTOP_BAND_WIDTH - (items[3][0] + items[3][1]), 14)).toBe(true)
+  expect(near(DEFAULT_DESKTOP_BAND_WIDTH - (items[3]![0]! + items[3]![1]!), 14)).toBe(true)
 })
 
 // ───────── 跟随系统语言 ─────────
@@ -1126,7 +1127,7 @@ const START = { cwd: '/tmp', surface: 'desktop' as const, isInteractive: true }
 const EN = { options: { language: 'en' } }
 const AUTO = { options: { language: 'auto' } }
 
-type UsagePetHarness = Parameters<Parameters<typeof test>[1]>
+type UsagePetHarness = Parameters<TestBody>
 
 function testStore(on: UsagePetHarness[1], entries: Record<string, unknown>) {
   const data = new Map<string, unknown>(Object.entries(entries).map(([key, value]) => [key, JSON.parse(JSON.stringify(value))]))
@@ -1181,8 +1182,8 @@ function failingStore(on: UsagePetHarness[1]) {
 
 // 跑一次 session.start，环境变量和 macOS 系统语言列表都由测试给定
 async function startAuto(
-  $: Parameters<Parameters<typeof test>[2]>[0],
-  on: Parameters<Parameters<typeof test>[2]>[1],
+  $: Parameters<TestBody>[0],
+  on: Parameters<TestBody>[1],
   env: Record<string, string>,
   appleLanguages: string | null,
 ) {
@@ -1228,20 +1229,20 @@ test('展开按钮、/clawd 和 /clawd-dither 都把选择写进跨会话 store'
 test('session.start 从 store 恢复展开状态，缺省时仍收起', ZH, async ($, on) => {
   const store = await startWithStore($, on, { prefs: { pinned: true } })
   const ui = await $.ui.mount({ ...BAND(false), surface: 'desktop' })
-  expect((await svgOf(ui)).props?.height).toBe(H)
+  expect((await svgOf(ui))!.props?.height).toBe(H)
   expect(store.data.get('prefs')).toEqual({ pinned: true })
 })
 
 test('session.start 对空 prefs 保留默认收起状态', ZH, async ($, on) => {
   await startWithStore($, on, {})
   const ui = await $.ui.mount({ ...BAND(false), surface: 'desktop' })
-  expect((await svgOf(ui)).props?.height).toBe(H_MINI)
+  expect((await svgOf(ui))!.props?.height).toBe(H_MINI)
 })
 
 test('session.start 从 store 恢复关闭的 dither', ZH, async ($, on) => {
   await startWithStore($, on, { prefs: { dither: false } })
   const ui = await $.ui.mount({ ...BAND(true), surface: 'desktop' })
-  expect(String((await svgOf(ui)).props?.source)).not.toContain('ultra-dither')
+  expect(String((await svgOf(ui))!.props?.source)).not.toContain('ultra-dither')
 })
 
 for (const source of ['clear', 'resume', 'fork'] as const) {
@@ -1289,7 +1290,7 @@ test('/resume 之后跟随系统语言重新生效，不会停在英文默认值
   await $.classic.SessionStart({ source: 'resume' })
 
   const ui = await $.ui.mount({ ...BAND(false), surface: 'desktop' })
-  expect(String((await svgOf(ui)).props?.alt)).toContain('上下文')
+  expect(String((await svgOf(ui))!.props?.alt)).toContain('上下文')
 })
 
 test('以 --resume 启动：session.start 和 classic.SessionStart 都触发，命令只注册一次（三条），状态照常读回', ZH, async ($, on) => {
@@ -1311,7 +1312,7 @@ test('以 --resume 启动：session.start 和 classic.SessionStart 都触发，�
 
   expect(registered).toBe(3)
   const ui = await $.ui.mount({ ...BAND(false), surface: 'desktop' })
-  expect((await svgOf(ui)).props?.height).toBe(H)
+  expect((await svgOf(ui))!.props?.height).toBe(H)
 })
 
 test('classic.SessionStart 的 startup 和 compact 不重读：startup 归 session.start，压缩不会重置 $.state', ZH, async ($, on) => {
@@ -1322,7 +1323,7 @@ test('classic.SessionStart 的 startup 和 compact 不重读：startup 归 sessi
   await $.classic.SessionStart({ source: 'compact' })
 
   const ui = await $.ui.mount({ ...BAND(false), surface: 'desktop' })
-  expect((await svgOf(ui)).props?.height).toBe(H_MINI)
+  expect((await svgOf(ui))!.props?.height).toBe(H_MINI)
 })
 
 test('主回合完成后读取其他会话写入的偏好', ZH, async ($, on) => {
@@ -1340,7 +1341,7 @@ test('主回合完成后读取其他会话写入的偏好', ZH, async ($, on) =>
   } as never)
   await ui.redraw()
 
-  const svg = await svgOf(ui)
+  const svg = (await svgOf(ui))!
   expect(svg.props?.height).toBe(H)
   expect(String(svg.props?.source)).not.toContain('ultra-dither')
 })
@@ -1374,7 +1375,7 @@ test('prefs 里的非布尔值被忽略并保留两个设置的默认值', ZH, a
   await startWithStore($, on, { prefs: { pinned: 'true', dither: 0 } })
   const ui = await $.ui.mount({ ...BAND(true), surface: 'desktop' })
 
-  const svg = await svgOf(ui)
+  const svg = (await svgOf(ui))!
   expect(svg.props?.height).toBe(H_MINI)
   expect(String(svg.props?.source)).toContain('ultra-dither')
 })
@@ -1384,7 +1385,7 @@ test('英文界面：language = en 时标签、重置时间、读屏描述都是
   await $.session.measure(measure(42, 8, 63))
   await $.command.run({ command: 'clawd', args: '' } as never)
   const ui = await $.ui.mount({ ...BAND(false), surface: 'desktop' })
-  const svg = await svgOf(ui)
+  const svg = (await svgOf(ui))!
   const src = String(svg.props?.source)
   expect(svg.props?.alt).toBe('Context 42%, 5-hour 8%, Weekly 63%, Cache hit —; Claude is resting')
   expect(src).toContain('class="lab">Context<')
@@ -1399,14 +1400,14 @@ test('英文界面：四块仍然左右留白相等，从预留工具图标后�
   await $.session.measure(measure(42, 8, 63))
   await $.command.run({ command: 'clawd', args: '' } as never)
   const ui = await $.ui.mount({ ...BAND(false), surface: 'desktop' })
-  const src = String((await svgOf(ui)).props?.source)
+  const src = String((await svgOf(ui))!.props?.source)
   const blocks = [...src.matchAll(new RegExp(`<rect x="([\\d.]+)" y="0" width="([\\d.]+)" height="${H}" fill="transparent"\\/>`, 'g'))].map(m => [Number(m[1]), Number(m[2])])
   const near = (a: number, b: number) => Math.abs(a - b) < 0.6
   const reservedEdge = 22 + 16 * 4.5 + ACTIVITY_LAYOUT_RESERVE
-  const gaps = [blocks[0][0] - reservedEdge, ...[1, 2, 3].map(i => blocks[i][0] - (blocks[i - 1][0] + blocks[i - 1][1]))]
-  for (const g of gaps) expect(near(g, gaps[0])).toBe(true)
+  const gaps = [blocks[0]![0]! - reservedEdge, ...[1, 2, 3].map(i => blocks[i]![0]! - (blocks[i - 1]![0]! + blocks[i - 1]![1]!))]
+  for (const g of gaps) expect(near(g, gaps[0]!)).toBe(true)
   expect(src).toContain('transform="translate(22 ')
-  expect(near(DEFAULT_DESKTOP_BAND_WIDTH - (blocks[3][0] + blocks[3][1]), 22)).toBe(true)
+  expect(near(DEFAULT_DESKTOP_BAND_WIDTH - (blocks[3]![0]! + blocks[3]![1]!), 22)).toBe(true)
 })
 
 test('信息栏渲染出错：回退到后续渲染器', ZH, async ($, on) => {
@@ -1429,7 +1430,7 @@ test('信息栏渲染出错：回退到后续渲染器', ZH, async ($, on) => {
 test('跟随系统：环境变量是中文 → 中文，不去问 macOS', AUTO, async ($, on) => {
   const asked = await startAuto($, on, { LANG: 'zh_CN.UTF-8' }, '("en-US")')
   const ui = await $.ui.mount({ ...BAND(false), surface: 'desktop' })
-  expect(String((await svgOf(ui)).props?.alt)).toContain('上下文')
+  expect(String((await svgOf(ui))!.props?.alt)).toContain('上下文')
   expect(asked).toHaveLength(0)
 })
 
@@ -1437,34 +1438,34 @@ test('跟随系统：环境变量为空、macOS 首选英文（en-MY, zh-Hans-MY
   const asked = await startAuto($, on, {}, '(\n    "en-MY",\n    "zh-Hans-MY"\n)\n')
   expect(asked[0]).toEqual(['defaults', 'read', '-g', 'AppleLanguages'])
   const ui = await $.ui.mount({ ...BAND(false), surface: 'desktop' })
-  expect(String((await svgOf(ui)).props?.alt)).toContain('Context')
+  expect(String((await svgOf(ui))!.props?.alt)).toContain('Context')
 })
 
 test('跟随系统：环境变量为空、macOS 首选中文（zh-Hans-CN）→ 中文', AUTO, async ($, on) => {
   await startAuto($, on, {}, '(\n    "zh-Hans-CN",\n    en\n)\n')
   const ui = await $.ui.mount({ ...BAND(false), surface: 'desktop' })
-  expect(String((await svgOf(ui)).props?.alt)).toContain('上下文')
+  expect(String((await svgOf(ui))!.props?.alt)).toContain('上下文')
 })
 
 test('跟随系统：不是 macOS（没有 defaults 命令）也能正常显示', AUTO, async ($, on) => {
   await startAuto($, on, {}, null)
   const ui = await $.ui.mount({ ...BAND(false), surface: 'desktop' })
-  expect(String((await svgOf(ui)).props?.alt)).toMatch(/上下文|Context/)
+  expect(String((await svgOf(ui))!.props?.alt)).toMatch(/上下文|Context/)
 })
 
 test('跟随系统（Windows）：环境变量为空、显示语言中文（zh-CN）→ 中文，问的是 PowerShell 不是 defaults', AUTO, async ($, on) => {
   const asked = await startAuto($, on, { OS: 'Windows_NT' }, 'zh-CN\r\n')
   expect(asked).toHaveLength(1)
-  expect(asked[0][0]).toBe('powershell.exe')
+  expect(asked[0]![0]!).toBe('powershell.exe')
   expect(asked[0]).toContain('(Get-UICulture).Name')
   const ui = await $.ui.mount({ ...BAND(false), surface: 'desktop' })
-  expect(String((await svgOf(ui)).props?.alt)).toContain('上下文')
+  expect(String((await svgOf(ui))!.props?.alt)).toContain('上下文')
 })
 
 test('跟随系统（Windows）：显示语言英文（en-US）→ 英文', AUTO, async ($, on) => {
   await startAuto($, on, { OS: 'Windows_NT' }, 'en-US\r\n')
   const ui = await $.ui.mount({ ...BAND(false), surface: 'desktop' })
-  expect(String((await svgOf(ui)).props?.alt)).toContain('Context')
+  expect(String((await svgOf(ui))!.props?.alt)).toContain('Context')
 })
 
 test('跟随系统：启动不等待慢语言检测，检测完成后信息栏切换中文', AUTO, async ($, on) => {
@@ -1496,21 +1497,22 @@ test('跟随系统：启动不等待慢语言检测，检测完成后信息栏�
 
   const sessionStart = $.session.start(START as never)
   await detectionStarted
-  let startTimeout!: ReturnType<typeof setTimeout>
+  const systemTimers = globalThis as unknown as { setTimeout: (run: () => void, ms: number) => unknown; clearTimeout: (timer: unknown) => void }
+  let startTimeout: unknown
   const resolvedWhileDetectionPending = await Promise.race([
     sessionStart.then(() => true),
     new Promise<boolean>(resolve => {
-      startTimeout = setTimeout(() => resolve(false), 100)
+      startTimeout = systemTimers.setTimeout(() => resolve(false), 100)
     }),
   ])
-  clearTimeout(startTimeout)
+  systemTimers.clearTimeout(startTimeout)
   release()
   await sessionStart
   await chineseStored
 
   expect(resolvedWhileDetectionPending).toBe(true)
   const ui = await $.ui.mount({ ...BAND(false), surface: 'desktop' })
-  expect(String((await svgOf(ui)).props?.alt)).toContain('上下文')
+  expect(String((await svgOf(ui))!.props?.alt)).toContain('上下文')
 })
 
 test('放松模式：缓存命中 ≥90% 戴墨镜；同时额度告急则只冒汗不戴墨镜', ZH, async ($, on) => {
@@ -1520,12 +1522,12 @@ test('放松模式：缓存命中 ≥90% 戴墨镜；同时额度告急则只冒
   await $.turn.complete(turn(95, 0, 5))
   await $.command.run({ command: 'clawd', args: '' } as never)
   const ui = await $.ui.mount({ ...BAND(false), surface: 'desktop' })
-  expect(String((await svgOf(ui)).props?.source)).toMatch(/class="clawd[^"]* chill"/)
+  expect(String((await svgOf(ui))!.props?.source)).toMatch(/class="clawd[^"]* chill"/)
 
   // 额度告急：冒汗优先
   await $.session.measure(measure(42, 93, 63))
   await ui.redraw()
-  const src = String((await svgOf(ui)).props?.source)
+  const src = String((await svgOf(ui))!.props?.source)
   expect(src).toMatch(/class="clawd[^"]* stressed/)
   expect(src).not.toMatch(/class="clawd[^"]* chill"/)
 })
@@ -1537,7 +1539,7 @@ test('放松模式：缓存命中低于 90% 不戴墨镜', ZH, async ($, on) => 
   await $.turn.complete(turn(80, 10, 10))
   await $.command.run({ command: 'clawd', args: '' } as never)
   const ui = await $.ui.mount({ ...BAND(false), surface: 'desktop' })
-  expect(String((await svgOf(ui)).props?.source)).not.toMatch(/class="clawd[^"]* chill"/)
+  expect(String((await svgOf(ui))!.props?.source)).not.toMatch(/class="clawd[^"]* chill"/)
 })
 
 test('放松模式 + 干活：墨镜和干活两种状态同时挂在 Clawd 上（干活时墨镜推到头顶）', ZH, async ($, on) => {
@@ -1547,7 +1549,7 @@ test('放松模式 + 干活：墨镜和干活两种状态同时挂在 Clawd 上�
   await $.turn.complete(turn(95, 0, 5))
   await $.command.run({ command: 'clawd', args: '' } as never)
   const ui = await $.ui.mount({ ...BAND(true), surface: 'desktop' })
-  const src = String((await svgOf(ui)).props?.source)
+  const src = String((await svgOf(ui))!.props?.source)
   expect(src).toMatch(/class="clawd working[^"]* chill"/)
   expect(src).toContain('.chill.working .shades{animation:none;transform:translateY(-1.9px)}')
 })
@@ -1584,16 +1586,16 @@ test('悬停换上的详情（如「84,000 tokens」）比副标题长时，这�
   await $.session.measure(measure(42, 8, 63))
   await $.turn.complete(turn(990000, 140000, 5000))
   await $.command.run({ command: 'clawd', args: '' } as never)
-  const src = String((await svgOf(await $.ui.mount({ ...BAND(false), surface: 'desktop' }))).props?.source)
+  const src = String((await svgOf(await $.ui.mount({ ...BAND(false), surface: 'desktop' })))!.props?.source)
   const blocks = [...src.matchAll(new RegExp(`<rect x="([\\d.]+)" y="0" width="([\\d.]+)" height="${H}" fill="transparent"\\/>`, 'g'))].map(m => [Number(m[1]), Number(m[2])])
-  const details = [...src.matchAll(/class="sub2">([^<]*)</g)].map(m => m[1])
+  const details = [...src.matchAll(/class="sub2">([^<]*)</g)].map(m => m[1]!)
   expect(blocks).toHaveLength(4)
   expect(details).toHaveLength(4)
   expect(details[0]).toBe('84,000 tokens')
   // 文字区 = 块宽 − 圆环和间隔（2R + 6 + 7 = 65）；下限按每字 0.5 个字号估（与插件的测宽函数无关）
-  details.forEach((d, i) => expect(blocks[i][1] - 65).toBeGreaterThanOrEqual(d.length * 12 * 0.5))
+  details.forEach((d, i) => expect(blocks[i]![1]! - 65).toBeGreaterThanOrEqual(d.length * 12 * 0.5))
   // 最后一块的右边不超过信息栏宽度（右边留白 22）
-  expect(blocks[3][0] + blocks[3][1]).toBeLessThanOrEqual(DEFAULT_DESKTOP_BAND_WIDTH - 22 + 0.6)
+  expect(blocks[3]![0]! + blocks[3]![1]!).toBeLessThanOrEqual(DEFAULT_DESKTOP_BAND_WIDTH - 22 + 0.6)
 })
 
 test('窗口变窄：信息栏宽度跟着收，加上右边按钮也不超过可用宽度（按钮不会被挤到下一行）；内容逐级收，不出右边界', EN, async ($, on) => {
@@ -1605,7 +1607,7 @@ test('窗口变窄：信息栏宽度跟着收，加上右边按钮也不超过�
   const seen = new Set<string>()
   for (const cols of [140, 115, 105, 70, 58, 45, 40]) {
     const band = { ...BAND(false), props: { ...BAND(false).props, bodyColumns: cols }, viewport: { columns: cols, rows: 40 }, surface: 'desktop' as const }
-    const svg = await svgOf(await $.ui.mount(band))
+    const svg = (await svgOf(await $.ui.mount(band)))!
     const width = Number(svg.props?.width)
     // 可用宽度 = 每列 8px − 右侧 8px；SVG、按钮和安全预留不超过它。
     if (cols * BODY_COLUMN_WIDTH - BODY_RIGHT_INSET >= minBandWidth(2) + EXPAND_BUTTON_WIDTH + BAND_SAFETY_PX) {
@@ -1627,7 +1629,7 @@ test('窗口变窄：信息栏宽度跟着收，加上右边按钮也不超过�
   await $.command.run({ command: 'clawd', args: '' } as never)
   for (const cols of [140, 70, 58, 45]) {
     const band = { ...BAND(false), props: { ...BAND(false).props, bodyColumns: cols }, viewport: { columns: cols, rows: 40 }, surface: 'desktop' as const }
-    const svg = await svgOf(await $.ui.mount(band))
+    const svg = (await svgOf(await $.ui.mount(band)))!
     const width = Number(svg.props?.width)
     const items = [...String(svg.props?.source).matchAll(new RegExp(`<rect x="([\\d.]+)" y="0" width="([\\d.]+)" height="${H_MINI}" fill="transparent"\\/>`, 'g'))].map(m => Number(m[1]) + Number(m[2]))
     expect(items.length).toBeGreaterThanOrEqual(2)
@@ -1651,7 +1653,7 @@ test('展开和细条在中英文窄窗口都按优先级隐藏圆环并保持�
 
   for (const lang of ['zh', 'en'] as const) {
     const fullTitles = [...bandSvgParts(ALL_GAUGES_BARS, false, 1000, false, lang, undefined, undefined, undefined, 0).gauges.matchAll(/<title>(.*?)<\/title>/g)]
-      .map(match => match[1])
+      .map(match => match[1]!)
     const narrowTitles = bandSvgParts(ALL_GAUGES_BARS, false, 270, false, lang, undefined, undefined, undefined, 0).hidden
 
     expect(narrowTitles).toEqual(
@@ -1663,11 +1665,11 @@ test('展开和细条在中英文窄窗口都按优先级隐藏圆环并保持�
       const blocks = gaugeBlocks(parts.gauges, H)
       const titles = [...parts.gauges.matchAll(/<title>(.*?)<\/title>/g)]
 
-      expect(parts.hidden).toHaveLength(hiddenCounts[i])
+      expect(parts.hidden).toHaveLength(hiddenCounts[i]!)
       expect(hiddenGaugeIds(parts.hidden, lang)).toEqual(dropOrder.slice(0, hiddenCounts[i]))
-      expect(titles).toHaveLength(6 - hiddenCounts[i])
-      expect(blocks).toHaveLength(6 - hiddenCounts[i])
-      expect(Math.max(...blocks.map(([x, w]) => x + w))).toBeLessThanOrEqual(width - 22 + 0.6)
+      expect(titles).toHaveLength(6 - hiddenCounts[i]!)
+      expect(blocks).toHaveLength(6 - hiddenCounts[i]!)
+      expect(Math.max(...blocks.map(([x, w]) => x! + w!))).toBeLessThanOrEqual(width - 22 + 0.6)
       expectEvenGaugeSpacing(blocks, width, CLAWD_X + 16 * 4.5 + ACTIVITY_LAYOUT_RESERVE, CLAWD_X)
     }
 
@@ -1680,7 +1682,7 @@ test('展开和细条在中英文窄窗口都按优先级隐藏圆环并保持�
       expect(hiddenGaugeIds(parts.hidden, lang)).toEqual(dropOrder.slice(0, parts.hidden.length))
       expect(blocks.length).toBe(6 - parts.hidden.length)
       expect(blocks.length).toBeGreaterThanOrEqual(2)
-      expect(Math.max(...blocks.map(([x, w]) => x + w))).toBeLessThanOrEqual(width - MINI_X + 0.6)
+      expect(Math.max(...blocks.map(([x, w]) => x! + w!))).toBeLessThanOrEqual(width - MINI_X + 0.6)
       expectEvenGaugeSpacing(blocks, width, MINI_X + 26 * 3 + 17, MINI_X)
     }
   }
@@ -1745,11 +1747,11 @@ test('Clawd 悬停文字会列出隐藏圆环，中英文正常宽度不增加�
   await $.command.run({ command: 'clawd', args: '' } as never)
 
   const normal = await $.ui.mount({ ...BAND(false), surface: 'desktop' })
-  const normalClawd = String((await normal.findAll({ type: 'Svg' }))[0].props?.source)
+  const normalClawd = String((await normal.findAll({ type: 'Svg' }))[0]!.props?.source)
   expect(normalClawd).not.toContain(T.zh.hiddenNarrow)
 
   const narrow = await $.ui.mount({ ...BAND(false), props: { ...BAND(false).props, bodyColumns: 30 }, surface: 'desktop' })
-  const narrowClawd = String((await narrow.findAll({ type: 'Svg' }))[0].props?.source)
+  const narrowClawd = String((await narrow.findAll({ type: 'Svg' }))[0]!.props?.source)
   expect(narrowClawd).toContain(`${T.zh.hiddenNarrow}\n· ${T.zh.cache}`)
   expect(narrowClawd).toContain(`\n· ${T.zh.weekly}`)
 })
@@ -1762,7 +1764,7 @@ test('Clawd uses translated hidden-gauge hover lines in English', EN, async ($, 
   await $.command.run({ command: 'clawd', args: '' } as never)
 
   const narrow = await $.ui.mount({ ...BAND(false), props: { ...BAND(false).props, bodyColumns: 30 }, surface: 'desktop' })
-  const narrowClawd = String((await narrow.findAll({ type: 'Svg' }))[0].props?.source)
+  const narrowClawd = String((await narrow.findAll({ type: 'Svg' }))[0]!.props?.source)
   expect(narrowClawd).toContain(`${T.en.hiddenNarrow}\n· ${T.en.cache}`)
   expect(narrowClawd).toContain(`\n· ${T.en.weekly}`)
 })

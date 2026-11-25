@@ -14,7 +14,7 @@ export function langFromTags(tags: string[]): Lang | undefined {
 
 // macOS `defaults read -g AppleLanguages` 的输出：( "en-MY", "zh-Hans-MY" )
 export function parseAppleLanguages(stdout: string): string[] {
-  return [...stdout.matchAll(/"([^"]+)"|\b([A-Za-z]{2,3}(?:[-_][A-Za-z0-9]+)*)\b/g)].map(m => m[1] ?? m[2])
+  return [...stdout.matchAll(/"([^"]+)"|\b([A-Za-z]{2,3}(?:[-_][A-Za-z0-9]+)*)\b/g)].map(m => (m[1] ?? m[2])!)
 }
 
 const WEEKDAYS = {
@@ -171,4 +171,4 @@ export const T = {
   },
 }
 
-export const weekday = (lang: Lang, day: number) => WEEKDAYS[lang][day]
+export const weekday = (lang: Lang, day: number) => WEEKDAYS[lang][day]!

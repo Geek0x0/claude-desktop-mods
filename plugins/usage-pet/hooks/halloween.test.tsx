@@ -1,4 +1,5 @@
 import { expect, mock, test } from 'claude-code/testing'
+import type { TestBody } from 'claude-code/testing'
 
 import type { Bars } from '../types'
 import { bandSvgParts } from './band'
@@ -106,7 +107,7 @@ const START = { cwd: '/tmp', surface: 'desktop' as const, isInteractive: true }
 const BAND = {
   plugin: 'usage-pet',
   component: 'AbovePrompt' as const,
-  props: { hasSurvey: false, isWorking: false, maxRows: 12, bodyColumns: 140, scroll: { offset: 0, bodyRows: 12 }, view: {} },
+  props: { hasSurvey: false, isCollapsed: false, isWorking: false, maxRows: 12, bodyColumns: 140, scroll: { offset: 0, bodyRows: 12 }, view: {} },
   viewport: { columns: 140, rows: 40 },
   surface: 'desktop' as const,
 }
@@ -119,7 +120,7 @@ const TURN = {
   usage: { model: 'claude-opus-5-5', input_tokens: 50, output_tokens: 40, cache_read_input_tokens: 50, cache_creation_input_tokens: 0 },
 }
 
-type Harness = Parameters<Parameters<typeof test>[1]>
+type Harness = Parameters<TestBody>
 // 把插件的时钟拨到指定的本机日期（默认 10 月 26 日下午，万圣节期间）
 const OCT_26 = new Date(2026, 9, 26, 14).getTime()
 async function bandAfterTurn($: Harness[0], on: Harness[1], turn = TURN, now = OCT_26) {
@@ -133,7 +134,7 @@ async function bandAfterTurn($: Harness[0], on: Harness[1], turn = TURN, now = O
   await $.turn.complete(turn)
   const ui = await $.ui.mount(BAND)
 
-  return String((await ui.findAll({ type: 'Svg' }))[0].props?.source)
+  return String((await ui.findAll({ type: 'Svg' }))[0]!.props?.source)
 }
 
 test('答完一轮（10 月 26 日）：等收起后开始讨糖，悬停提示点他给糖', { options: { language: 'zh' } }, async ($, on) => {

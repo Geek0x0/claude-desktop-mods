@@ -458,7 +458,7 @@ function dropGauges(gauges: Gauge[], fits: (shown: Gauge[]) => boolean): { shown
   for (const id of GAUGE_DROP_ORDER) {
     if (shown.length <= 2 || fits(shown)) break
     const index = shown.findIndex(g => g.id === id)
-    if (index >= 0) hidden.push(shown.splice(index, 1)[0])
+    if (index >= 0) hidden.push(...shown.splice(index, 1))
   }
 
   return { shown, hidden }
@@ -1463,10 +1463,10 @@ export function bandSvgParts(
     const gap = Math.max(MIN_GAP[layout], (width - 2 * CLAWD_X - clawdWidth - widths.reduce((a, b) => a + b, 0)) / shownGauges.length)
     const xs: number[] = []
     widths.reduce((x, w) => (xs.push(x), x + w + gap), CLAWD_X + clawdWidth + gap)
-    const blocks = shownGauges.map((g, i) => gauge(g, i, xs[i], widths[i], isChanged, isFirst, css, layout, lang)).join('')
+    const blocks = shownGauges.map((g, i) => gauge(g, i, xs[i]!, widths[i]!, isChanged, isFirst, css, layout, lang)).join('')
     const seps = Array.from({ length: shownGauges.length - 1 }, (_, i) => i + 1)
       .map(i => {
-        const mid = (xs[i] - gap / 2).toFixed(1)
+        const mid = (xs[i]! - gap / 2).toFixed(1)
         return `<line x1="${mid}" y1="${RING_CY - R + 1}" x2="${mid}" y2="${RING_CY + R - 1}" class="sep"/>`
       })
       .join('')

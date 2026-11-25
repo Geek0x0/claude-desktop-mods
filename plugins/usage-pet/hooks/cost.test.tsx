@@ -1,4 +1,5 @@
 import { expect, mock, test } from 'claude-code/testing'
+import type { TestBody } from 'claude-code/testing'
 
 import type { Bars } from '../types'
 import { bandAlt, bandSvgParts, formatCost, MIN_BAND_W_WITH_COST_AND_ACTIVITY, MIN_BAND_W_WITH_FABLE_AND_COST_AND_ACTIVITY, minBandWidth } from './band'
@@ -113,7 +114,7 @@ const START = { cwd: '/tmp', surface: 'desktop' as const, isInteractive: true }
 const BAND = {
   plugin: 'usage-pet',
   component: 'AbovePrompt' as const,
-  props: { hasSurvey: false, isWorking: false, maxRows: 12, bodyColumns: 140, scroll: { offset: 0, bodyRows: 12 }, view: {} },
+  props: { hasSurvey: false, isCollapsed: false, isWorking: false, maxRows: 12, bodyColumns: 140, scroll: { offset: 0, bodyRows: 12 }, view: {} },
   viewport: { columns: 140, rows: 40 },
   surface: 'desktop' as const,
 }
@@ -129,7 +130,7 @@ const PANES = (surface: 'desktop' | 'terminal') => ({
   plugin: 'usage-pet',
   component: 'Pane' as const,
   requestId: 'clawd-card',
-  props: {},
+  props: { title: '', isFocused: false, bodyColumns: 100, placement: 'dock' as const, scroll: { offset: 0, bodyRows: 20 }, view: {} },
   viewport: { columns: 100, rows: 40 },
   surface,
 })
@@ -143,7 +144,7 @@ test('费用来源：读取 session.usage，按 session.measure 更新并在无�
   on('session.measure', ($, e) => ({ changed: e.changed }))
   on('command.register', ($, e) => ({ value: { command: e.name } }))
   on('session.authorize', () => ({ value: null }))
-  on('http.fetch', () => ({ value: { status: 200, text: '{"limits":[]}' } }))
+  on('http.fetch', () => ({ value: { status: 200, ok: true, headers: {}, text: '{"limits":[]}' } }))
   on('state.set', ($, e, next) => {
     if (String(e.key).includes('bars')) barWrites++
 
@@ -154,12 +155,12 @@ test('费用来源：读取 session.usage，按 session.measure 更新并在无�
   await $.command.run({ command: 'clawd', args: '' } as never)
   barWrites = 0
 
-  const band = async () => String((await (await $.ui.mount(BAND)).findAll({ type: 'Svg' }))[1].props?.source)
+  const band = async () => String((await (await $.ui.mount(BAND)).findAll({ type: 'Svg' }))[1]!.props?.source)
   expect(await band()).toContain('>$0.24</text>')
   const narrow = await $.ui.mount({ ...BAND, props: { ...BAND.props, bodyColumns: 30 } })
   const narrowSvgs = await narrow.findAll({ type: 'Svg' })
-  expect(narrowSvgs[0].props?.width).toBe(120)
-  expect(narrowSvgs[0].props?.width as number + (narrowSvgs[1].props?.width as number)).toBe(minBandWidth(2))
+  expect(narrowSvgs[0]!.props?.width).toBe(120)
+  expect(narrowSvgs[0]!.props?.width as number + (narrowSvgs[1]!.props?.width as number)).toBe(minBandWidth(2))
   await $.session.measure({ ...MEASURE, cost: { usd: 1.25 } } as never)
   expect(barWrites).toBe(1)
   expect(await band()).toContain('>$1.25</text>')
@@ -173,9 +174,9 @@ test('费用来源：读取 session.usage，按 session.measure 更新并在无�
   expect(labels.join(' ')).toContain('$1.25')
 
   const card = await $.ui.mount(PANES('desktop'))
-  expect(String((await card.findAll({ type: 'Svg' }))[0].props?.source)).toContain('>$1.25</text><text x="388" y="238" class="l">Cost</text>')
+  expect(String((await card.findAll({ type: 'Svg' }))[0]!.props?.source)).toContain('>$1.25</text><text x="388" y="238" class="l">Cost</text>')
   const terminalCard = await $.ui.mount(PANES('terminal'))
-  expect(String((await terminalCard.findAll({ type: 'Text' }))[0].text)).toContain('Cost $1.25')
+  expect(String((await terminalCard.findAll({ type: 'Text' }))[0]!.text)).toContain('Cost $1.25')
 })
 
 function fingerprint(source: string): number {

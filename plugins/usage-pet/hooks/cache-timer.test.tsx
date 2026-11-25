@@ -1,4 +1,5 @@
 import { expect, mock, test } from 'claude-code/testing'
+import type { TestBody } from 'claude-code/testing'
 
 import type { Bars } from '../types'
 import { bandSvgParts, H } from './band'
@@ -73,7 +74,7 @@ const START = { cwd: '/tmp', surface: 'desktop' as const, isInteractive: true }
 const BAND = {
   plugin: 'usage-pet',
   component: 'AbovePrompt' as const,
-  props: { hasSurvey: false, isWorking: false, maxRows: 12, bodyColumns: 140, scroll: { offset: 0, bodyRows: 12 }, view: {} },
+  props: { hasSurvey: false, isCollapsed: false, isWorking: false, maxRows: 12, bodyColumns: 140, scroll: { offset: 0, bodyRows: 12 }, view: {} },
   viewport: { columns: 140, rows: 40 },
   surface: 'desktop' as const,
 }
@@ -94,7 +95,7 @@ const measure = {
   changed: ['context', 'rateLimits'] as ('context' | 'rateLimits')[],
 }
 
-type Harness = Parameters<Parameters<typeof test>[1]>
+type Harness = Parameters<TestBody>
 const NOW = new Date(2026, 9, 10, 14).getTime()
 async function setup($: Harness[0], on: Harness[1], withLimits: boolean) {
   mock.store(on, {})
@@ -112,7 +113,7 @@ async function setup($: Harness[0], on: Harness[1], withLimits: boolean) {
 
   return clock
 }
-const bandSource = async ($: Harness[0]) => String((await (await $.ui.mount(BAND)).findAll({ type: 'Svg' }))[1].props?.source)
+const bandSource = async ($: Harness[0]) => String((await (await $.ui.mount(BAND)).findAll({ type: 'Svg' }))[1]!.props?.source)
 
 test('订阅（有额度读数）：答完一轮后按 1 小时倒计时；过 20 分钟重画，从 40 分钟接着倒', { options: { language: 'en' } }, async ($, on) => {
   const clock = await setup($, on, true)

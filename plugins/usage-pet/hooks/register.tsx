@@ -32,7 +32,7 @@ type ToolBurst = { owner: number; calls: Set<number>; frame?: ActivityFrame; tim
 const GAUGE_SOURCE_MEMO_MAX_AGE_MS = 60_000
 let previousGaugeSvg: (Pick<BandSvgParts, 'gauges' | 'gaugesKey'> & { createdAt: number }) | undefined
 const TITLE_XML_ENTITIES: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' }
-const escapeTitleXml = (text: string) => text.replace(/[&<>"']/g, char => TITLE_XML_ENTITIES[char])
+const escapeTitleXml = (text: string) => text.replace(/[&<>"']/g, char => TITLE_XML_ENTITIES[char]!)
 
 const barsRef = { plugin: 'usage-pet', key: 'bars' } as const
 const cacheRef = { plugin: 'usage-pet', key: 'cache' } as const
@@ -604,11 +604,15 @@ function toSnap(context: SessionContextUsage, rateLimits: SessionRateLimit[], co
   }
 }
 
+// Timer globals are not in the hooks runtime's type declarations, so they are reached through globalThis to type-check.
+// Where a global is missing the call throws, which rejects the request at once, exactly as the bare call did.
+const systemTimers = globalThis as unknown as { setTimeout: (run: () => void, ms: number) => unknown; clearTimeout: (timer: unknown) => void }
+
 function withClockTimeout<T>($: EngineInterface, start: () => Promise<T>, timeoutMs: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     let settled = false
     let clockTimer: Timer | undefined
-    let systemTimer: ReturnType<typeof setTimeout> | undefined
+    let systemTimer: unknown
     const finish = (kind: 'resolve' | 'reject', value: unknown) => {
       if (settled) return
       settled = true
@@ -617,7 +621,7 @@ function withClockTimeout<T>($: EngineInterface, start: () => Promise<T>, timeou
       } catch {
         // Clearing a timer must not keep the request promise pending.
       }
-      if (systemTimer !== undefined) clearTimeout(systemTimer)
+      if (systemTimer !== undefined) systemTimers.clearTimeout(systemTimer)
       if (kind === 'resolve') resolve(value as T)
       else reject(value)
     }
@@ -625,9 +629,9 @@ function withClockTimeout<T>($: EngineInterface, start: () => Promise<T>, timeou
 
     try {
       clockTimer = $.clock.after(timeoutMs, expire)
-      if (!clockTimer) systemTimer = setTimeout(expire, timeoutMs)
+      if (!clockTimer) systemTimer = systemTimers.setTimeout(expire, timeoutMs)
     } catch {
-      systemTimer = setTimeout(expire, timeoutMs)
+      systemTimer = systemTimers.setTimeout(expire, timeoutMs)
     }
 
     let request: Promise<T>

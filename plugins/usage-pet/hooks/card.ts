@@ -86,7 +86,7 @@ export function cardSvg(data: CardData, lang: Lang, canvas: CardCanvas = 'pane')
     })
     .join('')
 
-  const names = data.earned.map(id => T[lang].achievement[id][0])
+  const names = data.earned.map(id => T[lang].achievement[id][0]!)
   const earned = names.length > 0 ? names.map(esc).join('  ·  ') : t.none
 
   const card =

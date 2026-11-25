@@ -1,5 +1,6 @@
 import type { SessionRateLimit } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
+import type { TestBody } from 'claude-code/testing'
 
 import type { Bars } from '../types'
 import { bandSvgParts } from './band'
@@ -10,7 +11,7 @@ const START = { cwd: '/tmp', surface: 'desktop' as const, isInteractive: true }
 const BAND = (surface: 'desktop' | 'terminal') => ({
   plugin: 'usage-pet',
   component: 'AbovePrompt' as const,
-  props: { hasSurvey: false, isWorking: false, maxRows: 12, bodyColumns: 140, scroll: { offset: 0, bodyRows: 12 }, view: {} },
+  props: { hasSurvey: false, isCollapsed: false, isWorking: false, maxRows: 12, bodyColumns: 140, scroll: { offset: 0, bodyRows: 12 }, view: {} },
   viewport: { columns: 140, rows: 40 },
   surface,
 })
@@ -22,7 +23,7 @@ const measure = (rateLimits: SessionRateLimit[]) => ({
   changed: ['context', 'rateLimits'] as ('context' | 'rateLimits')[],
 })
 
-type Harness = Parameters<Parameters<typeof test>[1]>
+type Harness = Parameters<TestBody>
 // 自己用 Map 当 store：测试要直接看插件写了什么，还要用它模拟「上一个会话留下的记录」
 function fakeStore(on: Harness[1], entries: Record<string, unknown>) {
   const data = new Map<string, unknown>(Object.entries(entries))
