@@ -450,7 +450,7 @@ type Gauge = {
 
 const GAUGE_DROP_ORDER = ['cost', 'f', 'k', 'w']
 
-// 空间不够时依次收起费用、Fable、缓存命中和每周额度；上下文与 5 小时额度始终保留。
+// 空间不够时依次收起费用、Fable、缓存命中和每周额度；上下文与 5 小时额度始终保留（没有 5 小时额度的套餐保留上下文与每周额度）。
 function dropGauges(gauges: Gauge[], fits: (shown: Gauge[]) => boolean): { shown: Gauge[]; hidden: Gauge[] } {
   const shown = [...gauges]
   const hidden: Gauge[] = []
@@ -1349,7 +1349,7 @@ export function bandSvgParts(
     : to.contextTokens >= to.compactAt
       ? t.compactingSoon
       : t.toCompact(grouped(to.compactAt - to.contextTokens))
-  const gauges: Gauge[] = [
+  const allGauges: Gauge[] = [
     {
       id: 'c',
       label: t.context,
@@ -1430,6 +1430,8 @@ export function bandSvgParts(
         ]
       : []),
   ]
+  // 没有 5 小时额度的套餐（已验证的 Ultra）不画这一项，免得永远显示「暂无读数」
+  const gauges = to?.noFiveHour ? allGauges.filter(g => g.id !== 's') : allGauges
   const cut = Math.ceil(mini ? MINI_X + MINI_LAYOUT_W + MINI_ACTIVITY_RESERVE : CLAWD_X + CLAWD_W + ACTIVITY_LAYOUT_RESERVE)
   const clawdChanged = isChanged && !isFirst
   const mood = moodForClawd(isWorking, displayActivity, pet)
@@ -1556,7 +1558,7 @@ export function bandAlt(to: Snap | null, isWorking: boolean, lang: Lang = 'zh'):
   return (
     [
       `${t.context} ${pct(to?.contextPercent)}`,
-      `${t.session} ${pct(to?.session?.percent)}`,
+      ...(to?.noFiveHour ? [] : [`${t.session} ${pct(to?.session?.percent)}`]),
       `${t.weekly} ${pct(to?.weekly?.percent)}`,
       ...(to?.fable ? [`${t.fable} ${pct(to.fable.percent)}`] : []),
       `${t.cache} ${pct(to?.cache?.rate)}`,

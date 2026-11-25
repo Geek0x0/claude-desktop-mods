@@ -11,6 +11,8 @@ export type Snap = {
   compactAt?: number
   session?: Window
   weekly?: Window
+  // 这个账号没有 5 小时额度（已验证的 Ultra）：不画这一项，免得永远显示「暂无读数」
+  noFiveHour?: boolean
   fable?: Window
   cache?: CacheStat
   cost?: SessionCost

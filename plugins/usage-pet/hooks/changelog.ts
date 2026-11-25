@@ -6,6 +6,13 @@ export type Release = { version: string; notes: Record<Lang, string[]> }
 
 export const CHANGELOG: Release[] = [
   {
+    version: '1.19.0',
+    notes: {
+      zh: ['适配 Claude Ultra 套餐：已验证的 Ultra 账号没有 5 小时额度，信息栏、收起细条和终端不再显示空的「5 小时」读数，其余几项自动排开；窄窗口下改为保留上下文与每周额度。Max 和 Pro 不变'],
+      en: ['Claude Ultra: verified Ultra accounts have no 5-hour limit, so the band, collapsed strip and terminal no longer show an empty 5-hour reading and the rest spread out; in narrow windows Context and Weekly stay instead. Max and Pro are unchanged'],
+    },
+  },
+  {
     version: '1.18.1',
     notes: {
       zh: ['更新插件作者信息为 Kody.S（无功能变化）'],

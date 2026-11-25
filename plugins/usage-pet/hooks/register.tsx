@@ -39,6 +39,8 @@ const cacheRef = { plugin: 'usage-pet', key: 'cache' } as const
 const pinnedRef = { plugin: 'usage-pet', key: 'pinned' } as const
 const ditherRef = { plugin: 'usage-pet', key: 'dither' } as const
 const PREFS_KEY = 'prefs'
+// 已验证的 Ultra 账号没有 5 小时额度：记进 $.store，新会话第一次回复之前就不画空读数
+const NO_FIVE_HOUR_KEY = 'noFiveHour'
 const langRef = { plugin: 'usage-pet', key: 'lang' } as const
 const petRef = { plugin: 'usage-pet', key: 'pet' } as const
 const reportRef = { plugin: 'usage-pet', key: 'report' } as const
@@ -756,11 +758,35 @@ async function langOf($: EngineInterface, choice: LangChoice): Promise<Lang> {
   return choice === 'zh' || choice === 'en' ? choice : read($, langAtom)
 }
 
+// 没有 5 小时额度：引擎给了每周读数却没给 5 小时。记进 store：新会话第一次回复之前没有任何读数，
+// 不记的话 Ultra 用户每开一个会话都要先看到一个空圆环。
+// 5 小时窗口过期也会这样，但下一次回复就带回来，这里跟着改回去。
+async function detectNoFiveHour($: EngineInterface, snap: Pick<Snap, 'session' | 'weekly'>, prev: Snap | null): Promise<boolean> {
+  try {
+    if (!snap.weekly) {
+      return (await $.store.get(NO_FIVE_HOUR_KEY)) === true
+    }
+    const isGone = !snap.session
+    if (isGone !== (prev?.noFiveHour ?? false)) {
+      await $.store.set(NO_FIVE_HOUR_KEY, isGone)
+    }
+
+    return isGone
+  } catch (err) {
+    $.ui.log(`usage-pet: 读写 5 小时额度记录失败：${String(err)}`, { to: 'debug' })
+
+    return !!snap.weekly && !snap.session
+  }
+}
+
 async function record($: EngineInterface, snap: Omit<Snap, 'fable'> & { fable?: Window | null }, newSession = false) {
   const previous = await read($, barsAtom)
-  const fable = snap.fable === null ? undefined : snap.fable ?? previous.to?.fable
-  const cost = snap.cost ?? (newSession ? undefined : previous.to?.cost)
-  const full: Snap = { ...snap, ...(cost ? { cost } : {}), fable, cache: cacheStat(await read($, cacheAtom)) }
+  // turn.complete 会把 bars.to 原样传回来，可能带着上次的 noFiveHour：剥掉重新判定，只认这次的读数
+  const { noFiveHour: _ignored, ...rest } = snap
+  const noFiveHour = await detectNoFiveHour($, rest, previous.to)
+  const fable = rest.fable === null ? undefined : rest.fable ?? previous.to?.fable
+  const cost = rest.cost ?? (newSession ? undefined : previous.to?.cost)
+  const full: Snap = { ...rest, ...(noFiveHour ? { noFiveHour } : {}), ...(cost ? { cost } : {}), fable, cache: cacheStat(await read($, cacheAtom)) }
   let changed = false
   await updateIfChanged($, barsAtom, bars => {
     changed = !sameSnap(bars.to, full)
@@ -1725,7 +1751,7 @@ export const register: Register = (on, options) => {
       return (
         <Box paddingX={1} flexDirection="row" columnGap={3}>
           {meter('ctx', t.context, snap?.contextPercent, ctxNote)}
-          {meter('session', t.session, snap?.session?.percent, termReset(snap?.session?.resetsAt, lang))}
+          {snap?.noFiveHour ? null : meter('session', t.session, snap?.session?.percent, termReset(snap?.session?.resetsAt, lang))}
           {meter('weekly', t.weekly, snap?.weekly?.percent, termReset(snap?.weekly?.resetsAt, lang))}
           {snap?.fable ? meter('fable', t.fable, snap.fable.percent, termReset(snap.fable.resetsAt, lang)) : null}
           {snap?.cost ? (
