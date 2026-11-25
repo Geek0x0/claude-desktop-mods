@@ -81,9 +81,13 @@ claude plugin uninstall <mod>@claude-desktop-mods
 ## 开发 / Development
 
 ```bash
-claude plugin validate plugins/<mod>
+claude plugin validate --strict plugins/<mod>
 claude plugin test plugins/<mod>
 ```
+
+CI（[`.github/workflows/mods.yml`](.github/workflows/mods.yml)）在每次推送到 main 和每个 PR 上，对市场清单和每个 mod 跑 `claude plugin validate --strict`，并跑有测试的 mod 的测试。推送和 PR 用 workflow 里固定的 Claude Code 版本（`CLAUDE_CODE_VERSION`），另外每周对最新版跑一次，提早发现类型变化。`validate --strict` 需要 Claude Code 2.1.328 起。
+
+CI ([`.github/workflows/mods.yml`](.github/workflows/mods.yml)) runs `claude plugin validate --strict` on the marketplace manifest and on every mod, and the tests of each mod that has them, on every push to main and on every pull request. Pushes and PRs use the Claude Code version pinned in the workflow (`CLAUDE_CODE_VERSION`); a weekly run against the latest release catches type changes early. `validate --strict` needs Claude Code 2.1.328 or later.
 
 发布改动时，把 `plugins/<mod>/.claude-plugin/plugin.json` 里的 `version` 和 [Mods](#mods) 表格里的版本一起改；usage-pet 还要在 [`changelog.ts`](plugins/usage-pet/hooks/changelog.ts) 最前面加一条同版本号的记录。
 

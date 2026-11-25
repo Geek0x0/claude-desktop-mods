@@ -1,0 +1,48 @@
+name: mods
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Weekly run against the latest Claude Code release, to catch type drift early
+    - cron: '23 5 * * 1'
+
+permissions:
+  contents: read
+
+env:
+  DISABLE_AUTOUPDATER: 1
+  # Push and PR runs use this version; bump it on purpose.
+  # Must be >= 2.1.328: older versions fail --strict on the "network" field in plugin.json.
+  CLAUDE_CODE_VERSION: 2.1.331
+
+jobs:
+  validate-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Claude Code
+        shell: bash
+        run: |
+          curl -fsSL https://claude.ai/install.sh | bash -s "${{ github.event_name == 'schedule' && 'latest' || env.CLAUDE_CODE_VERSION }}"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Validate the marketplace and every mod, run each mod's tests
+        shell: bash
+        run: |
+          claude --version
+          claude plugin validate --strict .
+          for mod in plugins/*/; do
+            claude plugin validate --strict "$mod"
+            # claude plugin test fails on a mod with no test files
+            if [ -n "$(find "$mod" -name '*.test.ts' -o -name '*.test.tsx')" ]; then
+              claude plugin test "$mod"
+            else
+              echo "::notice::$mod has no *.test.ts or *.test.tsx files, tests skipped"
+            fi
+          done
