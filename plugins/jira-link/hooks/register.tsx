@@ -108,23 +108,33 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const { Box, Text, Button } = $.ui.resolve(e)
+    const { Box, Text, Button, Link } = $.ui.resolve(e)
     const list = await read($, tickets)
+    // Only an http(s) base turns keys into links; trailing slashes trimmed.
+    const raw = ((await $.env.get('JIRA_BASE_URL')) ?? '').trim().replace(/\/+$/, '')
+    const base = /^https?:\/\/\S+$/i.test(raw) ? raw : ''
     if (e.props.placement === 'widget') return <Text dimColor>Jira · {list.length}</Text>
 
     return (
       <Box flexDirection="column" rowGap="md" padding="md">
         {list.length === 0 ? (
           <Box flexDirection="column" alignItems="center" paddingY="xl" rowGap="xs">
+            <Text dimColor>○</Text>
             <Text>还没有关联 Ticket</Text>
-            <Text size="footnote" dimColor>提示词里提到 Ticket 号会自动关联，或用 /jira link KEY</Text>
+            <Text size="footnote" dimColor>提示词里提到 Ticket 号会自动关联，或用 <Text mono>/jira link KEY</Text></Text>
           </Box>
         ) : (
-          // marginX 1 stands for the rows' border, so both edges line up
-          <Box justifyContent="space-between" alignItems="center" paddingX="md" marginX={1}>
+          <Box justifyContent="space-between" alignItems="center" paddingX="md">
             <Text size="footnote" dimColor>{list.length} 个 Ticket</Text>
-            <Button key="clear" plain dimColor onPress={() => drop($)}>清空</Button>
+            {list.length > 1 && (
+              <Button key="clear" label="清空全部" plain onPress={() => drop($)}>
+                <Text size="footnote" dimColor hover={{ scope: 'clear', color: 'error' }}>清空</Text>
+              </Button>
+            )}
           </Box>
+        )}
+        {!base && (
+          <Text size="footnote" dimColor>在 settings 的 env 里设置 <Text mono>JIRA_BASE_URL</Text>，Ticket 编号即可点击打开</Text>
         )}
         <Box flexDirection="column" rowGap="sm">
           {[...list].reverse().map(key => {
@@ -142,12 +152,24 @@ export const register: Register = on => {
                 alignItems="center"
               >
                 <Box flexGrow={1}>
-                  <Text mono tabular wrap="truncate-end" maxLines={1}>
-                    <Text dimColor>{key.slice(0, cut)}</Text>
-                    <Text weight="medium">{key.slice(cut)}</Text>
+                  <Text mono tabular wrap="truncate-end">
+                    {base ? (
+                      <Link href={`${base}/browse/${key}`}>
+                        <Text dimColor hover={{ dimColor: false, color: 'suggestion' }}>{key.slice(0, cut)}</Text>
+                        <Text weight="medium" hover={{ color: 'suggestion', underline: true }}>{key.slice(cut)}</Text>
+                        <Text dimColor hover={{ dimColor: false, color: 'suggestion' }}> ↗</Text>
+                      </Link>
+                    ) : (
+                      <Text>
+                        <Text dimColor>{key.slice(0, cut)}</Text>
+                        <Text weight="medium">{key.slice(cut)}</Text>
+                      </Text>
+                    )}
                   </Text>
                 </Box>
-                <Button key={`unlink-${key}`} plain dimColor hover={{ color: 'error' }} onPress={() => drop($, key)}>移除</Button>
+                <Button key={`unlink-${key}`} label={`移除 ${key}`} plain onPress={() => drop($, key)}>
+                  <Text size="footnote" dimColor hover={{ scope: `unlink-${key}`, color: 'error' }}>移除</Text>
+                </Button>
               </Box>
             )
           })}

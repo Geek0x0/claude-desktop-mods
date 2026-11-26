@@ -1,6 +1,6 @@
 # jira-link
 
-For the **Code tab of Claude Desktop**: `/jira` links Jira tickets to the session, lists them in a **Jira Tickets** pane. Current version: **1.0.1**.
+For the **Code tab of Claude Desktop**: `/jira` links Jira tickets to the session, lists them in a **Jira Tickets** pane. Current version: **1.1.0**.
 
 > Unofficial fan project. Not affiliated with or endorsed by Anthropic or Atlassian.
 
@@ -12,6 +12,7 @@ For the **Code tab of Claude Desktop**: `/jira` links Jira tickets to the sessio
 - **`/jira unlink <KEY>`** removes one ticket; **`/jira clear`** removes all of them.
 - **Auto-link**: Jira keys, and `/browse/KEY` or `selectedIssue=KEY` URLs, found in the prompts **you** submit are linked and a toast says so. Model output and tool output are never scanned.
 - Auto-link ignores code spans and code blocks, lowercase or odd forms, numbers with a leading zero (`FF-01`), and common non-ticket prefixes (`UTF`, `SHA`, `MD`, `HTTP`, `HTTPS`, `TLS`, `SSL`, `ISO`, `AES`, `RSA`, `IPV`, `RFC`, `CVE`). `/jira link` is explicit, so it only takes a well-formed key or URL.
+- **Clickable keys**: set `JIRA_BASE_URL` (for example `https://your-company.atlassian.net`) under `env` in `~/.claude/settings.json` and each key in the pane opens `<base>/browse/<KEY>` in the browser. Only `http(s)` URLs count; trailing slashes are trimmed. Without it the keys are plain text and the pane shows a hint.
 - Up to 20 tickets are kept per session; past that the oldest drop off. The pane text is in Chinese only.
 
 ## Install
@@ -32,7 +33,7 @@ Then run `/reload-plugins` or start a new session.
 
 ## What it reads, stores and sends
 
-**Reads**: the text of the prompts you submit, and the arguments of `/jira`. **Stores**: the list of linked ticket keys (at most 20) in the session state. **Sends**: nothing. It makes no network calls and no model calls, and never contacts Jira.
+**Reads**: the text of the prompts you submit, the arguments of `/jira`, and the `JIRA_BASE_URL` env var. **Stores**: the list of linked ticket keys (at most 20) in the session state. **Sends**: nothing. It makes no network calls and no model calls, and never contacts Jira.
 
 ## Hooks and commands
 
@@ -49,7 +50,7 @@ Then run `/reload-plugins` or start a new session.
 
 ## 中文
 
-为 **Claude 桌面 App 的 Code 页** 做的 mod：`/jira` 把 Jira Ticket 关联到会话，在「Jira Tickets」面板里列出。当前版本 **1.0.1**。
+为 **Claude 桌面 App 的 Code 页** 做的 mod：`/jira` 把 Jira Ticket 关联到会话，在「Jira Tickets」面板里列出。当前版本 **1.1.0**。
 
 ### 功能
 
@@ -59,6 +60,7 @@ Then run `/reload-plugins` or start a new session.
 - **`/jira unlink <KEY>`** 移除一个；**`/jira clear`** 全部移除
 - **自动关联**：**你**提交的提示词里的 Jira 编号，以及 `/browse/KEY`、`selectedIssue=KEY` 形式的链接，会被自动关联并弹出提示；模型输出和工具输出不会被扫描
 - 自动关联会忽略代码片段和代码块、小写或奇怪的写法、带前导零的数字（`FF-01`），以及常见的非 Ticket 前缀（`UTF`、`SHA`、`MD`、`HTTP`、`HTTPS`、`TLS`、`SSL`、`ISO`、`AES`、`RSA`、`IPV`、`RFC`、`CVE`）；`/jira link` 是明确指定，只接受格式正确的编号或链接
+- **可点击的编号**：在 `~/.claude/settings.json` 的 `env` 里设置 `JIRA_BASE_URL`（如 `https://your-company.atlassian.net`），面板里的编号点击后会在浏览器打开 `<base>/browse/<KEY>`；只接受 `http(s)` 地址，末尾的斜杠会被去掉。未设置时编号是纯文本，面板会给出提示
 - 每个会话最多保存 20 个 Ticket，超出后最早的被丢弃；面板文字只有中文
 
 ### 安装
@@ -79,4 +81,4 @@ Then run `/reload-plugins` or start a new session.
 
 ### 读取、保存和发送什么
 
-读取你提交的提示词文本和 `/jira` 的参数；在会话状态里保存已关联的 Ticket 编号（最多 20 个）；不发送任何东西。不联网、不调用模型，也从不连接 Jira。
+读取你提交的提示词文本、`/jira` 的参数和环境变量 `JIRA_BASE_URL`；在会话状态里保存已关联的 Ticket 编号（最多 20 个）；不发送任何东西。不联网、不调用模型，也从不连接 Jira。

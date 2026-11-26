@@ -6,6 +6,8 @@ const start = async ($: any, on: any) => {
   on('session.start', (_: any, e: any) => ({ cwd: e.cwd }))
   on('ui.toast', (_: any, e: any) => (seen.toast.push(e.text), { value: undefined }))
   const pane = { isPlaced: true }
+  const env = { base: undefined as string | undefined }
+  on('env.get', (_: any, e: any) => ({ value: e.name === 'JIRA_BASE_URL' ? env.base : undefined }))
   on('ui.open', () => ({
     value: pane.isPlaced ? { isPlaced: true } : { isPlaced: false, reason: 'no surface' },
   }))
@@ -15,6 +17,7 @@ const start = async ($: any, on: any) => {
   return {
     seen,
     pane,
+    env,
     jira: async (args: string): Promise<string | undefined> =>
       (
         await $.command.run({
@@ -113,13 +116,40 @@ test('the pane lists the tickets, or says none are linked', async ($, on) => {
 
   let ui = await mount()
   expect(await ui.find({ type: 'Text', text: /还没有关联 Ticket/ })).toBeTruthy()
+  expect(await ui.find({ type: 'Text', text: /JIRA_BASE_URL/ })).toBeTruthy()
   await ui.unmount()
 
   await jira('link FF-1')
+  ui = await mount()
+  expect(await ui.find({ type: 'Button', key: 'clear' })).toBeUndefined()
+  expect(await ui.find({ type: 'Button', key: 'unlink-FF-1' })).toBeTruthy()
+  await ui.unmount()
+
   await jira('link FF-2')
   ui = await mount()
   expect(await ui.find({ type: 'Text', text: /FF-1/ })).toBeTruthy()
   expect(await ui.find({ type: 'Text', text: /FF-2/ })).toBeTruthy()
   expect(await ui.find({ type: 'Text', text: /2 个 Ticket/ })).toBeTruthy()
+  expect(await ui.find({ type: 'Button', key: 'clear' })).toBeTruthy()
+  await ui.unmount()
+})
+
+test('with JIRA_BASE_URL the keys link to the ticket, else a hint shows', async ($, on) => {
+  const { jira, env } = await start($, on)
+  env.base = 'https://jira.example.com//'
+  await jira('link FF-1')
+  const mount = () => $.ui.mount({ ...PANE, surface: 'desktop' })
+
+  let ui = await mount()
+  expect((await ui.find({ type: 'Link' }))?.props.href).toBe('https://jira.example.com/browse/FF-1')
+  expect(await ui.find({ type: 'Text', text: /JIRA_BASE_URL/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /↗/ })).toBeTruthy()
+  await ui.unmount()
+
+  env.base = 'ftp://nope'
+  ui = await mount()
+  expect(await ui.find({ type: 'Link' })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /↗/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /JIRA_BASE_URL/ })).toBeTruthy()
   await ui.unmount()
 })
