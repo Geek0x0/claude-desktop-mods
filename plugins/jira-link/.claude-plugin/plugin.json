@@ -1,0 +1,16 @@
+{
+  "name": "jira-link",
+  "version": "1.0.0",
+  "description": "Adds /jira, a pane of the Jira tickets linked to the session; ticket keys in your prompts are linked automatically.",
+  "types": "./types/index.d.ts",
+  "author": {
+    "name": "Kody"
+  },
+  "repository": "https://github.com/Geek0x0/claude-desktop-mods",
+  "license": "MIT",
+  "keywords": [
+    "mod",
+    "jira",
+    "desktop"
+  ]
+}

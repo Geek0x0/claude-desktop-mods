@@ -26,6 +26,13 @@
       "description": "Pane listing sessions with Remote Control on, close each with one click; /remote-sessions off [keyword] too",
       "category": "productivity",
       "tags": ["mod", "remote-control", "desktop"]
+    },
+    {
+      "name": "jira-link",
+      "source": "./plugins/jira-link",
+      "description": "Link Jira tickets to a session with /jira, auto-link keys from your prompts, and show them in a pane and the status line",
+      "category": "productivity",
+      "tags": ["mod", "jira", "desktop"]
     }
   ]
 }
