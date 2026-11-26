@@ -18,18 +18,8 @@ const SKIP_ORIGINS = new Set([
 ])
 
 export const register: Register = on => {
-  on('prompt.compose', async ($, e, next) => {
-    const r = await next(e)
-    return {
-      sections: [
-        ...r.sections.filter(s => s.id !== 'zh-reply:rule'),
-        { id: 'zh-reply:rule', scope: 'session', text: RULE },
-      ],
-    }
-  })
-
   on('prompt.submit', async ($, e, next) => {
     if (SKIP_ORIGINS.has(e.origin.kind)) return next(e)
-    return next({ ...e, context: [...(e.context ?? []), REMINDER] })
+    return next({ ...e, context: [...(e.context ?? []), `${RULE}\n${REMINDER}`] })
   })
 }

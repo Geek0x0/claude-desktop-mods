@@ -1,6 +1,6 @@
 {
   "name": "zh-reply",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Keeps conversational replies in Chinese while code, commits, PRs and tickets stay in English.",
   "author": {
     "name": "Kody.S",

@@ -22,7 +22,7 @@ Each mod is a separate plugin; install only the ones you want. Features, setting
 | [`doc-review`](plugins/doc-review) | 1.0.0 | 写完 superpowers 的 spec 或 plan 后，提议派只读的 Fable 子代理审阅<br>Offers a read-only Fable subagent review after a superpowers spec or plan is written |
 | [`remote-sessions`](plugins/remote-sessions) | 1.0.0 | `/remote-sessions` 面板列出开着 Remote Control 的会话，一键关闭<br>`/remote-sessions` opens a pane of sessions with Remote Control on; close each in one click |
 | [`jira-link`](plugins/jira-link) | 1.1.0 | `/jira` 面板列出关联到会话的 Jira Ticket，提示词里的编号自动关联<br>`/jira` opens a pane of the Jira tickets linked to the session; keys in your prompts are linked automatically |
-| [`zh-reply`](plugins/zh-reply) | 1.0.0 | 对话回复一律用中文，代码、提交、PR、Jira、Slack 保持英文<br>Keeps conversational replies in Chinese; code, commits, PRs and tickets stay in English |
+| [`zh-reply`](plugins/zh-reply) | 1.0.1 | 对话回复一律用中文，代码、提交、PR、Jira、Slack 保持英文<br>Keeps conversational replies in Chinese; code, commits, PRs and tickets stay in English |
 
 ## 安装 / Install
 
