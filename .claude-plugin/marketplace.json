@@ -33,6 +33,13 @@
       "description": "Link Jira tickets to a session with /jira, auto-link keys from your prompts, and show them in a pane",
       "category": "productivity",
       "tags": ["mod", "jira", "desktop"]
+    },
+    {
+      "name": "zh-reply",
+      "source": "./plugins/zh-reply",
+      "description": "Keeps conversational replies in Chinese; code, commits, PRs and tickets stay in English",
+      "category": "productivity",
+      "tags": ["mod", "language", "desktop"]
     }
   ]
 }
