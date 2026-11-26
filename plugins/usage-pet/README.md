@@ -1,6 +1,6 @@
 # usage-pet
 
-A usage band above the prompt in the **Code tab of Claude Desktop**: context, 5-hour limit, weekly limit and cache hit rate, plus an optional Fable weekly ring, with Clawd, a pixel pet who keeps you company while Claude works. Current version: **1.20.0**.
+A usage band above the prompt in the **Code tab of Claude Desktop**: context, 5-hour limit, weekly limit and cache hit rate, plus an optional Fable weekly ring, with Clawd, a pixel pet who keeps you company while Claude works. Current version: **1.20.1**.
 
 ![Light mode shows the expanded band in chill mode with sunglasses and a crown, a small auto-compact tick on the Context ring, and the Cost block after Cache hit; a collapsed editing strip appears below. Dark mode shows work with a terminal icon, purple dither and a purple “×2” subagent badge, near-limit amber and red rings, and a collapsed idle Clawd wearing a nightcap](https://raw.githubusercontent.com/Geek0x0/claude-desktop-mods/main/assets/usage-pet-preview.png)
 
@@ -42,7 +42,7 @@ Then run `/reload-plugins` or start a new session.
 - On Windows, exporting the report card needs Windows PowerShell 5.1 (built in) and Edge or Chrome
 - On Linux, exporting the report card needs Chrome, Chromium or Edge, and wl-copy or xclip to copy to the clipboard; older cards move to the Trash only when `gio` is installed
 - Desktop redraws every mod site on any state change ([anthropics/claude-code#99211](https://github.com/anthropics/claude-code/issues/99211)), which restarts animations and can make the ▲▼ button miss clicks; `/clawd` always works
-- Where an organization manages Claude Code (a Team or Enterprise login, or a machine with managed settings), Claude Code does not run the `classic.*` and `session.compact` hooks of plugins you install, and `/plugin` shows a note saying so. There, permission requests show no "!", compaction has no look of its own, and after `/clear`, `/resume` or `/branch` the band starts from its defaults: the expanded state, dither and Clawd's level come back after the next reply, and a `language: auto` band stays in English until `/reload-plugins` (set `language` to `zh` or `en` to avoid that)
+- Where an organization manages Claude Code (a Team or Enterprise login, or a machine with managed settings), Claude Code does not run the `classic.*` and `session.compact` hooks of plugins you install, and `/plugin` shows a note saying so. There, permission requests show no "!" and compaction has no look of its own
 
 ## What it runs, stores and sends
 
@@ -64,7 +64,7 @@ Then run `/reload-plugins` or start a new session.
 The mod is one hooks module, `hooks/register.tsx`. Its hooks on Claude Code's own events only watch them and pass them on unchanged; it answers only its own two commands and draws only its own band and pane:
 
 - `session.start`: fetch Fable weekly usage (when eligible; throttled to once per five minutes), register `/clawd` and `/clawd-card`, detect the language, and read Clawd's progress from the local store. Release notes remain in the project's `hooks/changelog.ts` record and are not shown as a pop-up.
-- `classic.SessionStart`, only after `/clear`, `/resume` or `/branch`: Claude Code resets the band's in-session state there without firing `session.start`, so the plugin repeats the `session.start` loading (Fable usage, language, Clawd's progress, saved choices, usage readings, last-7-days tally) without registering the commands again. It passes the event through unchanged.
+- `prompt.submit`: first, if the session id changed since the data was loaded (`/clear`, `/resume` and `/branch` give the session a new id but reset the band's in-session state without firing `session.start`), the plugin repeats the `session.start` loading (Fable usage, language, Clawd's progress, saved choices, usage readings, last-7-days tally) without registering the commands again, so the band shows defaults from the `/clear` until the next prompt is submitted. This works in every environment, including managed ones. Then it passes the prompt through unchanged.
 - `session.measure` and `turn.complete`: read the usage numbers to redraw the band; refresh Fable weekly usage after replies (when eligible; throttled to once per five minutes); add XP after each reply of the main conversation (not subagents), add each turn's token counts (main conversation and subagents) to the hourly tally for the "last 7 days" figure, note when that reply finished for the cache countdown (kept for the session only), and start the Halloween candy animation in season.
 - `classic.PermissionRequest`: shows "!" for permission requests and passes the request through unchanged; it never answers or changes it.
 - `prompt.submit`: checks every prompt for a leading `/` after trimming whitespace; when `tantrums` is on, also checks composer text locally for frustration and keeps only hit timestamps in memory. It passes the prompt through unchanged.
@@ -121,7 +121,7 @@ In `/config`, `language` accepts lowercase `auto`, `zh` or `en`; anything else m
 - Windows 导出战报图片要用 Windows PowerShell 5.1（系统自带）和 Edge 或 Chrome
 - Linux 导出战报图片要 Chrome、Chromium 或 Edge；复制到剪贴板还要 wl-copy 或 xclip；旧图移进回收站还要 gio
 - 桌面 App 目前有一个重画 bug（[anthropics/claude-code#99211](https://github.com/anthropics/claude-code/issues/99211)）：状态变化时动画会从头播；▲▼ 按钮偶尔点不动，可以用 `/clawd` 代替
-- 由组织管理 Claude Code 的环境（Team / Enterprise 登录，或机器上有 managed settings）里，Claude Code 不会运行用户安装插件的 `classic.*` 和 `session.compact` 钩子，`/plugin` 里会有提示。这时权限请求不显示「!」，压缩没有专属动作；`/clear`、`/resume`、`/branch` 之后信息栏先回到默认状态：展开状态、点阵和等级在下一轮回复后恢复，`language` 为 `auto` 时会停在英文，直到 `/reload-plugins`（把 `language` 填成 `zh` 或 `en` 可避免）
+- 由组织管理 Claude Code 的环境（Team / Enterprise 登录，或机器上有 managed settings）里，Claude Code 不会运行用户安装插件的 `classic.*` 和 `session.compact` 钩子，`/plugin` 里会有提示。这时权限请求不显示「!」，压缩没有专属动作。`/clear`、`/resume`、`/branch` 之后信息栏回到默认状态，到下一次提交提示词时重新读回数据（任何环境都一样）
 
 ## Source and license
 

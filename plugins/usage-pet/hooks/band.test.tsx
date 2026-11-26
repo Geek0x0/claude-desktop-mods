@@ -1245,85 +1245,82 @@ test('session.start 从 store 恢复关闭的 dither', ZH, async ($, on) => {
   expect(String((await svgOf(ui))!.props?.source)).not.toContain('ultra-dither')
 })
 
-for (const source of ['clear', 'resume', 'fork'] as const) {
-  test(`classic.SessionStart（${source}）不会再有 session.start：重新读回展开状态、点阵、等级和额度读数，且不重复注册命令`, ZH, async ($, on) => {
-    testStore(on, { prefs: { pinned: true, dither: false }, pet: { xp: 320, turns: 30, streak: 2, lastDay: '2026-10-05', achievements: [] } })
-    mock.clock(on)
-    on('classic.SessionStart', () => ({}))
-    on('session.authorize', () => ({ value: null }))
-    on('session.usage', () => ({
-      value: {
-        startedAt: 0,
-        context: { window: 200000, tokens: 84000, percent: 42 },
-        rateLimits: [
-          { kind: 'five_hour', percentUsed: 8, resetsAt: new Date(Date.now() + 50 * 60000).toISOString() },
-          { kind: 'seven_day', percentUsed: 50, resetsAt: new Date(Date.now() + 3 * 86400000).toISOString() },
-        ],
-      },
-    }))
-    let registered = 0
-    on('command.register', ($, e) => {
-      registered++
-
-      return { value: { command: e.name } }
-    })
-
-    await $.classic.SessionStart({ source })
-
-    // isWorking: the dither is drawn only while Claude works
-    const ui = await $.ui.mount({ ...BAND(true), surface: 'desktop' })
-    const [clawd, gauges] = await ui.findAll({ type: 'Svg' })
-    expect(clawd?.props?.height).toBe(H)
-    expect(String(clawd?.props?.alt)).toContain('Lv.3')
-    expect(String(gauges?.props?.alt)).toContain('每周额度 50%')
-    expect(`${String(clawd?.props?.source)}${String(gauges?.props?.source)}`).not.toContain('ultra-dither')
-    expect(registered).toBe(0)
-  })
-}
-
-test('/resume 之后跟随系统语言重新生效，不会停在英文默认值', AUTO, async ($, on) => {
-  mock.store(on, {})
-  mock.env(on, { LANG: 'zh_CN.UTF-8' })
-  on('classic.SessionStart', () => ({}))
-  on('session.usage', () => ({ value: { startedAt: 0, context: { window: 200000 }, rateLimits: [] } }))
-
-  await $.classic.SessionStart({ source: 'resume' })
-
-  const ui = await $.ui.mount({ ...BAND(false), surface: 'desktop' })
-  expect(String((await svgOf(ui))!.props?.alt)).toContain('上下文')
+const USAGE_42 = () => ({
+  value: {
+    startedAt: 0,
+    context: { window: 200000, tokens: 84000, percent: 42 },
+    rateLimits: [
+      { kind: 'five_hour', percentUsed: 8, resetsAt: new Date(Date.now() + 50 * 60000).toISOString() },
+      { kind: 'seven_day', percentUsed: 50, resetsAt: new Date(Date.now() + 3 * 86400000).toISOString() },
+    ],
+  },
 })
 
-test('以 --resume 启动：session.start 和 classic.SessionStart 都触发，命令只注册一次（三条），状态照常读回', ZH, async ($, on) => {
-  testStore(on, { prefs: { pinned: true } })
-  mock.clock(on)
+// Mocks a session whose id the test can change, the way /clear, /resume and /branch do.
+function sessionWithId(on: Parameters<Parameters<typeof test>[2]>[1]) {
+  const current = { id: 'first' }
+  const registered = { count: 0 }
+  on('session.id', () => ({ value: current.id }))
   on('session.start', ($, e) => ({ cwd: e.cwd }))
-  on('classic.SessionStart', () => ({}))
+  on('prompt.submit', ($, e) => ({ text: e.text, origin: e.origin }))
   on('session.authorize', () => ({ value: null }))
-  on('session.usage', () => ({ value: { startedAt: 0, context: { window: 200000 }, rateLimits: [] } }))
-  let registered = 0
+  on('session.usage', USAGE_42)
   on('command.register', ($, e) => {
-    registered++
+    registered.count++
 
     return { value: { command: e.name } }
   })
 
-  await $.session.start(START as never)
-  await $.classic.SessionStart({ source: 'resume' })
+  return { current, registered }
+}
 
-  expect(registered).toBe(3)
-  const ui = await $.ui.mount({ ...BAND(false), surface: 'desktop' })
-  expect((await svgOf(ui))!.props?.height).toBe(H)
+test('换了会话 id（/clear、/resume、/branch）：下一次 prompt.submit 重新读回展开状态、点阵、等级和额度读数，且不重复注册命令', ZH, async ($, on) => {
+  const store = testStore(on, {})
+  mock.clock(on)
+  const { current, registered } = sessionWithId(on)
+  await $.session.start(START as never)
+  expect(registered.count).toBe(3)
+
+  current.id = 'second'
+  store.data.set('prefs', { pinned: true, dither: false })
+  store.data.set('pet', { xp: 320, turns: 30, streak: 2, lastDay: '2026-10-05', achievements: [] })
+  await $.prompt.submit({ text: 'hello', asUser: true } as never)
+
+  // isWorking: the dither is drawn only while Claude works
+  const ui = await $.ui.mount({ ...BAND(true), surface: 'desktop' })
+  const [clawd, gauges] = await ui.findAll({ type: 'Svg' })
+  expect(clawd?.props?.height).toBe(H)
+  expect(String(clawd?.props?.alt)).toContain('Lv.3')
+  expect(String(gauges?.props?.alt)).toContain('每周额度 50%')
+  expect(`${String(clawd?.props?.source)}${String(gauges?.props?.source)}`).not.toContain('ultra-dither')
+  expect(registered.count).toBe(3)
 })
 
-test('classic.SessionStart 的 startup 和 compact 不重读：startup 归 session.start，压缩不会重置 $.state', ZH, async ($, on) => {
-  testStore(on, { prefs: { pinned: true } })
-  on('classic.SessionStart', () => ({}))
+test('会话 id 没变：prompt.submit 不重读', ZH, async ($, on) => {
+  const store = testStore(on, {})
+  mock.clock(on)
+  const { registered } = sessionWithId(on)
+  await $.session.start(START as never)
 
-  await $.classic.SessionStart({ source: 'startup' })
-  await $.classic.SessionStart({ source: 'compact' })
+  store.data.set('prefs', { pinned: true })
+  await $.prompt.submit({ text: 'hello', asUser: true } as never)
 
   const ui = await $.ui.mount({ ...BAND(false), surface: 'desktop' })
   expect((await svgOf(ui))!.props?.height).toBe(H_MINI)
+  expect(registered.count).toBe(3)
+})
+
+test('/resume 换了会话 id 之后跟随系统语言重新生效，不会停在英文默认值', AUTO, async ($, on) => {
+  mock.store(on, {})
+  mock.env(on, { LANG: 'zh_CN.UTF-8' })
+  const { current } = sessionWithId(on)
+  await $.session.start(START as never)
+
+  current.id = 'second'
+  await $.prompt.submit({ text: 'hello', asUser: true } as never)
+
+  const ui = await $.ui.mount({ ...BAND(false), surface: 'desktop' })
+  expect(String((await svgOf(ui))!.props?.alt)).toContain('上下文')
 })
 
 test('主回合完成后读取其他会话写入的偏好', ZH, async ($, on) => {

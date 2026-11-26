@@ -1257,10 +1257,14 @@ const fableState: FableSession = {}
 let pendingPermission: { tool: string; owner: number } | undefined
 let langDetectionGeneration = 0
 let lastDetectedLang: Lang | undefined
+let loadedSessionId: string | undefined
 
-// Runs at session.start, and again after /clear, /resume and /branch: those reset every $.state value
-// to its default without firing session.start, so everything read from $.store and the engine is loaded again.
+// Runs at session.start, and again at the first prompt after /clear, /resume and /branch: those reset every $.state
+// value to its default without firing session.start, so everything read from $.store and the engine is loaded again.
 async function loadSession($: EngineInterface, choice: LangChoice, registerCommands: boolean): Promise<void> {
+  await safeBookkeeping($, 'session id read failed', async () => {
+    loadedSessionId = await $.session.id()
+  })
   const detectionGeneration = ++langDetectionGeneration
   weekCache = undefined
   resetAgentRefresh($)
@@ -1386,14 +1390,6 @@ export const register: Register = (on, options) => {
     return result
   })
 
-  on('classic.SessionStart', { source: ['clear', 'resume', 'fork'] }, async ($, e, next) => {
-    await loadSession($, choice, false)
-    const result = await next(e)
-    requestAgentRefresh($)
-
-    return result
-  })
-
   on('agent.spawn', async ($, e, next) => {
     const result = await next(e)
     requestAgentRefresh($)
@@ -1402,6 +1398,14 @@ export const register: Register = (on, options) => {
   })
 
   on('prompt.submit', async ($, e, next) => {
+    // ponytail: /clear, /resume and /branch give a new session id but fire no hook we can rely on (managed
+    // environments skip classic.SessionStart), so reload at the next prompt; the band shows defaults until then.
+    await safeBookkeeping($, 'session change reload failed', async () => {
+      if (loadedSessionId !== undefined && (await $.session.id()) !== loadedSessionId) {
+        await loadSession($, choice, false)
+        requestAgentRefresh($)
+      }
+    })
     const isMainPrompt = !e.text.trim().startsWith('/')
     mainTurnActive = isMainPrompt
     pendingPermission = undefined

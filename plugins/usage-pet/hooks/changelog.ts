@@ -6,6 +6,13 @@ export type Release = { version: string; notes: Record<Lang, string[]> }
 
 export const CHANGELOG: Release[] = [
   {
+    version: '1.20.1',
+    notes: {
+      zh: ['/clear、/resume、/branch 之后，信息栏在下一次提交提示词时重新读回数据，组织的 managed settings 跳过 `classic.SessionStart` 时也一样'],
+      en: ["After /clear, /resume or /branch the band now reloads at the next prompt, even where an organization's managed settings skip `classic.SessionStart`"],
+    },
+  },
+  {
     version: '1.20.0',
     notes: {
       zh: ['/clawd-card 支持 Linux：用 Chrome、Chromium 或 Edge 导出，有 wl-copy 或 xclip 时放进剪贴板，旧图移进回收站'],

@@ -246,14 +246,15 @@ test('五分钟内的回合不重新扫描别的会话；过五分钟再读回�
 })
 
 test('/clear 之后重新扫描：别的会话刚写的用量立刻算进来', { options: { language: 'en' } }, async ($, on) => {
-  on('classic.SessionStart', () => ({}))
-  const { calls, data } = await setup($, on)
+  on('prompt.submit', ($, e) => ({ text: e.text, origin: e.origin }))
+  const { calls, data, session } = await setup($, on)
   await $.command.run({ command: 'clawd', args: '' } as never)
   await $.turn.complete(TURN)
   calls.length = 0
 
   data.set('tok:other', { [NOW_HOUR - 48]: [25000, 0, 0, 0] })
-  await $.classic.SessionStart({ source: 'clear' })
+  session.id = 'sess-C'
+  await $.prompt.submit({ text: 'hello', asUser: true } as never)
 
   expect(calls).toContain('keys')
   // 25000 + 1040 = 26040 → 26k，不走表也读回来了
@@ -261,13 +262,13 @@ test('/clear 之后重新扫描：别的会话刚写的用量立刻算进来', {
 })
 
 test('/clear 换了一个会话 id：新会话自己记账，老会话那份留在账里一起算', { options: { language: 'en' } }, async ($, on) => {
-  on('classic.SessionStart', () => ({}))
+  on('prompt.submit', ($, e) => ({ text: e.text, origin: e.origin }))
   const { data, session } = await setup($, on)
   await $.command.run({ command: 'clawd', args: '' } as never)
   await $.turn.complete(TURN)
 
   session.id = 'sess-C'
-  await $.classic.SessionStart({ source: 'clear' })
+  await $.prompt.submit({ text: 'hello', asUser: true } as never)
   await $.turn.complete({ ...TURN, turnId: 't2' })
 
   expect(data.get('tok:sess-C')).toEqual({ [NOW_HOUR]: [50, 50, 900, 40] })

@@ -18,7 +18,7 @@ Each mod is a separate plugin; install only the ones you want. Features, setting
 
 | Mod | 版本 / Version | 简介 / What it does |
 | --- | --- | --- |
-| [`usage-pet`](plugins/usage-pet) | 1.20.0 | 输入框上方的用量信息栏（上下文、5 小时、每周、可选 Fable 每周、缓存命中、本会话费用）+ Clawd 像素桌宠<br>A usage band above the prompt (context, 5-hour, weekly, optional Fable weekly, cache hit, session cost) with Clawd, an animated pixel pet |
+| [`usage-pet`](plugins/usage-pet) | 1.20.1 | 输入框上方的用量信息栏（上下文、5 小时、每周、可选 Fable 每周、缓存命中、本会话费用）+ Clawd 像素桌宠<br>A usage band above the prompt (context, 5-hour, weekly, optional Fable weekly, cache hit, session cost) with Clawd, an animated pixel pet |
 | [`doc-review`](plugins/doc-review) | 1.0.0 | 写完 superpowers 的 spec 或 plan 后，提议派只读的 Fable 子代理审阅<br>Offers a read-only Fable subagent review after a superpowers spec or plan is written |
 | [`remote-sessions`](plugins/remote-sessions) | 1.0.0 | `/remote-sessions` 面板列出开着 Remote Control 的会话，一键关闭<br>`/remote-sessions` opens a pane of sessions with Remote Control on; close each in one click |
 | [`jira-link`](plugins/jira-link) | 1.1.0 | `/jira` 面板列出关联到会话的 Jira Ticket，提示词里的编号自动关联<br>`/jira` opens a pane of the Jira tickets linked to the session; keys in your prompts are linked automatically |
