@@ -1,10 +1,9 @@
 import { expect, test } from 'claude-code/testing'
 
 const start = async ($: any, on: any) => {
-  const seen: { status: unknown[]; toast: unknown[] } = { status: [], toast: [] }
+  const seen: { toast: unknown[] } = { toast: [] }
   on('command.register', () => ({ value: { command: 'jira' } }))
   on('session.start', (_: any, e: any) => ({ cwd: e.cwd }))
-  on('ui.status', (_: any, e: any) => (seen.status.push(e.text), { value: undefined }))
   on('ui.toast', (_: any, e: any) => (seen.toast.push(e.text), { value: undefined }))
   const pane = { isPlaced: true }
   on('ui.open', () => ({
@@ -31,7 +30,7 @@ const start = async ($: any, on: any) => {
 }
 
 test('/jira link, show, unlink, clear', async ($, on) => {
-  const { jira, seen } = await start($, on)
+  const { jira } = await start($, on)
 
   expect(await jira('')).toBe('No Jira tickets linked.')
   expect(await jira('link ff-1')).toBe('Linked FF-1.')
@@ -42,16 +41,13 @@ test('/jira link, show, unlink, clear', async ($, on) => {
   expect(await jira('link nope')).toMatch(/^Usage/)
   expect(await jira('nope')).toMatch(/^Usage/)
   expect(await jira('')).toBe('FF-1\nFF-2\nAB-3\nCD-4')
-  expect(seen.status.at(-1)).toBe('Jira: FF-1, FF-2, AB-3 +1')
 
   expect(await jira('unlink ff-2')).toBe('Unlinked FF-2.')
   expect(await jira('unlink FF-2')).toBe('FF-2 is not linked.')
   expect(await jira('')).toBe('FF-1\nAB-3\nCD-4')
-  expect(seen.status.at(-1)).toBe('Jira: FF-1, AB-3, CD-4')
 
   expect(await jira('clear')).toBe('Jira links cleared.')
   expect(await jira('')).toBe('No Jira tickets linked.')
-  expect(seen.status.at(-1)).toBeUndefined()
 })
 
 test('prompts auto-link every new key and URL, with one toast', async ($, on) => {
@@ -75,7 +71,6 @@ test('prompts auto-link every new key and URL, with one toast', async ($, on) =>
   await say('see FF-1, OPS-9 and https://x.atlassian.net/browse/ab-3')
   expect(await jira('')).toBe('FF-1\nOPS-9\nAB-3')
   expect(seen.toast).toEqual(['Linked FF-1, OPS-9, AB-3 (auto). /jira show to list'])
-  expect(seen.status.at(-1)).toBe('Jira: FF-1, OPS-9, AB-3')
 
   await say('again FF-1 and new FF-2')
   expect(seen.toast.at(-1)).toBe('Linked FF-2 (auto). /jira show to list')

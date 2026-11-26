@@ -1,6 +1,6 @@
 # jira-link
 
-For the **Code tab of Claude Desktop**: `/jira` links Jira tickets to the session, lists them in a **Jira Tickets** pane, and shows them in the status line. Current version: **1.0.0**.
+For the **Code tab of Claude Desktop**: `/jira` links Jira tickets to the session, lists them in a **Jira Tickets** pane. Current version: **1.0.1**.
 
 > Unofficial fan project. Not affiliated with or endorsed by Anthropic or Atlassian.
 
@@ -12,7 +12,6 @@ For the **Code tab of Claude Desktop**: `/jira` links Jira tickets to the sessio
 - **`/jira unlink <KEY>`** removes one ticket; **`/jira clear`** removes all of them.
 - **Auto-link**: Jira keys, and `/browse/KEY` or `selectedIssue=KEY` URLs, found in the prompts **you** submit are linked and a toast says so. Model output and tool output are never scanned.
 - Auto-link ignores code spans and code blocks, lowercase or odd forms, numbers with a leading zero (`FF-01`), and common non-ticket prefixes (`UTF`, `SHA`, `MD`, `HTTP`, `HTTPS`, `TLS`, `SSL`, `ISO`, `AES`, `RSA`, `IPV`, `RFC`, `CVE`). `/jira link` is explicit, so it only takes a well-formed key or URL.
-- The status line reads `Jira: FF-1, FF-2 +N`: the first three tickets, then how many more.
 - Up to 20 tickets are kept per session; past that the oldest drop off. The pane text is in Chinese only.
 
 ## Install
@@ -37,7 +36,7 @@ Then run `/reload-plugins` or start a new session.
 
 ## Hooks and commands
 
-- `session.start`: registers `/jira` and restores the status line.
+- `session.start`: registers `/jira`.
 - `command.run` for `/jira`, `/jira show`, `/jira link`, `/jira unlink` and `/jira clear`.
 - `prompt.submit`: auto-links keys found in your prompt.
 - `ui.render` for the pane.
@@ -50,7 +49,7 @@ Then run `/reload-plugins` or start a new session.
 
 ## 中文
 
-为 **Claude 桌面 App 的 Code 页** 做的 mod：`/jira` 把 Jira Ticket 关联到会话，在「Jira Tickets」面板里列出，并显示在状态栏。当前版本 **1.0.0**。
+为 **Claude 桌面 App 的 Code 页** 做的 mod：`/jira` 把 Jira Ticket 关联到会话，在「Jira Tickets」面板里列出。当前版本 **1.0.1**。
 
 ### 功能
 
@@ -60,7 +59,6 @@ Then run `/reload-plugins` or start a new session.
 - **`/jira unlink <KEY>`** 移除一个；**`/jira clear`** 全部移除
 - **自动关联**：**你**提交的提示词里的 Jira 编号，以及 `/browse/KEY`、`selectedIssue=KEY` 形式的链接，会被自动关联并弹出提示；模型输出和工具输出不会被扫描
 - 自动关联会忽略代码片段和代码块、小写或奇怪的写法、带前导零的数字（`FF-01`），以及常见的非 Ticket 前缀（`UTF`、`SHA`、`MD`、`HTTP`、`HTTPS`、`TLS`、`SSL`、`ISO`、`AES`、`RSA`、`IPV`、`RFC`、`CVE`）；`/jira link` 是明确指定，只接受格式正确的编号或链接
-- 状态栏显示 `Jira: FF-1, FF-2 +N`：前三个 Ticket，再加还有几个
 - 每个会话最多保存 20 个 Ticket，超出后最早的被丢弃；面板文字只有中文
 
 ### 安装

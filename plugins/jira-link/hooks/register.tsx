@@ -23,11 +23,6 @@ const extract = (text: string, auto = false): string[] => {
   return [...new Set(keys)]
 }
 
-const label = (keys: string[]) =>
-  keys.length === 0
-    ? undefined
-    : `Jira: ${keys.slice(0, 3).join(', ')}${keys.length > 3 ? ` +${keys.length - 3}` : ''}`
-
 // Adds the keys not yet linked; answers the new ones and the whole list.
 async function add($: Engine, keys: string[]) {
   const have = await read($, tickets)
@@ -39,13 +34,12 @@ async function add($: Engine, keys: string[]) {
   return { fresh, all }
 }
 
-// Removes one key, or every key when none is given; refreshes the status line.
+// Removes one key, or every key when none is given.
 async function drop($: Engine, key?: string) {
   const have = await read($, tickets)
   const left = key ? have.filter(k => k !== key) : []
   if (left.length === have.length) return false
   await update($, tickets, () => left)
-  $.ui.status(label(left))
 
   return true
 }
@@ -57,7 +51,6 @@ export const register: Register = on => {
       description:
         'Link Jira tickets to this session: /jira link KEY|URL, unlink KEY, show, clear',
     })
-    $.ui.status(label(await read($, tickets)))
 
     return next(e)
   })
@@ -94,21 +87,19 @@ export const register: Register = on => {
     const key = WHOLE.test(input) ? input.toUpperCase() : extract(input)[0]
     if (!key) return { text: USAGE }
 
-    const { fresh, all } = await add($, [key])
+    const { fresh } = await add($, [key])
     if (fresh.length === 0) return { text: `${key} is already linked.` }
-    $.ui.status(label(all))
 
     return { text: `Linked ${key}.` }
   })
 
   on('prompt.submit', async ($, e, next) => {
     if (!e.command) {
-      const { fresh, all } = await add(
+      const { fresh } = await add(
         $,
         extract(e.text, true).filter(k => !DENIED.test(k)),
       )
       if (fresh.length) {
-        $.ui.status(label(all))
         $.ui.toast(`Linked ${fresh.join(', ')} (auto). /jira show to list`)
       }
     }

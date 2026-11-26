@@ -1,6 +1,6 @@
 {
   "name": "jira-link",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Adds /jira, a pane of the Jira tickets linked to the session; ticket keys in your prompts are linked automatically.",
   "types": "./types/index.d.ts",
   "author": {
