@@ -131,7 +131,8 @@ async function start(
   dropPrompt = false,
 ) {
   mock.store(on, stored)
-  const clock = mock.clock(on)
+  // 固定插件时钟：成就要看小时（夜猫子 = 凌晨 0–5 点），不能跟着跑测试的机器时间走
+  const clock = mock.clock(on, { now: new Date(2026, 9, 15, 12).getTime() })
   on('session.measure', ($, e) => ({ changed: e.changed }))
   on('session.start', ($, e) => ({ cwd: e.cwd }))
   on('prompt.submit', ($, e) => {
@@ -250,6 +251,24 @@ test('通知：会话开始、升级和解锁成就都不弹提示，等级和�
   const cardSvg = String((await card.findAll({ type: 'Svg' }))[0]!.props?.source)
   expect(cardSvg).toContain('class="chip">缓存大师</text>')
   expect(toasts).toEqual([])
+})
+
+test('成就按插件时钟判断：插件时钟在凌晨两点就解锁夜猫子，不跟着真实时间走', ZH, async ($, on) => {
+  mock.store(on, { pet: { xp: 0, turns: 0, streak: 1, lastDay: '2000-01-01', achievements: [] } })
+  mock.clock(on, { now: new Date(2026, 9, 15, 2).getTime() })
+  on('session.measure', ($, e) => ({ changed: e.changed }))
+  on('session.start', ($, e) => ({ cwd: e.cwd }))
+  on('turn.complete', ($, e) => ({ text: '', usage: e.usage }))
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  on('session.usage', () => ({ value: { startedAt: 0, context: { window: 200000 }, rateLimits: [] } }))
+  await $.session.start(START as never)
+
+  await $.turn.complete(turn(0, 0, 10))
+  await $.command.run({ command: 'clawd', args: '' } as never)
+  const card = await $.ui.mount({ plugin: 'usage-pet', component: 'Pane', requestId: 'clawd-card', props: {}, viewport: { columns: 100, rows: 40 }, surface: 'desktop' } as never)
+  const cardSvg = String((await card.findAll({ type: 'Svg' }))[0]!.props?.source)
+
+  expect(cardSvg).toContain('class="chip">夜猫子</text>')
 })
 
 test('子代理的回合不涨经验', ZH, async ($, on) => {

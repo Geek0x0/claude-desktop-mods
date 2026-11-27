@@ -1149,7 +1149,7 @@ function truncateAgentDescription(description: string): string {
 async function growPet($: EngineInterface, rate: number | undefined) {
   const bars = await read($, barsAtom)
   const maxLimit = Math.max(bars.to?.session?.percent ?? 0, bars.to?.weekly?.percent ?? 0)
-  const { pet: updated, events } = onTurn(normalize(await $.store.get(PET_KEY)), { now: new Date(), turnRate: rate, maxLimit })
+  const { pet: updated, events } = onTurn(normalize(await $.store.get(PET_KEY)), { now: new Date(await clockNow($)), turnRate: rate, maxLimit })
   const latest = normalize(await $.store.get(PET_KEY))
   const pet = mergePetProgress(updated, latest)
   await $.store.set(PET_KEY, pet)
