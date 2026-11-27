@@ -1257,7 +1257,7 @@ const USAGE_42 = () => ({
 })
 
 // Mocks a session whose id the test can change, the way /clear, /resume and /branch do.
-function sessionWithId(on: Parameters<Parameters<typeof test>[2]>[1]) {
+function sessionWithId(on: UsagePetHarness[1]) {
   const current = { id: 'first' }
   const registered = { count: 0 }
   on('session.id', () => ({ value: current.id }))
